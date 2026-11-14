@@ -42,6 +42,7 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
   encoded: 'carry relationships',
   inspector: 'the detail panel',
   nothingSelected: 'pick a row to inspect it',
+  issuesSelected: (count) => `${String(count)} issues selected`,
   clearSelection: 'clear the selection',
   // §17k's STRIP CONTROL, AND THE TWO LABELS SHARE NO SUBSTRING — this
   // constant's standing rule, and it has a second edge here: the control

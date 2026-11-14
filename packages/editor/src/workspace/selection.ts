@@ -26,12 +26,28 @@
  * thing it names would go stale silently. Every zone resolves the name against
  * the document it is rendering, so a selection that no longer resolves renders
  * as nothing selected rather than as last render's answer.
+ *
+ * ## A set of issues is one value too
+ *
+ * Two or more issues are `issues`, in the order they were added; one issue
+ * stays `issue`, so every single-issue reader and literal keeps working. A set
+ * and an edge are still never selected together. The gesture rules for a set
+ * are the viewer's (`nextSelection` in `@issuegraph/viewer`): this reducer
+ * maps its union onto `ViewerSelection` and back and writes no rule of its own.
  */
 
-/** What the reader has selected. Exactly one thing, or nothing. */
+import { type SelectionGesture, type ViewerSelection, nextSelection } from '@issuegraph/viewer';
+
+/**
+ * What the reader has selected: nothing, one relationship, one issue, or a set
+ * of two or more issues in the order they were added — never issues and a
+ * relationship at once.
+ */
 export type WorkspaceSelection =
   | { readonly kind: 'none' }
   | { readonly kind: 'issue'; readonly key: string }
+  /** Two or more issues, in addition order. One issue is always `issue`. */
+  | { readonly kind: 'issues'; readonly keys: readonly string[] }
   | { readonly kind: 'edge'; readonly edgeId: string };
 
 /** Nothing selected. The state a freshly-loaded workspace is in. */
@@ -41,14 +57,55 @@ export const INITIAL_SELECTION: WorkspaceSelection = { kind: 'none' };
  * What a zone can ask for.
  *
  * `select-issue` and `select-edge` REPLACE rather than add, which is the
- * reducer half of the union above: there is no command that could put the
- * workspace in two selections at once, so no reader has to handle one.
+ * reducer half of the union above: there is no command that could put an
+ * issue set and a relationship in one selection, so no reader has to handle
+ * one. `toggle-issue` adds or drops one issue, `range-issue` adds a range over
+ * `order` — the WHOLE rank order, never the rail window — and `limit-to-one`
+ * keeps the most recently added issue.
  */
 export type SelectionCommand =
   | { readonly kind: 'select-issue'; readonly key: string }
   | { readonly kind: 'reveal-issue'; readonly key: string }
   | { readonly kind: 'select-edge'; readonly edgeId: string }
+  | { readonly kind: 'toggle-issue'; readonly key: string }
+  | { readonly kind: 'range-issue'; readonly key: string; readonly order: readonly string[] }
+  | { readonly kind: 'limit-to-one' }
   | { readonly kind: 'clear' };
+
+/** This selection as the viewer's set rules read it. */
+export function toViewerSelection(selection: WorkspaceSelection): ViewerSelection {
+  switch (selection.kind) {
+    case 'none': return { kind: 'none' };
+    case 'issue': return { kind: 'issues', keys: [selection.key] };
+    case 'issues': return { kind: 'issues', keys: selection.keys };
+    case 'edge': return { kind: 'edge', edgeId: selection.edgeId };
+  }
+}
+
+/** A viewer selection as this workspace holds it: one issue is `issue`, two or more `issues`. */
+export function fromViewerSelection(selection: ViewerSelection): WorkspaceSelection {
+  switch (selection.kind) {
+    case 'none': return INITIAL_SELECTION;
+    case 'edge': return { kind: 'edge', edgeId: selection.edgeId };
+    case 'issues': return issuesSelection(selection.keys);
+  }
+}
+
+/** None, one `issue`, or an `issues` set of two or more, from keys in addition order. */
+export function issuesSelection(keys: readonly string[]): WorkspaceSelection {
+  const [first] = keys;
+  if (first === undefined) return INITIAL_SELECTION;
+  return keys.length === 1 ? { kind: 'issue', key: first } : { kind: 'issues', keys: Object.freeze([...keys]) };
+}
+
+/** The selection after a gesture, by the viewer's set rules. */
+function gestured(
+  selection: WorkspaceSelection,
+  gesture: SelectionGesture,
+  order: readonly string[],
+): WorkspaceSelection {
+  return fromViewerSelection(nextSelection(toViewerSelection(selection), gesture, order));
+}
 
 /**
  * The next selection.
@@ -72,6 +129,8 @@ export function selectionReducer(
   command: SelectionCommand,
 ): WorkspaceSelection {
   switch (command.kind) {
+    // THE TOGGLE CLEARS ONLY A SOLE SELECTION. A plain click on a member of a
+    // set of two or more replaces the set with that issue.
     case 'select-issue':
       return selection.kind === 'issue' && selection.key === command.key
         ? INITIAL_SELECTION
@@ -82,8 +141,28 @@ export function selectionReducer(
       return selection.kind === 'edge' && selection.edgeId === command.edgeId
         ? INITIAL_SELECTION
         : { kind: 'edge', edgeId: command.edgeId };
+    case 'toggle-issue':
+      return gestured(selection, { kind: 'toggle', key: command.key }, []);
+    case 'range-issue':
+      return gestured(selection, { kind: 'range', key: command.key }, command.order);
+    case 'limit-to-one':
+      return gestured(selection, { kind: 'limit-to-one' }, []);
     case 'clear':
       return INITIAL_SELECTION;
+  }
+}
+
+/**
+ * Every issue key the rail and the canvas should draw as selected, in addition
+ * order: one for an issue, all of a set, none for an edge or nothing.
+ */
+export function selectedKeys(selection: WorkspaceSelection): readonly string[] {
+  switch (selection.kind) {
+    case 'issue': return [selection.key];
+    case 'issues': return selection.keys;
+    case 'none':
+    case 'edge':
+      return [];
   }
 }
 

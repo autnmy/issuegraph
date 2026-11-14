@@ -80,7 +80,7 @@ export interface ScaleLadderOptions {
    * Reaches the viewer only on the tier that draws one; there is nothing to
    * mark on a tier whose canvas is a refusal.
    */
-  readonly selected?: string | null | undefined;
+  readonly selected?: string | readonly string[] | null | undefined;
   /**
    * The selected EDGE's identity, drawn on the canvas as a selection halo.
    *
@@ -482,8 +482,10 @@ function isolatedSpec(
  * too. Drawing it would show two selections at once, with the halo on a line
  * the canvas has receded.
  */
-function issueResolves(canvas: ViewerDocument, key: string | null | undefined): boolean {
-  return key !== null && key !== undefined && normalizeDocument(canvas).document.byKey.has(key);
+function issueResolves(canvas: ViewerDocument, selected: string | readonly string[] | null | undefined): boolean {
+  if (selected === null || selected === undefined) return false;
+  const { byKey } = normalizeDocument(canvas).document;
+  return typeof selected === 'string' ? byKey.has(selected) : selected.some((key) => byKey.has(key));
 }
 
 /** Render one document at one reader position. */

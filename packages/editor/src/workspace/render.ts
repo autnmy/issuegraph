@@ -131,7 +131,7 @@ import {
   type WorkspaceSelection,
   INITIAL_SELECTION,
   selectedEdgeId,
-  selectedKey,
+  selectedKeys,
 } from './selection.ts';
 import { workspaceStylesheet } from './styles.ts';
 
@@ -215,6 +215,13 @@ export interface WorkspaceWords {
   readonly inspector: string;
   /** Shown in the inspector when nothing is selected. */
   readonly nothingSelected: string;
+  /**
+   * The inspector's heading with two or more issues selected: *"3 issues
+   * selected"*. A function for the reason `filteredDenominator` is one: the
+   * count sits inside the sentence and its grammar moves with it, so the host
+   * writes the sentence.
+   */
+  readonly issuesSelected: (count: number) => string;
   /**
    * The control that returns to nothing selected.
    *
@@ -2380,6 +2387,15 @@ type PanelScope =
   | { readonly kind: 'issue'; readonly keys: ReadonlySet<string> }
   | { readonly kind: 'edge'; readonly edgeId: EdgeId };
 
+/**
+ * The selection as the viewer's `selected` takes it: one key as a string, a
+ * set as its keys in addition order, and nothing for an edge or none.
+ */
+function viewerSelected(selection: WorkspaceSelection): string | readonly string[] | null {
+  const keys = selectedKeys(selection);
+  return keys.length > 1 ? keys : (keys[0] ?? null);
+}
+
 function panelScope(view: InspectorView): PanelScope {
   const { subject } = view;
   switch (subject.kind) {
@@ -2390,6 +2406,10 @@ function panelScope(view: InspectorView): PanelScope {
         kind: 'issue',
         keys: new Set([subject.issue.key, ...(subject.whyRank?.unitPartners ?? [])]),
       };
+    // A SET STATES NOTHING. It offers no edit, so no refusal or recovery is
+    // about an edit made from it; each one stays on its own issue's panel.
+    case 'issues':
+      return { kind: 'none' };
     case 'edge':
       return { kind: 'edge', edgeId: subject.relationship.edgeId };
   }
@@ -2823,6 +2843,26 @@ function inspectorSpec(view: InspectorView, context: InspectorContext): ElementS
               ),
         ])
       : null,
+    // A SET SAYS HOW MANY AND LISTS THEM, in the order they were added, as
+    // text: no link, no command and no key attribute, so the list is
+    // agreement with the rail and the canvas, not a second place to act. The
+    // batch offers are a later change.
+    subject.kind === 'issues'
+      ? element('div', { class: 'ig-inspector-issues' }, [
+          element('h3', { class: 'ig-inspector-title' }, [words.issuesSelected(subject.issues.length)]),
+          element(
+            'ul',
+            { class: 'ig-inspector-set' },
+            subject.issues.map((issue) =>
+              element('li', { class: 'ig-inspector-set-item' }, [
+                element('span', { class: 'ig-title' }, [issue.title]),
+                ' ',
+                element('span', { class: 'ig-id' }, [issue.key]),
+              ]),
+            ),
+          ),
+        ])
+      : null,
     // ONE DERIVATION, READ TWICE. The step is asked once here and both
     // placements below read the answer, so the header and the body cannot
     // disagree about WHICH step is live. What each draws for a given arm is
@@ -2831,7 +2871,10 @@ function inspectorSpec(view: InspectorView, context: InspectorContext): ElementS
     // unrepresentable, and a value read at two sites does not. The pin that
     // stands where the return ordering used to is the one asserting no `add`
     // control exists anywhere in the panel at the kind step.
-    element(
+    // NO RELATIONSHIP REGION FOR A SET: it lists none and offers no `+ add`,
+    // and "no relationships" under a list of issues would read as a fact
+    // about them.
+    subject.kind === 'issues' ? null : element(
       'div',
       { class: 'ig-inspector-relationships', 'data-filtered': view.filtered ? 'true' : 'false' },
       [
@@ -3286,14 +3329,14 @@ export function renderWorkspace(
     // back on `scene.footer`, it is composed after the trailing spacer below.
     // See `SceneOptions.detachFooter`.
     detachFooter: true,
-    // The rail is where a selected ISSUE reads as current. An edge selection
-    // resolves to no key, which is `selectedKey`'s whole job.
-    selected: selectedKey(selection),
+    // The rail is where a selected ISSUE reads as current, and every member of
+    // a set does. An edge selection resolves to no key.
+    selected: viewerSelected(selection),
     // WORKED OUT OVER THE WHOLE DOCUMENT, NOT THE WINDOW. `rail.document` holds
     // only the window's issues and edges, so a selection outside it would
     // recede nothing here while the canvas recedes around it. An edge
-    // selection recedes the rail too.
-    receding: recedingOf(document, { key: selectedKey(selection), edge: selectedEdgeId(selection) }),
+    // selection recedes the rail too, and so does a set, member by member.
+    receding: recedingOf(document, { key: viewerSelected(selection), edge: selectedEdgeId(selection) }),
     // §16f. Passed WHOLE rather than windowed: the window moves, and a reader
     // who opened a row, scrolled past it and came back should find it open.
     // A key the window does not draw costs one `includes` miss and nothing else.
@@ -3359,7 +3402,7 @@ export function renderWorkspace(
     // selected issue as ordinary while the rail marked it current, so the
     // single selection this surface advertises disagreed with itself between
     // two zones on every render.
-    selected: selectedKey(selection),
+    selected: viewerSelected(selection),
     // AND ITS OTHER HALF. The union has two payloads, and reading only the
     // issue one left the canvas the single zone that could not see an edge
     // selection: the inspector filtered to the edge while the canvas drew it

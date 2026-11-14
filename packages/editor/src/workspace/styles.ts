@@ -668,10 +668,30 @@ export const workspaceStylesheet = `
   gap: var(--ig-space-tight);
 }
 
-.ig-inspector-issue {
+.ig-inspector-issue,
+.ig-inspector-issues {
   display: flex;
   flex-direction: column;
   gap: var(--ig-space-tight);
+}
+
+/* A SELECTED SET, LISTED AS TEXT: one issue a line, title then key, the key in
+   the muted role the rail's own id chips use. Nothing here is a control. */
+.ig-inspector-set {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+}
+
+.ig-inspector-set-item {
+  color: var(--ig-text-body);
+}
+
+.ig-inspector-set-item .ig-id {
+  color: var(--ig-text-muted);
 }
 
 .ig-inspector-title {

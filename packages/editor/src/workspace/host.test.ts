@@ -1374,3 +1374,30 @@ describe('the narrow tabs and the Related groups list', () => {
     }
   });
 });
+
+describe('a set of issues offers no edit', () => {
+  const withSet: HostState = { ...INITIAL_HOST_STATE, selection: { kind: 'issues', keys: ['2', '3'] } };
+
+  it('gives `+ add` no source issue, so no draft begins', () => {
+    const { state, effects } = drive([{ kind: 'control', name: 'add' }], withSet);
+    assert.equal(state.draft.source, null);
+    assert.deepEqual(effects, []);
+  });
+
+  it('gives T and Delete no relationship to act on', () => {
+    for (const key of ['t', 'Delete']) {
+      const intent = keyIntent({ key }, { focused: '2', match: null, selectedEdge: null, interaction: 'canvas' });
+      assert.deepEqual(intent, { kind: 'none' }, key);
+      // The same key does act once a relationship is selected, so the none above is the set's.
+      const withEdge = keyIntent({ key }, { focused: '2', match: null, selectedEdge: blockedBy.id, interaction: 'canvas' });
+      assert.notDeepEqual(withEdge, { kind: 'none' }, `${key} acts on no relationship at all`);
+    }
+  });
+
+  it('keeps the members the document still lists when it reconciles, and becomes one issue as they go', () => {
+    const kept = reconcileHost(withSet, document, new Set());
+    assert.equal(kept.selection, withSet.selection, 'a set whose members all stand changed identity');
+    const without3: GraphDocument = { ...document, issues: document.issues.filter((issue) => issue.ref !== '3'), edges: [blockedBy] };
+    assert.deepEqual(reconcileHost(withSet, without3, new Set()).selection, { kind: 'issue', key: '2' });
+  });
+});
