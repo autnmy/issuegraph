@@ -55,7 +55,10 @@ export interface ChangeWords {
    * followed by a §17b failure card contradicting it.
    */
   readonly computing: string;
-  /** The dismiss control. The only thing besides the next edit that clears the summary. */
+  /**
+   * The dismiss control. The summary stays until it is pressed, or until a
+   * later saved edit replaces it; starting an edit does not clear it.
+   */
   readonly dismiss: string;
   /** How a movement chip names its direction. */
   readonly direction: Readonly<Record<'up' | 'down', string>>;

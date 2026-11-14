@@ -71,8 +71,8 @@ interface DataSource {
 
 | outcome | what it means | what the store does |
 |---|---|---|
-| `applied` | the edit landed; carries the **whole** resulting document | adopts it, re-derives the order, emits a change summary |
-| `unchanged` | the edit changed nothing; carries the **whole** document | adopts it, re-derives, emits **no** summary |
+| `applied` | the edit landed; carries the **whole** resulting document | adopts it; the order re-derives, with a change summary, once no edit is in flight |
+| `unchanged` | the edit changed nothing; carries the **whole** document | adopts it; the order re-derives once no edit is in flight, and this edit adds **no** summary |
 | `rejected` | the write was refused; carries a reason | marks the edge `failed` and offers `retry` |
 | `conflict` | the document moved upstream mid-edit; carries the current one | marks the edge `conflict` and holds **both** versions |
 
@@ -154,7 +154,10 @@ that exists nowhere. Keeping the two sets apart makes that a property of the str
 than a rule every reader has to remember.
 
 While any edit is in flight, `order.status` is `'held'` and the rows are the previous ones,
-unchanged — a stale-but-labelled order beats a half-computed one. Same principle if your
+unchanged — a stale-but-labelled order beats a half-computed one. That holds across every edit
+in flight, not one at a time: an edit that lands while another is still pending adopts its
+document and leaves the rows alone, and so does a refresh. The order re-derives once, when the
+last pending edit settles. Same principle if your
 deriver throws: the last order that *was* derived stands, and `orderError` says why it is
 stale.
 
@@ -233,9 +236,15 @@ the host — [issue #7](https://github.com/autnmy/issuegraph/issues/7) is the re
 defects a hand-rolled version drew. The adapter is the authority on the current document; the
 store asks it rather than keeping a guess about how stale its own copy has become.
 
-`lastChange` belongs to the edit that is **current when it lands**. Two edits proposed before
-the first settles means the first's summary would otherwise be written after the second began,
-and a host would show the previous edit's blast radius beside the current one.
+`lastChange` describes a **held period**: the span from the first edit going pending to the
+last one settling. When the period ends, the store diffs the rows held since it began against
+the order derived once, so two edits that both landed are counted together, and
+`lastChange.mutation` is the newest one that landed. The period's summary is published whatever
+the closing edit's outcome — an earlier edit that landed was saved even if the last one was
+rejected. A period in which nothing landed publishes no summary, because nothing was saved,
+and leaves an earlier summary standing. Starting an edit, a `retry` or a `retryOnLatest` does
+not clear it either: only `dismissChange()` does, or a later period that lands an edit, whose
+summary replaces it.
 
 ## Two smaller contracts worth knowing
 

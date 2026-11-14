@@ -18,7 +18,8 @@
  *
  * And one thing it must never grow: a timer. The design rejects the toast
  * precisely because the only evidence the edit worked disappears before it is
- * read. `lastChange` persists until the next edit or an explicit dismissal.
+ * read. `lastChange` persists until an explicit dismissal, or until a later
+ * edit lands and its summary replaces it.
  */
 
 import type { IssueRef } from './model.ts';
@@ -57,7 +58,8 @@ export interface ChangeCounts {
 }
 
 /**
- * What the last landed edit did to the order.
+ * What the edits that landed during one held period did to the order, named
+ * by the newest of them.
  *
  * An edit that lands and moves nothing still produces one, with an empty
  * `deltas` and all-zero counts. "This edit changed nothing" is a FINDING — it

@@ -480,7 +480,7 @@ describe('a placed chip is decoration, so it changes no tab order', () => {
 
 describe('nothing about the loop expires on its own', () => {
   it('schedules nothing and offers no clear but the command', () => {
-    // The store's `dismissChange()` and the next edit are the only clears, and
+    // The store's `dismissChange()` and a later saved edit are the only clears, and
     // this render holds no "has this been dismissed" of its own — so there is
     // nothing here for a timer to expire.
     const source = renderWorkspace(railOf(['b', 'a']), { words: WORDS, change: SWAPPED }).markup;
