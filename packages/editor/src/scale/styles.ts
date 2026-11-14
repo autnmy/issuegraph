@@ -92,6 +92,15 @@ export const scaleLadderStylesheet = `
   min-width: 0;
 }
 
+/* THE BOARD'S BOX DRAWS NO GROUND AND NO BORDER (issue 296). Layer 1's
+   refusal box paints the second fill, which is the group cards' own fill, so
+   the cards vanished into it; the export's board sets its cards straight on
+   the zone. Scoped to the ladder, so the viewer's own refusal keeps its box. */
+.ig-ladder .ig-refusal {
+  background: none;
+  border: 0;
+}
+
 /* FOUR CARDS ACROSS A COLUMN, NOT FOUR ROWS DOWN IT. Frame 17f lays the
    capsules out as a board, which is what makes the counts comparable at a
    glance — the whole reason the count leads. minmax(0, 1fr) rather than a

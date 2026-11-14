@@ -2030,4 +2030,13 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   gap: var(--ig-space-loose);
   margin-inline-start: auto;
 }
+
+/* ALL FOUR READINESS KEYS ARE ONE SIZE, the export's eight (the redesign
+   lead's ruling q303 on issue 296): the dot a row draws and the NOW row's
+   pulse alike. The pulse is the motion, not a different size. */
+.ig-legend-keys .ig-station,
+.ig-legend-keys .ig-legend-working {
+  block-size: var(--ig-space-snug);
+  inline-size: var(--ig-space-snug);
+}
 `;

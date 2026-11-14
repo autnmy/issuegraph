@@ -215,11 +215,12 @@ export interface AuditRemedyWords {
   /** The frame's `Remove the edge`, on a stale blocker. */
   readonly removeEdge: string;
   /**
-   * The frame's `Keep as history`, on a stale blocker and nowhere else.
+   * The export's "Keep as history", on a duplicate of a closed issue and
+   * nowhere else (q300 on #296: the board offers it there, and only "Remove
+   * the relationship" on a closed blocker).
    *
-   * Drawn from {@link AuditFinding.keepAsHistory}, which the class table
-   * already sets — `true` for `stale-blocker` alone. The field predates this
-   * control and was waiting for it.
+   * Drawn from {@link AuditFinding.keepAsHistory}, which the class table sets
+   * — `true` for `dead-duplicate-ref` alone.
    */
   readonly keepAsHistory: string;
   /** The frame's `Repoint or clear`, on a dead duplicate ref. */
@@ -446,20 +447,20 @@ function remedySpec(
         );
 
   switch (finding.kind) {
+    // THE BOARD'S REMEDIES (q300 on #296): a closed blocker offers only
+    // "Remove the relationship"; a duplicate of a closed issue offers "Change
+    // or remove" and "Keep as history". The second control is gated on the
+    // finding's own field rather than on the class, so asking the finding keeps
+    // the two in step instead of restating the table here.
     case 'stale-blocker': {
-      // TWO CONTROLS, AND THE SECOND IS GATED ON THE FINDING'S OWN FIELD rather
-      // than on the class. `keepAsHistory` is read from `AUDIT_CLASS_SPECS` and
-      // is `true` for this class alone — it predates this control and was
-      // waiting for it — so asking the finding keeps the two in step instead of
-      // restating the table here.
       const remove = onEdge(remedies.removeEdge, 'remove-edge');
-      const keep = finding.keepAsHistory ? onEdge(remedies.keepAsHistory, 'keep-as-history') : null;
-      const both = [remove, keep].filter((spec): spec is ElementSpec => spec !== null);
-      return both.length === 0 ? null : element('div', { class: 'ig-audit-remedies' }, both);
+      return remove === null ? null : element('div', { class: 'ig-audit-remedies' }, [remove]);
     }
     case 'dead-duplicate-ref': {
       const repoint = onEdge(remedies.repoint, 'repoint');
-      return repoint === null ? null : element('div', { class: 'ig-audit-remedies' }, [repoint]);
+      const keep = finding.keepAsHistory ? onEdge(remedies.keepAsHistory, 'keep-as-history') : null;
+      const both = [repoint, keep].filter((spec): spec is ElementSpec => spec !== null);
+      return both.length === 0 ? null : element('div', { class: 'ig-audit-remedies' }, both);
     }
     case 'cycle': {
       // THE WALK'S HEAD, NOT AN EDGE. See this function's header: the cycle is

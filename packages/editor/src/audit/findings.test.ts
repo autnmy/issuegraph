@@ -774,11 +774,11 @@ describe('severity travels on the finding', () => {
     }
   });
 
-  it('offers "keep as history" on stale-blocker and on nothing else', () => {
+  it('offers "keep as history" on dead-duplicate-ref and on nothing else (q300 on #296)', () => {
     // Over the WHOLE table, so a fifth class cannot arrive carrying the
     // affordance by accident.
     const offered = AUDIT_CLASSES.filter((kind) => AUDIT_CLASS_SPECS[kind].keepAsHistory);
-    assert.deepEqual(offered, ['stale-blocker']);
+    assert.deepEqual(offered, ['dead-duplicate-ref']);
   });
 
   it('states every class exactly once, and weights them uniquely', () => {
@@ -966,7 +966,7 @@ describe('§17d — a finding names the edge its remedy acts on', () => {
     // that belongs to `@issuegraph/core`.
     assert.equal(found[0]?.edge?.from, 'a');
     assert.equal(found[0]?.edge?.to, 'b');
-    assert.equal(found[0]?.keepAsHistory, true, 'and it is the one class that offers it');
+    assert.equal(found[0]?.keepAsHistory, false, 'a closed blocker offers only removal (q300 on #296)');
   });
 
   it('carries the declared duplicate-of edge, not the chain’s end', () => {

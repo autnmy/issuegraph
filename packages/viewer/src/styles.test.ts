@@ -1458,6 +1458,17 @@ describe('the legend, the held row, the footer group and issue numbers, as the e
     }
   });
 
+  it('draws all four readiness keys at the export\u2019s eight (q303)', () => {
+    const inside = ['.ig-viewer', '.ig-legend', '.ig-legend-keys', '.ig-legend-item'];
+    for (const target of [".ig-station[data-fill='filled']", ".ig-station[data-fill='hollow']", ".ig-station[data-fill='dashed']", '.ig-legend-working']) {
+      for (const property of ['block-size', 'inline-size']) {
+        assert.equal(declaredOn(viewerStylesheet, target, property, inside)?.value, 'var(--ig-space-snug)', `${target} ${property}`);
+      }
+    }
+    // The row's own station keeps its size outside the legend.
+    assert.equal(declaredOn(viewerStylesheet, '.ig-station', 'block-size', ['.ig-viewer', '.ig-slot', '.ig-rank-cell'])?.value, 'var(--ig-station-size)');
+  });
+
   it('draws work in flight in the progress state, not the accent "Ready now" shares', () => {
     const places: readonly (readonly [string, readonly string[]])[] = [
       ['.ig-legend-working', ['.ig-viewer', '.ig-legend', '.ig-legend-keys', '.ig-legend-item']],

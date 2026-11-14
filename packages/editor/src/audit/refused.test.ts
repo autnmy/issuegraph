@@ -61,13 +61,15 @@ describe('the unreadable relationships, as notes in the problems panel (#296)', 
     assert.deepEqual(refusedNotes([], { words: WORDS, known: new Set() }), []);
   });
 
-  it('draws the ref, the reader’s words and the line it stopped on', () => {
+  it('draws the ref and the reader’s words as one body sentence, and not the raw line (q302 on #296)', () => {
     const markup = markupOf([REFUSAL]);
     // NO BLOCK AND NO HEADING OF ITS OWN: the panel's title heads every note.
     assert.equal(/ig-audit-refused(?:"|-heading|-list)|<h2|<section/.test(markup), false, markup);
-    assert.match(markup, new RegExp(`<span class="ig-audit-refused-ref">${REFUSAL.ref}</span>`));
-    assert.match(markup, /<span class="ig-audit-refused-diagnostic">unparseable YAML at line 3</);
-    assert.match(markup, /<span class="ig-audit-refused-source">blocked-by: \[231, 234</);
+    // ONE SENTENCE IN THE NOTE BODY'S FACE, the ref leading because the title
+    // does not say which issue; no mono line, and no raw source line.
+    assert.match(markup, new RegExp(`<p class="ig-audit-detail">${REFUSAL.ref}: unparseable YAML at line 3</p>`));
+    assert.equal(/ig-audit-refused-(?:head|ref|reason|diagnostic|source)/.test(markup), false, markup);
+    assert.equal(markup.includes('blocked-by: [231'), false, 'the raw source line is still drawn');
     // THE EXPORT'S NOTE (#296): the attention state and the host's title where a
     // mono class chip used to be.
     assert.match(markup, /<li class="ig-audit-card" data-ig-audit-kind="encoding-refused" data-s="attention">/);
@@ -79,21 +81,18 @@ describe('the unreadable relationships, as notes in the problems panel (#296)', 
 
   it('draws a bare issue number with its "#" on the card (#296)', () => {
     const markup = markupOf([{ ref: '2257' }]);
-    assert.match(markup, /<span class="ig-audit-refused-ref">#2257<\/span>/);
-    assert.equal(/>2257</.test(markup), false, 'the ref lost its "#"');
+    assert.match(markup, /<p class="ig-audit-detail">#2257<\/p>/);
+    assert.equal(/>2257/.test(markup), false, 'the ref lost its "#"');
   });
 
   it('omits a reason the host did not record', () => {
-    // BOTH FIELDS ARE OPTIONAL BECAUSE THIS PACKAGE NEVER SEES A BODY. An empty
-    // mono box under the ref would tell a reader something is missing from their
-    // ISSUE rather than from the host's report.
+    // THE REASON IS OPTIONAL BECAUSE THIS PACKAGE NEVER SEES A BODY. With none
+    // recorded the ref alone is the sentence, not the ref and an empty reason.
     const bare = markupOf([{ ref: 'i0001' }]);
-    assert.equal(bare.includes('ig-audit-refused-reason'), false, bare);
-    assert.match(bare, /ig-audit-refused-ref/, 'the card itself was dropped');
+    assert.match(bare, /<p class="ig-audit-detail">i0001<\/p>/, 'the note lost its sentence');
 
     const partial = markupOf([{ ref: 'i0001', diagnostic: 'no --- pair delimits the block' }]);
-    assert.match(partial, /ig-audit-refused-diagnostic/);
-    assert.equal(partial.includes('ig-audit-refused-source'), false, partial);
+    assert.match(partial, /<p class="ig-audit-detail">i0001: no --- pair delimits the block<\/p>/);
   });
 
   it('keeps one card for a ref the host reported twice', () => {
@@ -108,28 +107,26 @@ describe('the unreadable relationships, as notes in the problems panel (#296)', 
     ]);
     assert.equal([...markup.matchAll(/<li class="ig-audit-card"/g)].length, 2, markup);
     // FIRST OCCURRENCE WINS, the model's own rule for a repeated key.
-    assert.match(markup, />first</);
-    assert.equal(markup.includes('>second<'), false, markup);
+    assert.match(markup, />i0001: first</);
+    assert.equal(markup.includes('second'), false, markup);
   });
 
-  it('escapes a source line, which is raw body text', () => {
-    // A BODY CAN CARRY ANYTHING, MARKUP INCLUDED, and this is the one value on
-    // the surface that is a verbatim quotation of it. Nothing in this module
+  it('escapes the host\u2019s reason, and draws no raw source line at all', () => {
+    // The reason is host text and can carry markup. Nothing in this module
     // writes a tag: the spec goes through `renderMarkup`, which owns the
-    // escaping — and this is the pin that fails if a later revision reaches for
-    // string concatenation the way `renderAuditHeader` legitimately does for a
-    // number.
+    // escaping. The raw source line is not drawn since q302 on #296.
     const markup = markupOf([
       {
         ref: 'i0001',
-        diagnostic: 'unexpected " & <em>',
-        sourceLine: 'blocked-by: ["<script>alert(1)</script>',
+        diagnostic: 'unexpected " & <em><script>alert(1)</script>',
+        sourceLine: 'blocked-by: ["<b>raw</b>',
       },
     ]);
     assert.equal(markup.includes('<script'), false, markup);
     assert.equal(markup.includes('<em>'), false, markup);
     assert.match(markup, /&lt;script&gt;alert\(1\)/);
     assert.match(markup, /&amp;/);
+    assert.equal(markup.includes('raw'), false, 'the raw source line is still drawn');
   });
 
   it('never puts the rail’s severity attribute on anything it draws', () => {
@@ -226,7 +223,7 @@ describe('the unreadable relationships, as notes in the problems panel (#296)', 
       // exactly the issues paging has not reached — and SPEC's whole reason for
       // this class is that such an issue otherwise looks merely unencoded.
       assert.match(markup, /data-ig-audit-kind="encoding-refused"/);
-      assert.match(markup, /ig-audit-refused-source/);
+      assert.match(markup, /<p class="ig-audit-detail">i0001: /);
     });
 
     it('still offers the outward link for a ref with no row', () => {
@@ -249,7 +246,7 @@ describe('the unreadable relationships, as notes in the problems panel (#296)', 
     assert.equal(markup.includes('<button'), false, markup);
     assert.equal(markup.includes('<a '), false, markup);
     assert.match(markup, new RegExp(`<p class="ig-audit-title">${WORDS.titles['encoding-refused']}</p>`));
-    assert.match(markup, /<span class="ig-audit-refused-ref">i0001<\/span>/);
+    assert.match(markup, /<p class="ig-audit-detail">i0001: unparseable YAML at line 3<\/p>/);
   });
 
   it('names each control by something that cannot collide', () => {

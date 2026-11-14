@@ -216,3 +216,20 @@ describe('the group card draws the export’s four parts (#296 design read)', ()
     assert.equal(/\.ig-capsule-load\b/.test(scaleLadderStylesheet.replace(/\/\*[\s\S]*?\*\//g, '')), false, 'the blocked count keeps a rule');
   });
 });
+
+describe('the board draws its group cards on the zone, not in a box of the same fill (#296 design read)', () => {
+  const css = `${viewerStylesheet}\n${scaleLadderStylesheet}`;
+
+  it('clears the refusal box’s ground and border inside the ladder, and leaves the viewer’s own', () => {
+    const inside = ['.ig-ladder'];
+    assert.equal(declaredOn(css, '.ig-refusal', 'background', inside)?.value, 'none');
+    assert.equal(declaredOn(css, '.ig-refusal', 'border', inside)?.value, '0');
+    // The viewer's own refusal, outside a ladder, keeps its box.
+    assert.equal(declaredOn(css, '.ig-refusal', 'background', ['.ig-viewer'])?.value, 'var(--ig-surface-2)');
+    // And a card still sits on the second fill, which is what now reads.
+    assert.equal(
+      declaredOn(css, '.ig-capsule-enter', 'background', ['.ig-ladder', '.ig-refusal', '.ig-list', '.ig-capsule-cell'])?.value,
+      'var(--ig-surface-2)',
+    );
+  });
+});

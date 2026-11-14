@@ -294,10 +294,10 @@ describe('done when: severity is data on the finding, not a colour at the render
     }
   });
 
-  it('offers "keep as history" on stale blocker and on nothing else', () => {
+  it('offers "keep as history" on a dead duplicate ref and on nothing else (q300 on #296)', () => {
     assert.deepEqual(
       AUDIT_CLASSES.filter((kind) => AUDIT_CLASS_SPECS[kind].keepAsHistory),
-      ['stale-blocker'],
+      ['dead-duplicate-ref'],
     );
   });
 });

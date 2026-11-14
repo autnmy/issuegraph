@@ -241,36 +241,30 @@ function revealControl(
 }
 
 /**
- * The reader's own words about this refusal, and the line it stopped on.
+ * The note's one body sentence: the ref, then the reader's reason, as "#499:
+ * Line 3 could not be read." (q302 on #296).
  *
- * ONE ELEMENT HOLDING BOTH, which is what the frame draws — the diagnostic,
- * then the offending source line under it in a muted tone. Two sibling blocks
- * would read as two facts; they are one fact and its evidence.
+ * IN THE NOTE BODY'S OWN FACE, `.ig-audit-detail`, the sentence every other
+ * note's body takes. It was the ref on a mono line of its own and the reason
+ * and the raw source line in mono beneath it; the export draws a title and one
+ * sentence, and the raw line is no longer drawn.
  *
- * `null` WHEN THE HOST SUPPLIED NEITHER. A refusal is still a refusal without
- * them — `EncodingRefusal` makes both optional because "this package never
- * produces one, because it never sees a body" — and an empty mono box under the
- * ref would say a reader is missing something rather than that nobody recorded
- * it.
+ * THE REF LEADS because the title is one per class and does not say which
+ * issue ("Some of this issue's relationships could not be read."). With no
+ * reason recorded the ref alone is the sentence: a refusal is still a refusal
+ * without one.
  */
-function reasonSpec(refusal: EncodingRefusal): ElementSpec | null {
-  const lines: ElementSpec[] = [];
-  if (refusal.diagnostic !== undefined && refusal.diagnostic !== '') {
-    lines.push(element('span', { class: 'ig-audit-refused-diagnostic' }, [refusal.diagnostic]));
-  }
-  if (refusal.sourceLine !== undefined && refusal.sourceLine !== '') {
-    // RAW BODY TEXT REACHES `element`, NEVER A TAG THIS MODULE WROTE. It can
-    // carry markup — a body is a body — and the escaping is `renderMarkup`'s,
-    // which is the rule every leaf in this package renders under.
-    lines.push(element('span', { class: 'ig-audit-refused-source' }, [refusal.sourceLine]));
-  }
-  if (lines.length === 0) return null;
-  return element('div', { class: 'ig-audit-refused-reason' }, lines);
+function bodySpec(refusal: EncodingRefusal): ElementSpec {
+  const ref = issueNumber(refusal.ref);
+  const reason = refusal.diagnostic;
+  return element('p', { class: 'ig-audit-detail' }, [
+    reason === undefined || reason === '' ? ref : `${ref}: ${reason}`,
+  ]);
 }
 
 /**
  * One unreadable issue's note, in the problems panel (#296): the attention
- * state's icon and fill, the host's title, the ref and the reason, and the
+ * state's icon and fill, the host's title, one sentence of the ref and the reason, and the
  * remedies the export names, "Open the issue" (`refusedOpen`) and "Rewrite it
  * here" (`refusedRewrite`). It was a card in a block of its own beside the
  * panel, under a heading of its own; the export draws it as one more note in
@@ -303,10 +297,7 @@ function refusalSpec(
       noteIcon('attention'),
       element('div', { class: 'ig-audit-note-text' }, [
         element('p', { class: 'ig-audit-title' }, [words.titles[REFUSED_KIND]]),
-        element('div', { class: 'ig-audit-refused-head' }, [
-          element('span', { class: 'ig-audit-refused-ref' }, [issueNumber(refusal.ref)]),
-        ]),
-        reasonSpec(refusal),
+        bodySpec(refusal),
         // NO EMPTY CONTROL ROW. Both controls are conditional, and a note that
         // can offer neither is inert rather than broken — see the header.
         controls.length === 0 ? null : element('div', { class: 'ig-audit-remedies' }, controls),

@@ -301,7 +301,7 @@ export const auditStylesheet = `
    with the owner, and a button styled like a commit invites a click that is
    not one.
 
-   WRAPS, because the stale card carries two of them inside a panel of fixed
+   WRAPS, because a duplicate's card carries two of them inside a panel of fixed
    width whose cards also indent. A row that cannot wrap pushes its second
    control out of the panel, which is the shape the relationship row one sheet
    over already had to solve. (Worded around two particular verbs on purpose:
@@ -373,48 +373,8 @@ export const auditStylesheet = `
 
 /* ---- §17d's fourth class: an unreadable relationship's note (./refused.ts) ----
 
-   A NOTE IN THE PANEL SINCE ISSUE 296, styled as every note is above; these
-   rules draw only what is its own: the ref, the reason and its two controls. */
-
-.ig-audit-refused-head {
-  align-items: center;
-  display: flex;
-  gap: var(--ig-space-tight);
-}
-
-.ig-audit-refused-ref {
-  color: var(--ig-text);
-  font-family: var(--ig-font-mono);
-  font-size: var(--ig-font-size-meta);
-}
-
-/* ONE BLOCK, TWO LINES — the diagnostic and, under it, the line the reader
-   stopped on. pre-wrap because the source line is RAW BODY TEXT: it carries
-   its own leading space and its own length, and collapsing either would show a
-   reader something other than what is in their issue. overflow-wrap keeps a
-   long unbroken line inside the column instead of widening the track. */
-.ig-audit-refused-reason {
-  display: flex;
-  flex-direction: column;
-  font-family: var(--ig-font-mono);
-  font-size: var(--ig-font-size-meta);
-  gap: var(--ig-space-micro);
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
-
-.ig-audit-refused-diagnostic {
-  color: var(--ig-text-body);
-}
-
-/* MUTED IS CORRECT HERE AND NOWHERE NEAR A SENTENCE. SPEC's closing note puts
-   muted under AA for sentence-length copy, which is why .ig-audit-detail
-   takes --ig-text-body — but this is a short mono quotation of the reader's own
-   input, the exact shape muted is reserved for, and the frame draws it a step
-   back from the diagnostic it belongs to. */
-.ig-audit-refused-source {
-  color: var(--ig-text-muted);
-}
+   A NOTE IN THE PANEL SINCE ISSUE 296, styled as every note is above, its
+   body sentence included; these rules draw only its two controls. */
 
 /* ONE TREATMENT FOR BOTH CONTROLS, THOUGH ONE IS AN ANCHOR AND ONE A BUTTON.
    The element differs because what they DO differs — the link leaves the

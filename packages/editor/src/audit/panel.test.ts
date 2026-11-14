@@ -279,15 +279,17 @@ describe('the findings panel', () => {
     // collide: two findings with one sentence are one finding.
     //
     // `a blocked-by y` and `a blocked-by z` are two closed blockers on one
-    // issue, each with two remedies on one edge.
+    // issue, and `e duplicate-of canon` a duplicate of a closed issue with two
+    // remedies on one edge (q300 on #296).
     const markup = markupOf(
-      [issue('a'), issue('b'), issue('c'), issue('y', 'closed'), issue('z', 'closed')],
+      [issue('a'), issue('b'), issue('c'), issue('y', 'closed'), issue('z', 'closed'), issue('e'), issue('canon', 'closed')],
       [
         ['blocked-by', 'a', 'b'],
         ['blocked-by', 'b', 'c'],
         ['blocked-by', 'c', 'a'],
         ['blocked-by', 'a', 'y'],
         ['blocked-by', 'a', 'z'],
+        ['duplicate-of', 'e', 'canon'],
       ],
       [{ ref: 'a' }],
     );
@@ -517,7 +519,7 @@ describe('§17d — the remedies, which select and never write', () => {
     assert.deepEqual(
       found.map((remedy) => remedy.tag).sort(),
       ['keep-as-history', 'pick-edge', 'remove-edge', 'repoint'],
-      'the cycle gets one, the stale blocker two, the dead ref one',
+      'the cycle gets one, the stale blocker one, the dead ref two (q300 on #296)',
     );
   });
 
@@ -554,7 +556,7 @@ describe('§17d — the remedies, which select and never write', () => {
     }
   });
 
-  it('offers Keep as history on the stale blocker alone', () => {
+  it('offers Keep as history on the dead duplicate ref alone, as the export\u2019s board does (q300 on #296)', () => {
     // Gated on `keepAsHistory`, which the class table sets for that class only.
     // Asserted through the MARKUP rather than the table, so the gate is proven
     // where a reader meets it.
@@ -563,8 +565,24 @@ describe('§17d — the remedies, which select and never write', () => {
     for (const card of cards.slice(1)) {
       const kind = /data-ig-audit-kind="([^"]+)"/.exec(card)?.[1];
       const keeps = /data-ig-remedy="keep-as-history"/.test(card);
-      assert.equal(keeps, kind === 'stale-blocker', `${String(kind)} drew the wrong answer`);
+      assert.equal(keeps, kind === 'dead-duplicate-ref', `${String(kind)} drew the wrong answer`);
     }
+  });
+
+  it('draws no remedy on a loop whose first issue is not on the page (q301 on #296)', () => {
+    // The loop's remedy names its walk's head, and a button naming an issue
+    // the drawn page does not carry is a button that cannot work.
+    const overlay = overlayOf(EVERY_CLASS.issues, EVERY_CLASS.edges);
+    const head = overlay.findings.find((found) => found.kind === 'cycle')?.walk?.[0];
+    assert.ok(head !== undefined, 'the fixture names no walk, so this proves nothing');
+    const known = new Set(EVERY_CLASS.issues.map((held) => held.ref).filter((ref) => ref !== head));
+    const spec = renderAuditPanel(overlay, { words: WORDS, known, edges: EVERY_EDGE_IDS });
+    assert.ok(spec !== null);
+    const loop = renderMarkup(spec)
+      .split('<li class="ig-audit-card"')
+      .find((card) => card.includes('data-ig-audit-kind="cycle"'));
+    assert.ok(loop !== undefined, 'the loop note was dropped with its remedy');
+    assert.equal(loop.includes('<button'), false, 'the loop note offers a button that cannot work');
   });
 
   it('withholds a cycle’s remedy where the reader named no walk', () => {

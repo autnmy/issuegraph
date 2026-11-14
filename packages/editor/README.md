@@ -109,7 +109,7 @@ auditRowAttributes(overlay, ref);    // {} for a clean row; the severity mark fo
 
 **"Long-closed" is not available here.** A document carries no timestamp, so every closed blocker is reported — the safe direction for a finding whose whole severity is `misleading`, and one a host can narrow with a date it does have.
 
-**Every finding is a note in one panel.** `renderAuditPanel` draws each finding as a note in its state, with its icon, title, sentence and remedies, under one title counting every finding. Unreadable relationships are notes there too, drawn from the refusals you pass, with the ref, the reader's diagnostic, the offending source line, and two controls (`refusedOpen`, `refusedRewrite`).
+**Every finding is a note in one panel.** `renderAuditPanel` draws each finding as a note in its state, with its icon, title, sentence and remedies, under one title counting every finding. Unreadable relationships are notes there too, drawn from the refusals you pass, with the ref and the reader's diagnostic as one sentence, and two controls (`refusedOpen`, `refusedRewrite`).
 
 ```ts
 import { renderAuditPanel } from '@issuegraph/editor';
