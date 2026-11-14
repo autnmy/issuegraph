@@ -371,3 +371,56 @@ export function denseUnitDocument(count: number): ViewerDocument {
 }
 
 type ViewerSlotLike = ViewerDocument['order']['slots'][number];
+
+/**
+ * Two together units whose members' neighbours differ from their leads'.
+ *
+ * Unit 11·12 and unit 21·22. The member 12 is blocked by 31 and the lead 11
+ * serializes with 33; the member 22 is blocked by 32. So a set of members keeps
+ * 31 and 32 and recedes 33, while the same set moved onto its leads would keep
+ * 33 and recede 31 and 32 — the shape that tells "the set as given" from "the
+ * lead-substituted set" apart. 34 touches nothing.
+ */
+export const twoUnitDocument: ViewerDocument = {
+  issues: [
+    { key: '11', title: 'Unit A lead', open: true, priority: 2 },
+    { key: '12', title: 'Unit A member', open: true, priority: 2 },
+    { key: '21', title: 'Unit B lead', open: true, priority: 2 },
+    { key: '22', title: 'Unit B member', open: true, priority: 2 },
+    { key: '31', title: 'Blocks the A member', open: true, priority: 1 },
+    { key: '32', title: 'Blocks the B member', open: true, priority: 1 },
+    { key: '33', title: 'Serializes with the A lead', open: true, priority: 3 },
+    { key: '34', title: 'Touches nothing', open: true, priority: 3 },
+  ],
+  edges: [
+    { field: 'together-with', from: '11', to: '12' },
+    { field: 'together-with', from: '21', to: '22' },
+    { field: 'blocked-by', from: '12', to: '31' },
+    { field: 'blocked-by', from: '22', to: '32' },
+    { field: 'serialize-with', from: '11', to: '33' },
+  ],
+  order: {
+    slots: [
+      { rank: 1, lead: '31', members: ['31'], ready: true, holds: [] },
+      { rank: 2, lead: '32', members: ['32'], ready: true, holds: [] },
+      {
+        rank: 3,
+        lead: '11',
+        members: ['11', '12'],
+        ready: false,
+        holds: [{ family: 'graph', reason: 'blocked by 31, which is open' }],
+      },
+      {
+        rank: 4,
+        lead: '21',
+        members: ['21', '22'],
+        ready: false,
+        holds: [{ family: 'graph', reason: 'blocked by 32, which is open' }],
+      },
+      { rank: 5, lead: '33', members: ['33'], ready: true, holds: [] },
+      { rank: 6, lead: '34', members: ['34'], ready: true, holds: [] },
+    ],
+    excluded: [],
+  },
+  cycles: [],
+};

@@ -14,6 +14,7 @@ import {
   fixtureDocument,
   heldButRankedDocument,
   heldTogetherDocument,
+  twoUnitDocument,
 } from '../testing/fixtures.ts';
 import { linearScene } from './linear.ts';
 
@@ -673,5 +674,40 @@ describe('the linear projection recedes what a selection does not touch', () => 
     assert.equal(draw({ selectedEdge: edgeIdentity('blocked-by', '102', '101') }), bare, 'a swapped identity after selections kept a stamp');
     assert.equal(draw({ selected: '102' }), byKey, 'repeating an issue selection changed what recedes');
     assert.equal(draw({ selectedEdge: relationship }), byEdge, 'repeating a relationship selection changed what recedes');
+  });
+});
+
+describe('a selected set in the list', () => {
+  const slotTag = (markup: string, key: string): string => {
+    const tag = new RegExp(`<li class="ig-slot" data-ig-key="${key}"[^>]*>`).exec(markup)?.[0];
+    assert.ok(tag !== undefined, `no list row was drawn for ${key}`);
+    return tag;
+  };
+
+  it('marks every member of a set holding members of two units, on their unit rows', () => {
+    const markup = render(twoUnitDocument, { selected: ['22', '12'] });
+    for (const key of ['11', '21']) assert.match(slotTag(markup, key), /aria-current="true"/, `the unit row ${key}`);
+    for (const key of ['31', '32', '33', '34']) assert.match(slotTag(markup, key), /aria-current="false"/, `the row ${key}`);
+  });
+
+  it('recedes by the set as given, never the lead-substituted one', () => {
+    const normalized = normalizeDocument(twoUnitDocument).document;
+    const asGiven = recedingOf(normalized, { key: ['22', '12'], edge: null });
+    const byLeads = recedingOf(normalized, { key: ['21', '11'], edge: null });
+    // The fixture is only a proof while the two answers differ.
+    assert.notDeepEqual([...asGiven.keys].sort(), [...byLeads.keys].sort());
+    const stamps = listRowStamps(render(twoUnitDocument, { selected: ['22', '12'] }));
+    assert.ok(stamps.size > 0, 'the list drew no row');
+    for (const [key, stamped] of stamps) assert.equal(stamped, asGiven.keys.has(key), `row ${key}`);
+    assert.equal(stamps.get('33'), true, "33 touches only the lead 11, so it recedes");
+    assert.equal(stamps.get('31'), false, '31 blocks the member 12, so it stays');
+  });
+
+  it('puts the tab stop on the most recently added member it draws', () => {
+    const scene = linearScene(normalizeDocument(twoUnitDocument).document, { selected: ['31', '22'] });
+    assert.match(renderMarkup(scene.root), /<li class="ig-slot" data-ig-key="21"[^>]*tabindex="0"/);
+    // Two members of one unit around a member of another: the last added is 11.
+    const shared = linearScene(normalizeDocument(twoUnitDocument).document, { selected: ['12', '22', '11'] });
+    assert.match(renderMarkup(shared.root), /<li class="ig-slot" data-ig-key="11"[^>]*tabindex="0"/);
   });
 });

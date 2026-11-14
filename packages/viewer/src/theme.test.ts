@@ -609,3 +609,25 @@ describe('a receded line or station measured against the contrast bars', () => {
     }
   });
 });
+
+describe('a selected row and an inverted node measured against the text bar', () => {
+  it('keeps every text colour on a selected row (--ig-surface) and the inverted label (--ig-bg on --ig-text) at 4.5:1 or more, in the default and paper themes', () => {
+    // "Measure every text colour on a selected row and the inverted label in every shipped theme, and pin the ratios."
+    // A selected row fills with --ig-surface; a selected node or card fills with --ig-text and labels in --ig-bg.
+    // --ig-text-muted on --ig-surface clears the bar in both themes, so muted text on a selected row stays muted.
+    const expected = {
+      default: { '--ig-text': '15.20', '--ig-text-body': '8.97', '--ig-text-muted': '4.65', inverted: '16.50' },
+      paper: { '--ig-text': '17.40', '--ig-text-body': '11.40', '--ig-text-muted': '6.79', inverted: '16.67' },
+    };
+    for (const [name, theme] of [['default', defaultTheme], ['paper', paperTheme]] as const) {
+      for (const text of TEXT) {
+        const ratio = contrastRatio(theme.colors[text], theme.colors['--ig-surface']);
+        assert.ok(ratio >= 4.5, `${name}: ${text} on a selected row measures ${ratio.toFixed(2)}:1`);
+        assert.equal(ratio.toFixed(2), expected[name][text], `${name}: ${text} on a selected row`);
+      }
+      const inverted = contrastRatio(theme.colors['--ig-bg'], theme.colors['--ig-text']);
+      assert.ok(inverted >= 4.5, `${name}: the inverted label measures ${inverted.toFixed(2)}:1`);
+      assert.equal(inverted.toFixed(2), expected[name].inverted, `${name}: the inverted label`);
+    }
+  });
+});

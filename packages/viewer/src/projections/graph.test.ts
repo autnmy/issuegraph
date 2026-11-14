@@ -15,6 +15,7 @@ import {
   heldButRankedDocument,
   heldTogetherDocument,
   hostedFixtureDocument,
+  twoUnitDocument,
 } from '../testing/fixtures.ts';
 import { recedingOf } from '../recede.ts';
 import { renderViewer } from '../render.ts';
@@ -1696,5 +1697,42 @@ describe('the graph projection recedes what a selection does not touch', () => {
       assert.ok([...list.values()].some(Boolean), `${name}: no list row receded, so this proves nothing`);
       assert.ok([...list.values()].some((stamped) => !stamped), `${name}: every list row receded, so this proves nothing`);
     }
+  });
+});
+
+describe('a selected set on the canvas', () => {
+  const cardTag = (markup: string, key: string): string => {
+    const tag = new RegExp(`<li class="ig-rail-row" data-ig-key="${key}"[^>]*>`).exec(markup)?.[0];
+    assert.ok(tag !== undefined, `no card was drawn for ${key}`);
+    return tag;
+  };
+
+  it('marks every member of a set holding members of two units, and recedes by the set as given', () => {
+    const normalized = normalizeDocument(twoUnitDocument).document;
+    const markup = render(twoUnitDocument, { selected: ['22', '12'] });
+    const asGiven = recedingOf(normalized, { key: ['22', '12'], edge: null });
+    for (const key of ['11', '21']) assert.match(cardTag(markup, key), /aria-current="true"/, `the unit card ${key}`);
+    for (const key of ['31', '32', '33', '34']) {
+      const tag = cardTag(markup, key);
+      assert.match(tag, /aria-current="false"/, `the card ${key}`);
+      assert.equal(tag.includes('data-recede="true"'), asGiven.keys.has(key), `the card ${key} disagrees with recedingOf`);
+    }
+    assert.match(cardTag(markup, '33'), /data-recede="true"/, '33 touches only the lead 11, so it recedes');
+    assert.equal(cardTag(markup, '31').includes('data-recede'), false, '31 blocks the member 12, so it stays');
+  });
+
+  it('puts the tab stop on the unit of the most recently added member', () => {
+    // 12 and 11 share unit A and 22 sits between them, so A was picked last.
+    const markup = render(twoUnitDocument, { selected: ['12', '22', '11'] });
+    assert.match(cardTag(markup, '11'), /tabindex="0"/);
+    assert.match(cardTag(markup, '21'), /tabindex="-1"/);
+  });
+
+  it('recedes a line exactly when it touches no selected issue', () => {
+    const normalized = normalizeDocument(twoUnitDocument).document;
+    const asGiven = recedingOf(normalized, { key: ['22', '12'], edge: null });
+    assert.equal(asGiven.edges.has(edgeIdentity('serialize-with', '11', '33')), true);
+    assert.equal(asGiven.edges.has(edgeIdentity('blocked-by', '12', '31')), false);
+    assert.equal(asGiven.edges.has(edgeIdentity('blocked-by', '22', '32')), false);
   });
 });

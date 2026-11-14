@@ -48,12 +48,26 @@ describe('the structural stylesheet', () => {
     // a reader could see — and a pointer does not normally raise
     // `:focus-visible`, so the channel most likely to make that selection had no
     // visible state at all.
+    //
+    // A SELECTED NODE IS INVERTED: filled with the text colour, its label in
+    // --ig-bg, and a selected card the same, so a selection reads alike
+    // whichever surface drew it.
     const css = withoutComments(viewerStylesheet);
     assert.match(css, /\.ig-node-group\[aria-current='true'\] \.ig-node \{/);
     assert.match(
       css,
-      /\.ig-node-group\[aria-current='true'\] \.ig-node \{[^}]*--ig-accent/,
-      'the selected canvas node does not use the accent the rail selection uses',
+      /\.ig-node-group\[aria-current='true'\] \.ig-node \{[^}]*fill: var\(--ig-text\);/,
+      'the selected canvas node is not filled with --ig-text',
+    );
+    assert.match(
+      css,
+      /\.ig-node-group\[aria-current='true'\] \.ig-node-label \{[^}]*fill: var\(--ig-bg\);/,
+      'the selected canvas node does not label in --ig-bg',
+    );
+    assert.match(
+      css,
+      /\.ig-rail-row\[aria-current='true'\] \.ig-card \{[^}]*background: var\(--ig-text\);[^}]*color: var\(--ig-bg\);/,
+      'the selected card is not inverted',
     );
   });
   it('places every row child the four grid columns cannot hold', () => {

@@ -50,7 +50,13 @@ export interface MountEvent {
   preventDefault?(): void;
 }
 
-export interface MountOptions extends RenderOptions {
+/**
+ * The mount holds ONE selected key until it builds a set from input, so its
+ * `selected` stays a single key while the render options take a set.
+ */
+export interface MountOptions extends Omit<RenderOptions, 'selected'> {
+  /** The selected key to start from, if any — an issue or a relationship. */
+  readonly selected?: string | null | undefined;
   /** Called when a key is selected — by click, `Enter`, or `select()`. */
   readonly onSelect?: ((key: string | null) => void) | undefined;
   /** Called with the hovered key, and with `null` when nothing is hovered. */

@@ -905,7 +905,12 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   );
 }
 
+/* A SELECTED ROW IS FILLED WITH --ig-surface, the stronger of the two
+   surfaces. --ig-surface-2 is what a receded row takes, so a selected row never
+   reads as receded. background-color, not the shorthand, so a held row keeps
+   its hatch when it is selected. */
 .ig-slot[aria-current='true'] {
+  background-color: var(--ig-surface);
   box-shadow: inset var(--ig-band-rail) 0 0 var(--ig-accent);
 }
 
@@ -913,11 +918,18 @@ ${railDensity(".ig-viewer[data-density='dense']")}
    look — so clicking a gutter, excluded or tracker-held node set aria-current on
    the group and changed nothing a reader could see. A pointer does not normally
    raise :focus-visible either, so those selections had no visible state at all
-   on the channel most likely to make them. Same accent the rail uses, so one
-   selection reads the same whichever surface drew it. */
+   on the channel most likely to make them. A SELECTED NODE IS INVERTED — the
+   text colour fills it and its label takes --ig-bg — the same
+   look a selected card takes, so one selection reads the same whichever
+   surface drew it. */
 .ig-node-group[aria-current='true'] .ig-node {
-  stroke: var(--ig-accent);
+  fill: var(--ig-text);
+  stroke: var(--ig-text);
   stroke-width: calc(var(--ig-stroke) * 2);
+}
+
+.ig-node-group[aria-current='true'] .ig-node-label {
+  fill: var(--ig-bg);
 }
 
 /* The rank track: figure over dot, centred, so the title column starts at one
@@ -1339,7 +1351,7 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 /* THE RANKED ROW'S SELECTED BAND, and its fill: one selection, one look,
    whichever part of the list it was made in. */
 .ig-footer-row[aria-current='true'] {
-  background: color-mix(in srgb, var(--ig-accent) var(--ig-tint-fill), transparent);
+  background: var(--ig-surface);
   box-shadow: inset var(--ig-band-rail) 0 0 var(--ig-accent);
 }
 
@@ -1480,9 +1492,23 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   border-color: var(--ig-accent);
 }
 
+/* A SELECTED CARD IS INVERTED: filled with --ig-text, every text on it in
+   --ig-bg. Every descendant is named, because the card's
+   text roles set their own colours and a chip or badge tinted for the light
+   ground would vanish on the dark one. Each member of a selected set is drawn
+   this way; what is outside the set recedes. */
 .ig-rail-row[aria-current='true'] .ig-card {
-  border-color: var(--ig-accent);
+  background: var(--ig-text);
+  border-color: var(--ig-text);
+  border-style: solid;
   box-shadow: 0 0 0 var(--ig-band-rail) color-mix(in srgb, var(--ig-accent) var(--ig-tint-border), transparent);
+  color: var(--ig-bg);
+}
+
+.ig-rail-row[aria-current='true'] .ig-card * {
+  background: transparent;
+  border-color: var(--ig-bg);
+  color: var(--ig-bg);
 }
 
 /* The station column: a disc on the spine, carrying the rank the row would

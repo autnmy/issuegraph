@@ -10,6 +10,7 @@
  */
 
 import type { ElementSpec } from './element.ts';
+import { selectedKeysOf } from './selection.ts';
 
 /** Which projection produced a scene. */
 export type Projection = 'linear' | 'graph' | 'tree';
@@ -122,9 +123,11 @@ export const GROUP_ATTRIBUTE = 'data-ig-group';
 export function resolveFocusKey(
   navigable: readonly string[],
   focused: string | null | undefined,
-  selected: string | null | undefined,
+  selected: string | readonly string[] | null | undefined,
 ): string | null {
   if (focused !== null && focused !== undefined && navigable.includes(focused)) return focused;
-  if (selected !== null && selected !== undefined && navigable.includes(selected)) return selected;
-  return navigable[0] ?? null;
+  // A SET FALLS BACK TO ITS MOST RECENTLY ADDED MEMBER this projection draws:
+  // the last thing the reader picked is what they were looking at.
+  const fallback = [...selectedKeysOf(selected)].reverse().find((key) => navigable.includes(key));
+  return fallback ?? navigable[0] ?? null;
 }
