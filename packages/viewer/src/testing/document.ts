@@ -147,6 +147,13 @@ export class TestElement implements MountElement {
     this.scrollCount += 1;
   }
 
+  /** Whether `other` is this element or one of its descendants, as `Node.contains` answers. */
+  contains(other: SpecNode | null): boolean {
+    let cursor: TestElement | null = other instanceof TestElement ? other : null;
+    while (cursor !== null && cursor !== this) cursor = cursor.parent;
+    return cursor === this;
+  }
+
   /** Call the listeners registered on THIS node. No bubbling: see the header. */
   dispatch(type: string, event: MountEvent = {}): void {
     for (const handler of [...(this.listeners.get(type) ?? [])]) handler(event);
@@ -174,7 +181,33 @@ export class TestElement implements MountElement {
   }
 }
 
+/** A box, as `getBoundingClientRect` reports the two sides the mount reads. */
+export interface TestBox {
+  width: number;
+  height: number;
+}
+
+/**
+ * A container with a laid-out box. No layout is computed: `box` is whatever
+ * the test last set, so a test changes it and then fires a resize.
+ */
+export class MeasuredTestElement extends TestElement {
+  box: TestBox;
+
+  constructor(box: TestBox, ownerDocument: SpecDocument) {
+    super('div', ownerDocument);
+    this.box = box;
+  }
+
+  getBoundingClientRect(): TestBox {
+    return this.box;
+  }
+}
+
 export class TestDocument implements SpecDocument {
+  /** Unset, as on a document built for a test; a test sets it to offer an observer. */
+  defaultView?: Exclude<SpecDocument['defaultView'], undefined>;
+
   createElement(tag: string): SpecElement {
     return new TestElement(tag, this);
   }
@@ -187,8 +220,61 @@ export class TestDocument implements SpecDocument {
     return new TestNode(text);
   }
 
-  /** A detached container to mount into. */
+  /** A detached container to mount into. It has no box, so it is never narrow. */
   createContainer(): TestElement {
     return new TestElement('div', this);
   }
+
+  /** A detached container whose box is `box` until the test changes it. */
+  createMeasuredContainer(box: TestBox): MeasuredTestElement {
+    return new MeasuredTestElement(box, this);
+  }
+}
+
+/** One observer the mount built: what it watches, how often it was disconnected. */
+export interface TestResizeObserver {
+  readonly observed: MountElement[];
+  disconnects: number;
+  observe(target: MountElement): void;
+  disconnect(): void;
+  /** Run the mount's callback, as a browser does after a resize. */
+  fire(): void;
+}
+
+/**
+ * A `ResizeObserver` class to hand a `TestDocument` as its view's, and every
+ * observer built from it, in build order.
+ *
+ * `fire()` still runs the callback after `disconnect()`, because a browser can
+ * deliver a callback it queued before the disconnect, and the mount has to
+ * ignore it.
+ */
+export function testResizeObservers(): {
+  readonly ResizeObserver: new (callback: () => void) => TestResizeObserver;
+  readonly built: readonly TestResizeObserver[];
+} {
+  const built: TestResizeObserver[] = [];
+  class FakeResizeObserver implements TestResizeObserver {
+    readonly observed: MountElement[] = [];
+    disconnects = 0;
+    readonly #callback: () => void;
+
+    constructor(callback: () => void) {
+      this.#callback = callback;
+      built.push(this);
+    }
+
+    observe(target: MountElement): void {
+      this.observed.push(target);
+    }
+
+    disconnect(): void {
+      this.disconnects += 1;
+    }
+
+    fire(): void {
+      this.#callback();
+    }
+  }
+  return { ResizeObserver: FakeResizeObserver, built };
 }

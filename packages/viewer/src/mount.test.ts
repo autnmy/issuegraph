@@ -2277,3 +2277,830 @@ describe('the mount builds and reports a selection set', () => {
     assert.notEqual(handed[0], handed[1], 'two notices shared one object');
   });
 });
+
+import { testResizeObservers } from './testing/document.ts';
+
+describe("more tests", function () {
+it('takes the viewer resize observer only from its container document, never from the global', () => {
+  class OwnBoxElement extends TestElement {
+    box = { width: 800, height: 300 };
+    getBoundingClientRect(): { width: number; height: number } {
+      return this.box;
+    }
+  }
+  type Watch = { callback: () => void; observed: unknown[]; disconnects: number };
+  const watches: Watch[] = [];
+  class OwnDocumentObserver {
+    readonly watch: Watch;
+    constructor(callback: () => void) {
+      this.watch = { callback, observed: [], disconnects: 0 };
+      watches.push(this.watch);
+    }
+    observe(target: unknown): void {
+      this.watch.observed.push(target);
+    }
+    disconnect(): void {
+      this.watch.disconnects += 1;
+    }
+  }
+  // Any use of this global constructor means the mount reached past the document it was given.
+  const globalUses: string[] = [];
+  class GlobalObserver {
+    constructor() {
+      globalUses.push('construct');
+    }
+    observe(): void {
+      globalUses.push('observe');
+    }
+    disconnect(): void {
+      globalUses.push('disconnect');
+    }
+  }
+  const doc = new TestDocument();
+  doc.defaultView = { ResizeObserver: OwnDocumentObserver };
+  const container = new OwnBoxElement('div', doc);
+  const changes: ViewerSelection[] = [];
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'ResizeObserver');
+  Object.defineProperty(globalThis, 'ResizeObserver', { value: GlobalObserver, configurable: true, writable: true });
+  try {
+    const handle = mountViewer(container, twoUnitDocument, {
+      selected: ['31', '33'],
+      onSelectionChange: (selection: ViewerSelection) => changes.push(selection),
+    });
+    assert.deepEqual(handle.state.selected, ['31', '33'], 'a box 800 wide reduced the set');
+    container.box = { width: 500, height: 300 };
+    for (const watch of watches) watch.callback();
+    // The issue: "The viewer mount measures the container it was given through an optional `getBoundingClientRect` on `MountElement`, and takes the resize observer from the container's own document (`ownerDocument.defaultView`), so it reaches no global."
+    assert.equal(
+      watches.filter((watch) => watch.observed.includes(container)).length,
+      1,
+      'no observer from the container document watches the container',
+    );
+    assert.deepEqual(globalUses, [], 'the mount used the global ResizeObserver');
+    assert.equal(handle.state.selected, '33');
+    assert.deepEqual(changes, [{ kind: 'issues', keys: ['33'] }]);
+    handle.destroy();
+  } finally {
+    if (previous === undefined) Reflect.deleteProperty(globalThis, 'ResizeObserver');
+    else Object.defineProperty(globalThis, 'ResizeObserver', previous);
+  }
+});
+
+it('reduces a narrow viewer once at mount when its document offers no observer, without reaching the global one', () => {
+  class NarrowBoxElement extends TestElement {
+    getBoundingClientRect(): { width: number; height: number } {
+      return { width: 500, height: 300 };
+    }
+  }
+  // Any use of this global constructor means the mount fell back past the document it was given.
+  const globalUses: string[] = [];
+  class GlobalObserver {
+    constructor() {
+      globalUses.push('construct');
+    }
+    observe(): void {
+      globalUses.push('observe');
+    }
+    disconnect(): void {
+      globalUses.push('disconnect');
+    }
+  }
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'ResizeObserver');
+  Object.defineProperty(globalThis, 'ResizeObserver', { value: GlobalObserver, configurable: true, writable: true });
+  try {
+    // A document with no view at all, and one whose view has no ResizeObserver.
+    for (const view of [null, {}]) {
+      const doc = new TestDocument();
+      doc.defaultView = view;
+      const container = new NarrowBoxElement('div', doc);
+      const calls: string[] = [];
+      const handle = mountViewer(container, twoUnitDocument, {
+        selected: ['31', '33'],
+        onSelectionChange: (selection: ViewerSelection) => calls.push(`change ${JSON.stringify(selection)}`),
+        onSelect: (key: string | null) => calls.push(`select ${String(key)}`),
+      });
+      // The issue: "A box that can be measured is reduced on mount even when no resize observer is available"
+      assert.equal(handle.state.selected, '33', `defaultView ${JSON.stringify(view)} kept the set`);
+      // The issue: "Both mounts report the reduction once through their callbacks, and a resize callback after `destroy` does nothing"
+      assert.deepEqual(calls, ['change {"kind":"issues","keys":["33"]}', 'select 33']);
+      handle.destroy();
+    }
+    // The issue: "The viewer mount measures the container it was given through an optional `getBoundingClientRect` on `MountElement`, and takes the resize observer from the container's own document (`ownerDocument.defaultView`), so it reaches no global."
+    assert.deepEqual(globalUses, [], 'the mount fell back to the global ResizeObserver');
+  } finally {
+    if (previous === undefined) Reflect.deleteProperty(globalThis, 'ResizeObserver');
+    else Object.defineProperty(globalThis, 'ResizeObserver', previous);
+  }
+});
+
+it('ignores a viewer resize callback that arrives after destroy, and disconnects its observer', () => {
+  class ResizableBoxElement extends TestElement {
+    box = { width: 800, height: 300 };
+    getBoundingClientRect(): { width: number; height: number } {
+      return this.box;
+    }
+  }
+  type Watch = { callback: () => void; observed: unknown[]; disconnects: number };
+  const watches: Watch[] = [];
+  class OwnDocumentObserver {
+    readonly watch: Watch;
+    constructor(callback: () => void) {
+      this.watch = { callback, observed: [], disconnects: 0 };
+      watches.push(this.watch);
+    }
+    observe(target: unknown): void {
+      this.watch.observed.push(target);
+    }
+    disconnect(): void {
+      this.watch.disconnects += 1;
+    }
+  }
+  const doc = new TestDocument();
+  doc.defaultView = { ResizeObserver: OwnDocumentObserver };
+  const container = new ResizableBoxElement('div', doc);
+  const calls: string[] = [];
+  const handle = mountViewer(container, twoUnitDocument, {
+    selected: ['31', '33'],
+    onSelectionChange: (selection: ViewerSelection) => calls.push(`change ${JSON.stringify(selection)}`),
+    onSelect: (key: string | null) => calls.push(`select ${String(key)}`),
+  });
+  const watch = watches.find((candidate) => candidate.observed.includes(container));
+  assert.ok(watch !== undefined, 'no observer from the container document watches the container');
+  handle.destroy();
+  // The issue: "Disconnect the observer on destroy, and ignore a callback that arrives after it, as the existing `destroyed` guard in packages/viewer/src/mount.ts does."
+  assert.equal(watch.disconnects, 1);
+  // A queued callback can still arrive after disconnect(), at a box that would reduce the set.
+  container.box = { width: 500, height: 300 };
+  assert.doesNotThrow(() => watch.callback());
+  // The issue: "Both mounts report the reduction once through their callbacks, and a resize callback after `destroy` does nothing"
+  assert.deepEqual(calls, [], 'a callback after destroy reached the host');
+});
+
+it('reads no window property while the viewer narrows a live set on resize', () => {
+  // The issue: "The viewer mount measures the container it was given through an optional `getBoundingClientRect` on `MountElement`, and takes the resize observer from the container's own document (`ownerDocument.defaultView`), so it reaches no global. Neither reads the window."
+  // Every window name a width check could reach records its read, so a mount that sized itself from the page instead of its own box is caught.
+  const windowNames = ['window', 'self', 'innerWidth', 'innerHeight', 'outerWidth', 'outerHeight', 'matchMedia', 'visualViewport', 'screen', 'devicePixelRatio'];
+  const saved = windowNames.map((name) => ({ name, descriptor: Object.getOwnPropertyDescriptor(globalThis, name) }));
+  const reads: string[] = [];
+  for (const name of windowNames) {
+    Object.defineProperty(globalThis, name, {
+      configurable: true,
+      get: () => {
+        reads.push(name);
+        return undefined;
+      },
+    });
+  }
+  const changes: ViewerSelection[] = [];
+  let handle: ViewerHandle | undefined;
+  try {
+    const doc = new TestDocument();
+    const fakes = testResizeObservers();
+    doc.defaultView = { ResizeObserver: fakes.ResizeObserver };
+    const container = doc.createMeasuredContainer({ width: 800, height: 300 });
+    handle = mountViewer(container, twoUnitDocument, {
+      selected: ['31', '33'],
+      onSelectionChange: (selection: ViewerSelection) => changes.push(selection),
+    });
+    container.box = { width: 500, height: 300 };
+    fakes.built[0]?.fire();
+  } finally {
+    for (const { name, descriptor } of saved) {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, name);
+      else Object.defineProperty(globalThis, name, descriptor);
+    }
+  }
+  assert.ok(handle !== undefined);
+  assert.deepEqual(reads, [], 'the viewer read the window');
+  assert.deepEqual(changes, [{ kind: 'issues', keys: ['33'] }], 'the shrink did not reduce the set to its last-added issue');
+  assert.equal(handle.state.selected, '33');
+  handle.destroy();
+});
+});
+
+describe("more tests 2", function () {
+it('under 640 the viewer stores one issue from a mounted set, and a repeated or widening resize reports and restores nothing', () => {
+  const doc = new TestDocument();
+  const fakes = testResizeObservers();
+  doc.defaultView = { ResizeObserver: fakes.ResizeObserver };
+  const container = doc.createMeasuredContainer({ width: 500, height: 300 });
+  const calls: string[] = [];
+  const handle = mountViewer(container, twoUnitDocument, {
+    selected: ['31', '33'],
+    onSelectionChange: (selection: ViewerSelection) => {
+      calls.push(`change ${JSON.stringify(selection)}`);
+    },
+    onSelect: (key: string | null) => {
+      calls.push(`select ${String(key)}`);
+    },
+  });
+  const marked = (): Set<string | null> =>
+    new Set(
+      container
+        .descendants()
+        .filter((element) => element.getAttribute('aria-current') === 'true')
+        .map((element) => element.getAttribute(KEY_ATTRIBUTE)),
+    );
+  try {
+    // The issue: "A box narrower than 640 reduces a multi-issue selection to its most recently added issue, on mount and on every resize, and an add there leaves one issue."
+    // The issue: "Both mounts report the reduction once through their callbacks, and a resize callback after `destroy` does nothing"
+    assert.deepEqual(calls, [`change ${JSON.stringify({ kind: 'issues', keys: ['33'] })}`, 'select 33']);
+    assert.equal(handle.state.selected, '33');
+    const observer = fakes.built[0];
+    assert.ok(observer !== undefined, 'no resize observer was built from the container document');
+    // A second callback at the same narrow box finds one issue already stored, so it has nothing to report.
+    observer.fire();
+    // The issue: "An add while narrow leaves one issue, and growing back restores nothing"
+    container.box = { width: 800, height: 300 };
+    observer.fire();
+    assert.equal(calls.length, 2, 'a repeated or widening resize reported a second change');
+    assert.equal(handle.state.selected, '33');
+    assert.deepEqual(marked(), new Set(['33']));
+  } finally {
+    handle.destroy();
+  }
+});
+
+it('under 640 the viewer reduces a live two-issue set once when its box shrinks to 639, and 640 keeps the set', () => {
+  const doc = new TestDocument();
+  const fakes = testResizeObservers();
+  doc.defaultView = { ResizeObserver: fakes.ResizeObserver };
+  const container = doc.createMeasuredContainer({ width: 800, height: 300 });
+  const calls: string[] = [];
+  const handle = mountViewer(container, twoUnitDocument, {
+    selected: ['31', '33'],
+    onSelectionChange: (selection: ViewerSelection) => {
+      calls.push(`change ${JSON.stringify(selection)}`);
+    },
+    onSelect: (key: string | null) => {
+      calls.push(`select ${String(key)}`);
+    },
+  });
+  try {
+    assert.deepEqual(calls, []);
+    assert.deepEqual(handle.state.selected, ['31', '33']);
+    const observer = fakes.built[0];
+    assert.ok(observer !== undefined, 'no resize observer was built from the container document');
+    // The issue: "Width 639 reduces and 640 does not."
+    container.box = { width: 640, height: 300 };
+    observer.fire();
+    assert.deepEqual(calls, []);
+    assert.deepEqual(handle.state.selected, ['31', '33']);
+    container.box = { width: 639, height: 300 };
+    observer.fire();
+    // The issue: "Both mounts report the reduction once through their callbacks, and a resize callback after `destroy` does nothing"
+    assert.deepEqual(calls, [`change ${JSON.stringify({ kind: 'issues', keys: ['33'] })}`, 'select 33']);
+    assert.equal(handle.state.selected, '33');
+    observer.fire();
+    assert.equal(calls.length, 2, 'a repeated callback at the same narrow box reported again');
+    assert.equal(handle.state.selected, '33');
+  } finally {
+    handle.destroy();
+  }
+});
+
+it('under 640 each Cmd-click on the viewer stores only the clicked issue, and widening keeps it', () => {
+  const doc = new TestDocument();
+  const fakes = testResizeObservers();
+  doc.defaultView = { ResizeObserver: fakes.ResizeObserver };
+  const container = doc.createMeasuredContainer({ width: 500, height: 300 });
+  const calls: string[] = [];
+  const handle = mountViewer(container, twoUnitDocument, {
+    selected: '31',
+    onSelectionChange: (selection: ViewerSelection) => {
+      calls.push(`change ${JSON.stringify(selection)}`);
+    },
+    onSelect: (key: string | null) => {
+      calls.push(`select ${String(key)}`);
+    },
+  });
+  const row = (key: string) => {
+    const found = container
+      .descendants()
+      .find((element) => element.getAttribute(KEY_ATTRIBUTE) === key && element.getAttribute('tabindex') !== null);
+    assert.ok(found !== undefined, `no row was drawn for ${key}`);
+    return found;
+  };
+  try {
+    // The issue: "An add while narrow leaves one issue, and growing back restores nothing"
+    container.dispatch('click', { target: row('33'), metaKey: true });
+    assert.deepEqual(calls, [`change ${JSON.stringify({ kind: 'issues', keys: ['33'] })}`, 'select 33']);
+    assert.equal(handle.state.selected, '33');
+    container.dispatch('click', { target: row('34'), metaKey: true });
+    assert.deepEqual(calls.slice(2), [`change ${JSON.stringify({ kind: 'issues', keys: ['34'] })}`, 'select 34']);
+    assert.equal(handle.state.selected, '34');
+    container.box = { width: 800, height: 300 };
+    fakes.built[0]?.fire();
+    assert.equal(handle.state.selected, '34', 'growing back restored an earlier issue');
+    assert.equal(calls.length, 4);
+  } finally {
+    handle.destroy();
+  }
+});
+
+it('under 640 with no resize observer the viewer stores the last seeded issue the document carries', () => {
+  const doc = new TestDocument();
+  // No defaultView at all: the box can still be measured, so the mount-time rule applies.
+  const container = doc.createMeasuredContainer({ width: 500, height: 300 });
+  // 'nowhere' names no issue in the document; a reduction that picked it before dropping unknown keys would empty the selection.
+  const handle = mountViewer(container, twoUnitDocument, { selected: ['31', '33', 'nowhere'] });
+  try {
+    // The issue: "A box that can be measured is reduced on mount even when no resize observer is available"
+    assert.equal(handle.state.selected, '33');
+  } finally {
+    handle.destroy();
+  }
+});
+
+it('after destroy a narrowing resize callback leaves the viewer silent, and its observer was disconnected once', () => {
+  const doc = new TestDocument();
+  const fakes = testResizeObservers();
+  doc.defaultView = { ResizeObserver: fakes.ResizeObserver };
+  const container = doc.createMeasuredContainer({ width: 800, height: 300 });
+  const calls: string[] = [];
+  const handle = mountViewer(container, twoUnitDocument, {
+    selected: ['31', '33'],
+    onSelectionChange: (selection: ViewerSelection) => {
+      calls.push(`change ${JSON.stringify(selection)}`);
+    },
+    onSelect: (key: string | null) => {
+      calls.push(`select ${String(key)}`);
+    },
+  });
+  const observer = fakes.built[0];
+  assert.ok(observer !== undefined, 'no resize observer was built from the container document');
+  handle.destroy();
+  container.box = { width: 500, height: 300 };
+  // The issue: "Both mounts report the reduction once through their callbacks, and a resize callback after `destroy` does nothing"
+  assert.doesNotThrow(() => observer.fire());
+  assert.deepEqual(calls, []);
+  // The issue: "Disconnect the observer on destroy, and ignore a callback that arrives after it, as the existing `destroyed` guard in packages/viewer/src/mount.ts does."
+  assert.equal(observer.disconnects, 1);
+});
+});
+
+describe("more tests 3", function () {
+it('a narrow viewer container reduces a seeded set to its last issue during mountViewer when its document has no ResizeObserver', () => {
+  const unset = new TestDocument();
+  const withNull = new TestDocument();
+  withNull.defaultView = null;
+  const withoutObserver = new TestDocument();
+  withoutObserver.defaultView = {};
+  for (const doc of [unset, withNull, withoutObserver]) {
+    const container = doc.createMeasuredContainer({ width: 500, height: 300 });
+    const calls: string[] = [];
+    const handle = mountViewer(container, twoUnitDocument, {
+      selected: ['31', '33'],
+      onSelectionChange: (selection: ViewerSelection) => {
+        calls.push(`change ${JSON.stringify(selection)}`);
+      },
+      onSelect: (key: string | null) => {
+        calls.push(`select ${String(key)}`);
+      },
+    });
+    // The issue: "A box that can be measured is reduced on mount even when no resize observer is available"
+    // The issue: "Both mounts report the reduction once through their callbacks, and a resize callback after `destroy` does nothing"
+    assert.deepEqual(
+      calls,
+      [`change ${JSON.stringify({ kind: 'issues', keys: ['33'] })}`, 'select 33'],
+      'the mount-time reduction was not reported exactly once before mountViewer returned',
+    );
+    assert.equal(handle.state.selected, '33');
+    handle.destroy();
+  }
+});
+
+it('a live two-issue set in the viewer reduces once when its container shrinks from 640 to 639, through the observer on its own document', () => {
+  // The issue: "The viewer mount measures the container it was given through an optional `getBoundingClientRect` on `MountElement`, and takes the resize observer from the container's own document (`ownerDocument.defaultView`), so it reaches no global."
+  assert.equal('ResizeObserver' in globalThis, false, 'this case needs a runtime with no global ResizeObserver');
+  const doc = new TestDocument();
+  const fakes = testResizeObservers();
+  doc.defaultView = { ResizeObserver: fakes.ResizeObserver };
+  const container = doc.createMeasuredContainer({ width: 640, height: 300 });
+  const calls: string[] = [];
+  const handle = mountViewer(container, twoUnitDocument, {
+    selected: ['31', '33'],
+    onSelectionChange: (selection: ViewerSelection) => {
+      calls.push(`change ${JSON.stringify(selection)}`);
+    },
+    onSelect: (key: string | null) => {
+      calls.push(`select ${String(key)}`);
+    },
+  });
+  const watch = fakes.built[0];
+  assert.ok(watch !== undefined, 'the mount built no observer from ownerDocument.defaultView');
+  assert.equal(fakes.built.length, 1);
+  assert.ok(watch.observed.includes(container), 'the observer does not watch the container');
+  // The issue: "Width 639 reduces and 640 does not."
+  assert.deepEqual(calls, [], 'a 640-wide mount reduced the set');
+  watch.fire();
+  assert.deepEqual(calls, [], 'a resize callback at 640 reduced the set');
+  assert.deepEqual(handle.state.selected, ['31', '33']);
+  container.box = { width: 639, height: 300 };
+  watch.fire();
+  // The issue: "A box narrower than 640 reduces a multi-issue selection to its most recently added issue, on mount and on every resize, and an add there leaves one issue."
+  // The issue: "Both mounts report the reduction once through their callbacks, and a resize callback after `destroy` does nothing"
+  assert.deepEqual(calls, [`change ${JSON.stringify({ kind: 'issues', keys: ['33'] })}`, 'select 33']);
+  assert.equal(handle.state.selected, '33');
+  watch.fire();
+  assert.equal(calls.length, 2, 'a second callback at the same narrow box reported again');
+  handle.destroy();
+});
+
+it('an all-zero viewer container reduces nothing at mount or on resize, until it measures 500 wide', () => {
+  const doc = new TestDocument();
+  const fakes = testResizeObservers();
+  doc.defaultView = { ResizeObserver: fakes.ResizeObserver };
+  const container = doc.createMeasuredContainer({ width: 0, height: 0 });
+  const calls: string[] = [];
+  const handle = mountViewer(container, twoUnitDocument, {
+    selected: ['31', '33'],
+    onSelectionChange: (selection: ViewerSelection) => {
+      calls.push(`change ${JSON.stringify(selection)}`);
+    },
+    onSelect: (key: string | null) => {
+      calls.push(`select ${String(key)}`);
+    },
+  });
+  const watch = fakes.built[0];
+  assert.ok(watch !== undefined, 'the mount built no observer from ownerDocument.defaultView');
+  // The issue: "A zero-sized box means no layout and reduces nothing."
+  assert.deepEqual(calls, [], 'an all-zero box reduced the set at mount');
+  watch.fire();
+  assert.deepEqual(calls, [], 'an all-zero box reduced the set on resize');
+  assert.deepEqual(handle.state.selected, ['31', '33']);
+  container.box = { width: 500, height: 300 };
+  watch.fire();
+  assert.deepEqual(calls, [`change ${JSON.stringify({ kind: 'issues', keys: ['33'] })}`, 'select 33']);
+  assert.equal(handle.state.selected, '33');
+  handle.destroy();
+});
+
+it('while the viewer is narrow a Cmd-click or Shift-click leaves the clicked issue, and growing back restores nothing', () => {
+  const doc = new TestDocument();
+  const fakes = testResizeObservers();
+  doc.defaultView = { ResizeObserver: fakes.ResizeObserver };
+  const container = doc.createMeasuredContainer({ width: 500, height: 300 });
+  const calls: string[] = [];
+  const handle = mountViewer(container, twoUnitDocument, {
+    selected: ['31', '33'],
+    onSelectionChange: (selection: ViewerSelection) => {
+      calls.push(`change ${JSON.stringify(selection)}`);
+    },
+    onSelect: (key: string | null) => {
+      calls.push(`select ${String(key)}`);
+    },
+  });
+  const row = (key: string): TestElement => {
+    const found = container
+      .descendants()
+      .find((element) => element.getAttribute(KEY_ATTRIBUTE) === key && element.getAttribute('tabindex') !== null);
+    assert.ok(found !== undefined, `no row was drawn for ${key}`);
+    return found;
+  };
+  const one = (key: string): string[] => [`change ${JSON.stringify({ kind: 'issues', keys: [key] })}`, `select ${key}`];
+  assert.equal(handle.state.selected, '33');
+  calls.length = 0;
+  // The issue: "An add while narrow leaves one issue, and growing back restores nothing"
+  container.dispatch('click', { target: row('31'), metaKey: true });
+  assert.deepEqual(calls, one('31'), 'a Cmd-click while narrow did not leave just the clicked issue, reported once');
+  assert.equal(handle.state.selected, '31');
+  calls.length = 0;
+  container.dispatch('click', { target: row('33'), shiftKey: true });
+  assert.deepEqual(calls, one('33'), 'a Shift-click while narrow did not leave just the clicked issue, reported once');
+  assert.equal(handle.state.selected, '33');
+  calls.length = 0;
+  const watch = fakes.built[0];
+  assert.ok(watch !== undefined, 'the mount built no observer from ownerDocument.defaultView');
+  container.box = { width: 800, height: 300 };
+  watch.fire();
+  assert.deepEqual(calls, [], 'growing back reported a change');
+  assert.equal(handle.state.selected, '33');
+  const marked = container
+    .descendants()
+    .filter((element) => element.getAttribute('aria-current') === 'true')
+    .map((element) => element.getAttribute(KEY_ATTRIBUTE));
+  assert.deepEqual(new Set(marked), new Set(['33']), 'growing back drew an earlier member as selected');
+  handle.destroy();
+});
+
+it('a viewer container with no getBoundingClientRect keeps a seeded set and throws nothing', () => {
+  const doc = new TestDocument();
+  const fakes = testResizeObservers();
+  doc.defaultView = { ResizeObserver: fakes.ResizeObserver };
+  const container = doc.createContainer();
+  const calls: string[] = [];
+  const handle = mountViewer(container, twoUnitDocument, {
+    selected: ['31', '33'],
+    onSelectionChange: (selection: ViewerSelection) => {
+      calls.push(`change ${JSON.stringify(selection)}`);
+    },
+    onSelect: (key: string | null) => {
+      calls.push(`select ${String(key)}`);
+    },
+  });
+  // The issue: "A missing measure means no reduction and no error."
+  assert.deepEqual(calls, []);
+  assert.deepEqual(handle.state.selected, ['31', '33']);
+  for (const watch of fakes.built) watch.fire();
+  assert.deepEqual(calls, [], 'a resize callback on an unmeasured container reduced the set');
+  assert.deepEqual(handle.state.selected, ['31', '33']);
+  handle.destroy();
+});
+
+it('a narrow viewer keeps the last seeded key the document carries when the last given key is unknown', () => {
+  const doc = new TestDocument();
+  const container = doc.createMeasuredContainer({ width: 500, height: 300 });
+  const handle = mountViewer(container, twoUnitDocument, { selected: ['31', '33', 'nowhere'] });
+  // The issue: "A box narrower than 640 reduces a multi-issue selection to its most recently added issue, on mount and on every resize, and an add there leaves one issue."
+  // 'nowhere' names no issue in the document, so the most recently added issue is 33; reducing before the unknown key is dropped would leave nothing selected.
+  assert.equal(handle.state.selected, '33');
+  handle.destroy();
+});
+
+it('a viewer resize callback after destroy reports nothing, and destroy disconnects the observer once', () => {
+  const doc = new TestDocument();
+  const fakes = testResizeObservers();
+  doc.defaultView = { ResizeObserver: fakes.ResizeObserver };
+  const container = doc.createMeasuredContainer({ width: 800, height: 300 });
+  const calls: string[] = [];
+  const handle = mountViewer(container, twoUnitDocument, {
+    selected: ['31', '33'],
+    onSelectionChange: (selection: ViewerSelection) => {
+      calls.push(`change ${JSON.stringify(selection)}`);
+    },
+    onSelect: (key: string | null) => {
+      calls.push(`select ${String(key)}`);
+    },
+  });
+  const watch = fakes.built[0];
+  assert.ok(watch !== undefined, 'the mount built no observer from ownerDocument.defaultView');
+  handle.destroy();
+  assert.equal(watch.disconnects, 1, 'destroy did not disconnect the observer exactly once');
+  container.box = { width: 500, height: 300 };
+  watch.fire();
+  // The issue: "A callback after `destroy` notifies nothing."
+  assert.deepEqual(calls, []);
+});
+});
+
+describe("more tests 4", function () {
+it('R6 mountViewer: a resize callback delivered twice at the same narrow box reports the reduction once', () => {
+  const doc = new TestDocument();
+  const fakes = testResizeObservers();
+  doc.defaultView = { ResizeObserver: fakes.ResizeObserver };
+  const container = doc.createMeasuredContainer({ width: 800, height: 300 });
+  const calls: string[] = [];
+  const handle = mountViewer(container, twoUnitDocument, {
+    selected: ['31', '33'],
+    onSelectionChange: (selection) => calls.push(`change ${JSON.stringify(selection)}`),
+    onSelect: (key) => calls.push(`select ${String(key)}`),
+  });
+  try {
+    assert.deepEqual(calls, [], 'a wide mount changed the set');
+    const observer = fakes.built[0];
+    assert.ok(observer !== undefined, 'no observer was taken from the container document');
+    container.box = { width: 500, height: 300 };
+    // The second callback sees the same narrow box and a set that is already one issue.
+    observer.fire();
+    observer.fire();
+    // The issue: "Both mounts report the reduction once through their callbacks, and a resize callback after `destroy` does nothing"
+    assert.deepEqual(calls, [`change ${JSON.stringify({ kind: 'issues', keys: ['33'] })}`, 'select 33']);
+    assert.equal(handle.state.selected, '33');
+  } finally {
+    handle.destroy();
+  }
+});
+
+it('R7 R13 mountViewer: a resize callback that arrives after destroy notifies nothing, and destroy disconnects the observer once', () => {
+  const doc = new TestDocument();
+  const fakes = testResizeObservers();
+  doc.defaultView = { ResizeObserver: fakes.ResizeObserver };
+  const container = doc.createMeasuredContainer({ width: 800, height: 300 });
+  const calls: string[] = [];
+  const handle = mountViewer(container, twoUnitDocument, {
+    selected: ['31', '33'],
+    onSelectionChange: (selection) => calls.push(`change ${JSON.stringify(selection)}`),
+    onSelect: (key) => calls.push(`select ${String(key)}`),
+  });
+  const observer = fakes.built[0];
+  assert.ok(observer !== undefined, 'no observer was taken from the container document');
+  handle.destroy();
+  container.box = { width: 500, height: 300 };
+  // A browser can still deliver a callback it queued before disconnect(); the fake delivers one here.
+  observer.fire();
+  // The issue: "Both mounts report the reduction once through their callbacks, and a resize callback after `destroy` does nothing"
+  assert.deepEqual(calls, []);
+  // The issue: "Disconnect the observer on destroy, and ignore a callback that arrives after it, as the existing `destroyed` guard in packages/viewer/src/mount.ts does."
+  assert.equal(observer.disconnects, 1);
+});
+
+it('R1 mountViewer: a narrow mount whose seed ends in a key the document lacks keeps the last issue the document carries', () => {
+  const doc = new TestDocument();
+  const container = doc.createMeasuredContainer({ width: 500, height: 300 });
+  const calls: string[] = [];
+  // 'nowhere' names no issue, so reducing before unknown keys are dropped would empty the selection.
+  const handle = mountViewer(container, twoUnitDocument, {
+    selected: ['31', '33', 'nowhere'],
+    onSelectionChange: (selection) => calls.push(`change ${JSON.stringify(selection)}`),
+    onSelect: (key) => calls.push(`select ${String(key)}`),
+  });
+  try {
+    // The issue: "Under 640px the selection is one issue: the editor and the standalone viewer each reduce a set to its most recently added issue when their own root box measures under 640, on mount and on resize"
+    assert.equal(handle.state.selected, '33');
+    assert.deepEqual(calls, [`change ${JSON.stringify({ kind: 'issues', keys: ['33'] })}`, 'select 33']);
+  } finally {
+    handle.destroy();
+  }
+});
+
+it('R5 mountViewer: a narrow resize takes its observer from the container document and never constructs a global ResizeObserver', () => {
+  // A global constructor that counts its uses, so a mount that falls back to it is caught rather than passing silently.
+  let globalBuilt = 0;
+  class GlobalResizeObserver {
+    constructor() {
+      globalBuilt += 1;
+    }
+    readonly observe = (): void => undefined;
+    readonly disconnect = (): void => undefined;
+  }
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'ResizeObserver');
+  Object.defineProperty(globalThis, 'ResizeObserver', { value: GlobalResizeObserver, configurable: true, writable: true });
+  try {
+    const doc = new TestDocument();
+    const fakes = testResizeObservers();
+    doc.defaultView = { ResizeObserver: fakes.ResizeObserver };
+    const container = doc.createMeasuredContainer({ width: 800, height: 300 });
+    const handle = mountViewer(container, twoUnitDocument, { selected: ['31', '33'] });
+    try {
+      container.box = { width: 500, height: 300 };
+      fakes.built[0]?.fire();
+      // The issue: "The viewer mount measures the container it was given through an optional `getBoundingClientRect` on `MountElement`, and takes the resize observer from the container's own document (`ownerDocument.defaultView`), so it reaches no global."
+      assert.equal(globalBuilt, 0, 'the mount constructed the global ResizeObserver');
+      assert.equal(fakes.built.length, 1);
+      assert.equal(fakes.built[0]?.observed[0], container);
+      assert.equal(handle.state.selected, '33');
+    } finally {
+      handle.destroy();
+    }
+  } finally {
+    if (original === undefined) Reflect.deleteProperty(globalThis, 'ResizeObserver');
+    else Object.defineProperty(globalThis, 'ResizeObserver', original);
+  }
+});
+
+it('R2 mountViewer: a narrow container whose document has a null defaultView reduces at mount without error', () => {
+  const doc = new TestDocument();
+  // A detached document reports a null defaultView, so there is no observer to take.
+  doc.defaultView = null;
+  const container = doc.createMeasuredContainer({ width: 500, height: 300 });
+  const calls: string[] = [];
+  const handle = mountViewer(container, twoUnitDocument, {
+    selected: ['31', '33'],
+    onSelectionChange: (selection) => calls.push(`change ${JSON.stringify(selection)}`),
+    onSelect: (key) => calls.push(`select ${String(key)}`),
+  });
+  try {
+    // The issue: "Each mount measures its box and reduces once on mount whenever the box can be measured, and attaches the resize observer only when one exists, so a document without `ResizeObserver` still gets the mount-time rule and loses only the resize watch."
+    assert.deepEqual(calls, [`change ${JSON.stringify({ kind: 'issues', keys: ['33'] })}`, 'select 33']);
+    assert.equal(handle.state.selected, '33');
+  } finally {
+    handle.destroy();
+  }
+});
+
+it('R3 mountViewer: growing back reports and restores nothing, and a Cmd-click once wide builds a set from the kept issue', () => {
+  const doc = new TestDocument();
+  const fakes = testResizeObservers();
+  doc.defaultView = { ResizeObserver: fakes.ResizeObserver };
+  const container = doc.createMeasuredContainer({ width: 500, height: 300 });
+  const calls: string[] = [];
+  const handle = mountViewer(container, twoUnitDocument, {
+    selected: ['31', '33'],
+    onSelectionChange: (selection) => calls.push(`change ${JSON.stringify(selection)}`),
+    onSelect: (key) => calls.push(`select ${String(key)}`),
+  });
+  try {
+    assert.equal(calls.length, 2, 'the mount-time reduction was not reported once');
+    container.box = { width: 800, height: 300 };
+    fakes.built[0]?.fire();
+    // The issue: "An add while narrow leaves one issue, and growing back restores nothing"
+    assert.deepEqual(calls.slice(2), [], 'growing back reported a change');
+    assert.equal(handle.state.selected, '33');
+    // The narrow flag follows the latest measure: a box that grew back takes a set again, so a flag left set would reduce this add.
+    const row31 = container
+      .descendants()
+      .find((element) => element.getAttribute(KEY_ATTRIBUTE) === '31' && element.getAttribute('tabindex') !== null);
+    assert.ok(row31 !== undefined, 'no row was drawn for 31');
+    container.dispatch('click', { target: row31, metaKey: true });
+    assert.deepEqual(calls.slice(2), [`change ${JSON.stringify({ kind: 'issues', keys: ['33', '31'] })}`, 'select 31']);
+  } finally {
+    handle.destroy();
+  }
+});
+
+it('R12 mountViewer: a container with no measure keeps the set through a resize callback, without error', () => {
+  const doc = new TestDocument();
+  const fakes = testResizeObservers();
+  doc.defaultView = { ResizeObserver: fakes.ResizeObserver };
+  // createContainer() has no getBoundingClientRect, while its document still offers an observer.
+  const container = doc.createContainer();
+  const calls: string[] = [];
+  const handle = mountViewer(container, twoUnitDocument, {
+    selected: ['31', '33'],
+    onSelectionChange: (selection) => calls.push(`change ${JSON.stringify(selection)}`),
+    onSelect: (key) => calls.push(`select ${String(key)}`),
+  });
+  try {
+    for (const observer of fakes.built) observer.fire();
+    // The issue: "A missing measure means no reduction and no error."
+    assert.deepEqual(calls, []);
+    assert.deepEqual(handle.state.selected, ['31', '33']);
+  } finally {
+    handle.destroy();
+  }
+});
+});
+
+describe('a narrow viewer keeps focus where the reader had it across a resize reduction', () => {
+  const rowIn = (container: TestElement, key: string): TestElement => {
+    const found = container
+      .descendants()
+      .find((element) => element.getAttribute(KEY_ATTRIBUTE) === key && element.getAttribute('tabindex') !== null);
+    assert.ok(found !== undefined, `no row was drawn for ${key}`);
+    return found;
+  };
+  const focusedRows = (container: TestElement): (string | null)[] =>
+    container
+      .descendants()
+      .filter((element) => element.focusCount > 0)
+      .map((element) => element.getAttribute(KEY_ATTRIBUTE));
+  const mountedWide = () => {
+    const doc = new TestDocument();
+    const fakes = testResizeObservers();
+    doc.defaultView = { ResizeObserver: fakes.ResizeObserver };
+    const container = doc.createMeasuredContainer({ width: 800, height: 300 });
+    const handle = mountViewer(container, twoUnitDocument, { selected: ['31', '33'] });
+    const observer = fakes.built[0];
+    assert.ok(observer !== undefined, 'no observer was taken from the container document');
+    return { doc, container, handle, observer };
+  };
+
+  it('puts focus back on the focused row after a resize reduction while focus was inside, and keeps doing so', () => {
+    const { container, handle, observer } = mountedWide();
+    try {
+      container.dispatch('focusin', { target: rowIn(container, '31') });
+      container.box = { width: 500, height: 300 };
+      observer.fire();
+      assert.equal(handle.state.selected, '33');
+      assert.deepEqual(focusedRows(container), ['33'], 'focus did not land on the drawn row for 33');
+      // Grow back, build a set again, and narrow once more: focus is still inside, so it is put back again.
+      container.box = { width: 800, height: 300 };
+      observer.fire();
+      container.dispatch('click', { target: rowIn(container, '31'), metaKey: true });
+      assert.deepEqual(handle.state.selected, ['33', '31']);
+      container.box = { width: 500, height: 300 };
+      observer.fire();
+      assert.equal(handle.state.selected, '31');
+      assert.deepEqual(focusedRows(container), ['31'], 'a second reduction did not put focus back');
+    } finally {
+      handle.destroy();
+    }
+  });
+
+  it('moves no focus on a resize reduction after focus left the viewer, and keeps it when focus moved within', () => {
+    const left = mountedWide();
+    try {
+      left.container.dispatch('focusin', { target: rowIn(left.container, '31') });
+      const outside = new TestElement('button', left.doc);
+      left.container.dispatch('focusout', { target: rowIn(left.container, '31'), relatedTarget: outside });
+      left.container.box = { width: 500, height: 300 };
+      left.observer.fire();
+      assert.equal(left.handle.state.selected, '33');
+      assert.deepEqual(focusedRows(left.container), [], 'a resize pulled focus into the viewer from the page');
+      assert.equal(outside.focusCount, 0);
+    } finally {
+      left.handle.destroy();
+    }
+    const within = mountedWide();
+    try {
+      within.container.dispatch('focusin', { target: rowIn(within.container, '31') });
+      within.container.dispatch('focusout', {
+        target: rowIn(within.container, '31'),
+        relatedTarget: rowIn(within.container, '34'),
+      });
+      within.container.box = { width: 500, height: 300 };
+      within.observer.fire();
+      assert.deepEqual(focusedRows(within.container), ['33'], 'focus moving between rows counted as leaving');
+    } finally {
+      within.handle.destroy();
+    }
+  });
+
+  it('removes its focus listeners on destroy', () => {
+    const { container, handle } = mountedWide();
+    handle.destroy();
+    assert.equal(container.listeners.get('focusin')?.length ?? 0, 0);
+    assert.equal(container.listeners.get('focusout')?.length ?? 0, 0);
+  });
+});
