@@ -1850,15 +1850,20 @@ function relatedGroupSpec(field: EdgeField, count: number, open: boolean): Eleme
 }
 
 /**
- * What the list says under its rows: that a search matched nothing, or how
- * many matches the 60-row cut left out. A live status, so a reader using a
- * screen reader hears the count change as they type. `null` when neither
- * holds, so a list that shows everything says nothing extra.
+ * The search's status line, right under the field: that a search matched
+ * nothing, or how many matches the 60-row cut left out, and empty otherwise.
+ *
+ * DRAWN WHENEVER THE SEARCH IS, EMPTY OR NOT. A live region that is created
+ * already holding its text is not reliably announced; it has to exist first
+ * and then change. So it is always in the markup beside the field, and
+ * `mountWorkspace` carries the element across redraws (`RELATED_STATUS`), as
+ * it carries §17c's change line, so typing changes its text and nothing else.
  */
-function relatedNoticeSpec(view: Extract<RelatedListView, { kind: 'grouped' }>, words: NarrowWords): ElementSpec | null {
-  if (view.noMatch) return element('p', { class: 'ig-related-empty', role: 'status' }, [words.noMatch]);
-  if (view.omitted > 0) return element('p', { class: 'ig-related-omitted', role: 'status' }, [words.omitted(view.omitted)]);
-  return null;
+export const RELATED_STATUS_CLASS = 'ig-related-status';
+
+function relatedStatusSpec(view: Extract<RelatedListView, { kind: 'grouped' }>, words: NarrowWords): ElementSpec {
+  const said = view.noMatch ? words.noMatch : view.omitted > 0 ? words.omitted(view.omitted) : null;
+  return element('p', { class: RELATED_STATUS_CLASS, role: 'status' }, said === null ? [] : [said]);
 }
 
 /**
@@ -1903,6 +1908,7 @@ function relatedListParts(
       return [relatedRowsSpec(view.rows, subject)];
     case 'grouped': {
       const search = view.search === 'none' ? null : relatedSearchSpec(query, words.narrow);
+      const status = view.search === 'none' ? null : relatedStatusSpec(view, words.narrow);
       const open = view.groups.some((group) => group.open);
       const groups = element(
         'ul',
@@ -1911,15 +1917,13 @@ function relatedListParts(
           element('li', {}, [
             relatedGroupSpec(group.field, group.count, group.open),
             group.open ? search : null,
+            group.open ? status : null,
             group.open ? relatedRowsSpec(view.rows, subject) : null,
-            group.open ? relatedNoticeSpec(view, words.narrow) : null,
           ]),
         ),
       );
       if (open) return [groups];
-      return view.groups.length > 0
-        ? [search, groups]
-        : [search, relatedRowsSpec(view.rows, subject), relatedNoticeSpec(view, words.narrow)];
+      return [search, status, view.groups.length > 0 ? groups : relatedRowsSpec(view.rows, subject)];
     }
   }
 }

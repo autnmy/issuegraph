@@ -2902,17 +2902,20 @@ describe('the Related groups list says what its search cut or did not find', () 
     const omitted = /data-ig-omitted="(\d+)"/.exec(canvas)?.[1];
     assert.ok(omitted !== undefined && Number(omitted) > 0, 'the search cut nothing, so this proves nothing');
     assert.ok(
-      canvas.includes(`<p class="ig-related-omitted" role="status">${omitted} more not shown; narrow the search</p>`),
+      canvas.includes(`<p class="ig-related-status" role="status">${omitted} more not shown; narrow the search</p>`),
       canvas.slice(-400),
     );
   });
 
   it('says a search matched nothing instead of drawing an empty list, and says neither when everything fits', () => {
     const none = canvasOf(renderWorkspace(hub, { ...options, relatedQuery: 'no-such-issue' }).markup);
-    assert.ok(none.includes('<p class="ig-related-empty" role="status">no link matches</p>'));
-    assert.doesNotMatch(none, /ig-related-omitted/);
+    assert.ok(none.includes('<p class="ig-related-status" role="status">no link matches</p>'));
+    assert.doesNotMatch(none, /more not shown/);
     const exact = canvasOf(renderWorkspace(hub, { ...options, relatedQuery: 'TASK-1' }).markup);
     assert.doesNotMatch(exact, /no link matches/);
+    // The status line is drawn, empty, wherever the search is, so it exists before it has anything to say.
+    const idle = canvasOf(renderWorkspace(hub, { ...options, relatedQuery: '' }).markup);
+    assert.ok(idle.includes('<p class="ig-related-status" role="status"></p>'), 'no empty status line beside the search');
   });
 });
 

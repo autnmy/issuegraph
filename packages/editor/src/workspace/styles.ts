@@ -1680,13 +1680,18 @@ ${heldRailDeclarations}
   font-size: var(--ig-font-size-small);
 }
 
-/* The list's own sentences: nothing matched, or how many the 60-row cut left
-   out. Both are muted, at the size of the group counts. */
+/* The list's own sentences: the empty states, and the search's status line
+   (nothing matched, or how many the 60-row cut left out). All muted, at the
+   size of the group counts; an empty status line takes no room. */
 .ig-related-empty,
-.ig-related-omitted {
+.ig-related-status {
   margin: 0;
   color: var(--ig-text-muted);
   font-size: var(--ig-font-size-small);
+}
+
+.ig-related-status:empty {
+  display: none;
 }
 
 /* ONE KEY PER SURFACE, AND THE CANVAS KEEPS IT.
