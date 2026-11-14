@@ -415,6 +415,8 @@ export {
   // AND AGAIN — the layout under 640. `WorkspaceWords.narrow` is required, so a
   // host that cannot name this type cannot build its words at all.
   type NarrowWords,
+  // AND AGAIN — the log under the head. `WorkspaceWords.log` is required too.
+  type LogWords,
   ZONES,
   renderWorkspace,
 } from './workspace/render.ts';

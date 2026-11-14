@@ -124,15 +124,39 @@ export function countWord(count: number, word: string): readonly ElementSpec[] {
 }
 
 /**
+ * What a save did to the order, inside the live region.
+ *
+ * THE ZERO CASE RENDERS, in the summary's own place. An edit that landed and
+ * moved nothing is the finding an owner auditing an encoding most needs, and
+ * drawing nothing for it is the defect this branch prevents. The host's
+ * `unchanged` sentence says "saved" itself, so the saved word leads only the
+ * counts: "Saved: 2 moved · 1 newly held".
+ */
+function summaryParts(summary: ChangeSummary, words: ChangeWords): readonly ElementSpec[] {
+  return summary.unchanged
+    ? [element('p', { class: 'ig-change-unchanged' }, [words.unchanged])]
+    : [
+        element('span', { class: 'ig-change-saved' }, [words.saved]),
+        element(
+          'ul',
+          { class: 'ig-change-parts' },
+          summary.parts.map((part) =>
+            element('li', { class: 'ig-change-part', 'data-facet': part.facet }, [
+              ...countWord(part.count, words.facets[part.facet]),
+            ]),
+          ),
+        ),
+      ];
+}
+
+/**
  * The summary, and the held-order label when the order is being re-evaluated.
  *
- * THE COMPUTING LABEL IS INSIDE THE LIVE REGION, and it was a sibling of it
- * until a reader pointed out that this makes it silent. A pending write CLEARS
- * `lastChange`, so the region is empty in exactly the state the label exists
- * for — a sighted reader gets a greyed rail and a sentence saying why, and a
- * screen-reader user is told nothing at all about the ranks having gone stale.
- * Rendered inside, its appearance IS a change to the region, which is what
- * announces.
+ * THE COMPUTING LABEL IS INSIDE THE LIVE REGION. The first edit after a load
+ * or a dismissal has no summary, so outside the region the label would be the
+ * only sign the ranks have gone stale, and a screen-reader user would not be
+ * told. Rendered inside, its appearance IS a change to the region, which is
+ * what announces.
  *
  * BOTH SURFACES DRAW IT FROM HERE for that reason. `renderReevaluate` had its
  * own copy outside its own region and had the identical defect; one builder
@@ -170,35 +194,16 @@ export function summarySpec(
       // would be re-announced with every summary.
       //
       // It is a role, not a timer. Nothing about it expires and the region
-      // stays put until the next edit or an explicit dismissal.
+      // stays put until a later saved edit or an explicit dismissal.
       element(
         'div',
         { class: 'ig-change-line', role: 'status' },
         [
         // THE HELD LABEL FIRST, and it renders whether or not there is a
-        // summary beside it — a pending write clears `lastChange`, so "held
-        // with no summary" is the ordinary shape of this state rather than an
-        // edge of it.
+        // summary beside it — a pending write leaves an earlier `lastChange`
+        // standing, and the first edit after a load or a dismissal has none.
         options.held ? element('p', { class: 'ig-order-computing' }, [words.computing]) : null,
-        ...(summary === null
-          ? []
-          : [
-              // THE ZERO CASE RENDERS, in the summary's own place. An edit that
-              // landed and moved nothing is the finding an owner auditing an
-              // encoding most needs, and drawing nothing for it is the defect
-              // this branch prevents.
-              summary.unchanged
-                ? element('p', { class: 'ig-change-unchanged' }, [words.unchanged])
-                : element(
-                    'ul',
-                    { class: 'ig-change-parts' },
-                    summary.parts.map((part) =>
-                      element('li', { class: 'ig-change-part', 'data-facet': part.facet }, [
-                        ...countWord(part.count, words.facets[part.facet]),
-                      ]),
-                    ),
-                  ),
-            ]),
+        ...(summary === null ? [] : summaryParts(summary, words)),
         ],
       ),
       // ITS OWN CLASS, not the ladder's `.ig-chip`. That class is defined only

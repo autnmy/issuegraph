@@ -39,6 +39,15 @@ export interface ChangeWords {
    */
   readonly facets: Readonly<Record<ChangeFacet, string>>;
   /**
+   * Leads the counts when a save moved the order — the "Saved:" of
+   * "Saved: 2 moved · 1 newly held". Drawn once, before the first count.
+   *
+   * NOT DRAWN BESIDE {@link ChangeWords.unchanged}, which is a whole sentence
+   * on its own ("Saved. The order did not change."). Leading it with this word
+   * would say "saved" twice.
+   */
+  readonly saved: string;
+  /**
    * Shown, on its own and in the summary's own place, when the edit landed and
    * moved nothing. Not an empty state — the finding.
    */

@@ -3324,7 +3324,13 @@ describe('a failed or conflicted write reaches the panel it was made from', () =
         2,
         'the fixture needs two standing conflicts for "only that card" to mean anything',
       );
-      const drawn = [...page.element.querySelectorAll('.ig-recovery-refresh-error')];
+      // ONE CARD PER PLACEMENT: the log lists both conflicts and the panel
+      // states the one made from `3`, and each says it on the pressed card only.
+      const drawnIn = (name: string): Element[] => [
+        ...(page.zone(name)?.querySelectorAll('.ig-recovery-refresh-error') ?? []),
+      ];
+      assert.equal(drawnIn('header').length, 1, 'the read failure was drawn on the wrong number of log cards');
+      const drawn = drawnIn('inspector');
       assert.equal(drawn.length, 1, 'the read failure was drawn on the wrong number of cards');
       assert.match(drawn[0]?.textContent ?? '', /the tracker did not answer/);
       assert.match(drawn[0]?.textContent ?? '', new RegExp(WORKSPACE_WORDS.recovery.retryFailed));

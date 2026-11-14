@@ -293,30 +293,6 @@ describe('§17c puts the cause in the header, where it cannot scroll away', () =
   });
 });
 
-describe('the package invents no English, so no words means no loop', () => {
-  it('draws neither summary nor chip when the host supplied no change words', () => {
-    // `ChangeWords` refuses a default vocabulary because the store ships counts
-    // so a host writes the sentence itself. A default here would take that
-    // choice back one layer down, so absence draws nothing at all.
-    const result = renderWorkspace(railOf(['b', 'a', 'c']), {
-      words: WORKSPACE_WORDS,
-      change: SWAPPED,
-    });
-    assert.equal(/ig-change-summary/.test(result.markup), false);
-    assert.equal(/ig-delta-chip/.test(result.markup), false);
-    assert.equal(/data-ig-delta/.test(result.markup), false);
-  });
-
-  it('renders identically to a workspace given no change at all', () => {
-    const wordless = renderWorkspace(railOf(['b', 'a', 'c']), {
-      words: WORKSPACE_WORDS,
-      change: SWAPPED,
-    });
-    const changeless = renderWorkspace(railOf(['b', 'a', 'c']), { words: WORKSPACE_WORDS });
-    assert.equal(wordless.markup, changeless.markup);
-  });
-});
-
 describe('a write in flight labels the order and never re-ranks it', () => {
   it('publishes the held status on the root, for the stylesheet to grey', () => {
     const result = renderWorkspace(railOf(['a', 'b', 'c']), {
@@ -361,8 +337,8 @@ describe('a held order is LABELLED, not merely greyed', () => {
   });
 
   it('draws it even with no summary, which is the state a write in flight leaves', () => {
-    // The store clears `lastChange` before it sets the order to held, so this
-    // label is the ONLY thing drawn exactly when the rail is greyest.
+    // The first edit after a load or a dismissal has no summary, so this label
+    // is the ONLY thing drawn exactly when the rail is greyest.
     const result = renderWorkspace(railOf(['a', 'b', 'c']), {
       words: WORDS,
       orderStatus: 'held',
@@ -371,29 +347,9 @@ describe('a held order is LABELLED, not merely greyed', () => {
     assert.match(headerZone(result.markup), /ig-order-computing/);
   });
 
-  it('greys nothing for a wordless host, rather than dimming with no explanation', () => {
-    // The backwards-compatible path. `mountWorkspace` passes the store's status
-    // whatever the host supplied, so without this the 0.12 host that omits
-    // `words.change` gets the greying with the label suppressed — the exact
-    // defect the label exists to prevent, on the one path the optional
-    // vocabulary exists to keep working.
-    const result = renderWorkspace(railOf(['a', 'b']), {
-      words: WORKSPACE_WORDS,
-      orderStatus: 'held',
-    });
-    // ASSERTED AS `data-order`'S ABSENCE RATHER THAN AS A BARE ROOT. §17k gives
-    // the root two more attributes and they are unconditional — the sheet reads
-    // a value, not a presence, so withholding one would read as the opposite
-    // state. The claim here was never "the root is bare": it is that the
-    // greying hook is withheld where its label cannot be drawn, and the second
-    // line below has always been the one that says so.
-    assert.match(result.markup, /^<div class="ig-workspace" data-canvas=/);
-    assert.equal(/data-order/.test(result.markup), false);
-  });
-
   it('draws the label INSIDE the live region, or nothing announces it', () => {
-    // A pending write clears `lastChange`, so the region is empty in exactly
-    // the state this label is for. Drawn as a SIBLING of the region it is
+    // The first edit after a load has no summary, so the region is empty in
+    // exactly the state this label is for. Drawn as a SIBLING of the region it is
     // silent: a sighted reader gets the greyed rail and the sentence, and a
     // screen-reader user is told nothing about the ranks having gone stale.
     const header = headerZone(

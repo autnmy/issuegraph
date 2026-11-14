@@ -88,6 +88,7 @@ import type {
   OrderChange,
   OrderStatus,
   ProjectedEdge,
+  Proposal,
   StoredEdge,
 } from '@issuegraph/store';
 
@@ -144,20 +145,18 @@ export type Zone = (typeof ZONES)[number];
 
 export interface WorkspaceWords {
   /**
-   * §17c's vocabulary — the change summary's facets, its dismiss control and
-   * its direction words.
+   * §17c's vocabulary — the change summary's facets, its saved lead, its
+   * dismiss control and its direction words.
    *
-   * OPTIONAL, AND ITS ABSENCE DRAWS NOTHING rather than drawing a default.
-   * `ChangeWords` states the doctrine and this obeys it exactly: the store
-   * ships the change as COUNTS so a host writes the sentence in its own
-   * language, and a default supplied here would take that choice back one layer
-   * down. So a host that has not supplied these gets no summary and no chips —
-   * not an English summary it cannot translate.
-   *
-   * It is the one shape that also keeps this a non-breaking addition: every
-   * host built against 0.12 renders exactly as it did.
+   * REQUIRED, because the log under the head always says whether the order is
+   * held and what the last save did to it. `ChangeWords` states the doctrine:
+   * the store ships the change as COUNTS so a host writes the sentence in its
+   * own language, and a default supplied here would take that choice back one
+   * layer down.
    */
-  readonly change?: ChangeWords | undefined;
+  readonly change: ChangeWords;
+  /** The log under the head: the writes still saving, in the host's words. */
+  readonly log: LogWords;
   /**
    * What the workspace says, to assistive technology, while its first read is
    * in flight — "Loading your issues". The placeholder itself has no words;
@@ -465,11 +464,11 @@ export interface WorkspaceWords {
   /**
    * The canvas toolbar's words — frame 17a's caption over the graph.
    *
-   * OPTIONAL, AND ITS ABSENCE DRAWS NO TOOLBAR, on `change`'s reasoning
-   * exactly: a required member here would break every host built against the
-   * current version, and a default supplied here would be this package writing
-   * an English caption for a host that may not speak English. So a host that
-   * has not worded the row gets the canvas it already had.
+   * OPTIONAL, AND ITS ABSENCE DRAWS NO TOOLBAR: a required member here would
+   * break every host built against the current version, and a default
+   * supplied here would be this package writing an English caption for a host
+   * that may not speak English. So a host that has not worded the row gets the
+   * canvas it already had.
    */
   readonly canvas?: CanvasWords | undefined;
   /**
@@ -623,6 +622,30 @@ export interface NarrowWords {
   readonly omitted: (count: number) => string;
   /** What the Related groups list says when a search matched nothing. */
   readonly noMatch: string;
+}
+
+/**
+ * The words the log under the head names a saving write with.
+ *
+ * A write is named as its operation, its kind and its two ends. The ends are
+ * the issue refs themselves, so only the operation and the kind need words.
+ *
+ * KEYED BY THE STORE'S OWN VOCABULARIES, `Proposal['op']` and `EdgeKind`, so
+ * a new operation or kind fails a host's build here rather than drawing a
+ * bare ref. The viewer's fixed kind labels are not reused: they are the
+ * package's English, and the log is worded by the host.
+ */
+export interface LogWords {
+  /** Names the list of writes for assistive technology. */
+  readonly label: string;
+  /** Leads an entry whose write has not settled yet. */
+  readonly saving: string;
+  /** One word per operation a write can carry. */
+  readonly ops: Readonly<Record<Proposal['op'], string>>;
+  /** Sits between a retyped edge and the kind it is changed to. */
+  readonly becomes: string;
+  /** One word per relationship kind. */
+  readonly kinds: Readonly<Record<EdgeKind, string>>;
 }
 
 export interface RecoveryWords {
@@ -1436,9 +1459,6 @@ function severityForRow(
  *
  * THE WORDS TRAVEL WITH THE CHIP rather than being closed over separately, so
  * a row can only be marked by a caller that actually has a vocabulary for it.
- * Without `words.change` there is no `RowDelta` to hand out at all, which is
- * how "the package invents no English" is held by the types instead of by a
- * branch someone has to remember.
  */
 interface RowDelta {
   readonly chip: PlacedChip;
@@ -2766,27 +2786,79 @@ function recoveryListSpec(
 /**
  * The log's entries that did not save: the ones a reader can still act on.
  *
- * Both placements take their cards from here, so the log and the Inspector
- * cannot come to disagree about which writes failed.
+ * The Inspector takes its cards from the same entries the log draws, so the
+ * two placements cannot come to disagree about which writes failed.
  */
 function recoveriesIn(log: readonly WorkspaceLogEntry[]): readonly WorkspaceRecovery[] {
   return log.flatMap((entry) => (entry.kind === 'pending' ? [] : [entry]));
 }
 
 /**
- * The log under the workspace head: a card for every write that did not save,
- * whichever issue it is about and whether or not that issue is selected.
+ * A logged edge, named: the host's word for its kind, then its two ends.
  *
- * NOT NARROWED BY ANY PANEL. The log speaks for the whole workspace, so a
- * conflict's difference is drawn whole here.
+ * A RAW ID IS ONE PIECE OF TEXT. The landed document no longer holds that
+ * edge, and an id is the store's key rather than a description, so it is
+ * printed whole instead of being split back into a kind and two ends.
+ */
+function loggedEdgeSpecs(edge: WorkspaceLoggedEdge, words: LogWords): readonly ElementSpec[] {
+  return typeof edge === 'string'
+    ? [element('span', {}, [edge])]
+    : [
+        element('span', {}, [words.kinds[edge.kind]]),
+        element('span', { class: 'ig-id' }, [edge.from]),
+        element('span', { class: 'ig-id' }, [edge.to]),
+      ];
+}
+
+/** A write still saving: the saving word, then what the write does. */
+function savingEntrySpec(mutationId: MutationId, write: WorkspaceLoggedWrite, words: LogWords): ElementSpec {
+  return element('li', { class: 'ig-log-entry', 'data-ig-state': 'pending', 'data-mutation': mutationId }, [
+    element('span', {}, [words.saving]),
+    element('span', {}, [words.ops[write.op]]),
+    ...loggedEdgeSpecs(write.edge, words),
+    ...(write.op === 'retype'
+      ? [
+          element('span', {}, [words.becomes]),
+          element('span', {}, [words.kinds[write.nextKind]]),
+        ]
+      : []),
+  ]);
+}
+
+/**
+ * The log under the workspace head: the change line, then one entry per write
+ * still saving or not saved, in the order the writes were made.
+ *
+ * THE CHANGE LINE COMES FIRST AND IS ALWAYS DRAWN. It holds the one live
+ * region the mount carries across a redraw, so it has to exist before there is
+ * anything to say in it. The entry list is not a live region.
+ *
+ * A WRITE THAT DID NOT SAVE IS THE INSPECTOR'S OWN CARD, drawn by
+ * {@link recoveryCard}, so its note, reason and controls cannot differ between
+ * the two placements. It is drawn for every such write, whichever issue it is
+ * about and whether or not that issue is selected, and a conflict's difference
+ * is drawn whole, because the log speaks for no panel.
  */
 function logSpec(
   log: readonly WorkspaceLogEntry[],
-  words: RecoveryWords,
+  changeLine: ElementSpec,
+  words: WorkspaceWords,
   diffOpen: MutationId | null,
-): ElementSpec | null {
-  const list = recoveryListSpec(recoveriesIn(log), words, diffOpen, 'log', null);
-  return list === null ? null : element('div', { class: 'ig-workspace-log' }, [list]);
+): ElementSpec {
+  return element('div', { class: 'ig-workspace-log' }, [
+    changeLine,
+    log.length === 0
+      ? null
+      : element(
+          'ul',
+          { class: 'ig-recovery-list', 'aria-label': words.log.label },
+          log.map((entry) =>
+            entry.kind === 'pending'
+              ? savingEntrySpec(entry.mutationId, entry.write, words.log)
+              : recoveryCard(entry, words.recovery, diffOpen, 'log', null),
+          ),
+        ),
+  ]);
 }
 
 /**
@@ -3599,9 +3671,6 @@ export function renderWorkspace(
   // scrolled out of the window resolves to no row and draws nowhere — which is
   // right: a chip is a mark ON a row, and there is no row. The summary still
   // counts it, because the summary is about the ORDER and not about the window.
-  //
-  // NO WORDS, NO LOOP. `words.change` is optional and its absence is the whole
-  // reason there is no default sentence here; see `ChangeWords`.
   const changeWords = options.words.change;
   const orderStatus: OrderStatus = options.orderStatus ?? 'settled';
   const log = options.log ?? [];
@@ -3618,19 +3687,9 @@ export function renderWorkspace(
   }
   for (const exclusion of document.order.excluded) inTheOrder.add(exclusion.key);
 
-  const change = reevaluateView(
-    changeWords === undefined ? null : options.change,
-    railRender.scene,
-    orderStatus,
-    inTheOrder,
-  );
+  const change = reevaluateView(options.change, railRender.scene, orderStatus, inTheOrder);
   const deltaByKey = new Map<string, RowDelta>(
-    changeWords === undefined
-      ? []
-      : change.chips.map((chip) => [
-          chip.key,
-          { chip, words: changeWords, kind: deltaKind(chip) },
-        ]),
+    change.chips.map((chip) => [chip.key, { chip, words: changeWords, kind: deltaKind(chip) }]),
   );
 
   // §17d'S PANEL IS AN OVERLAY OVER THE CANVAS, NOT A FOURTH ZONE.
@@ -3698,19 +3757,9 @@ export function renderWorkspace(
     // the stylesheet can reach it in the UNMOUNTED rendering too, so §17c's
     // "greyed one step, and labelled" is drawn by whoever renders rather than
     // only by whoever mounts. Same vocabulary, verbatim, so the two agree.
-    // STAMPED ONLY WHERE THE LABEL CAN BE DRAWN, and the two really are one
-    // treatment. §17c's held state is a greyed rail AND the word saying why —
-    // "a stale-but-labelled order beats a half-computed one" — and half of that
-    // is worse than neither: a dimmed order with no explanation is exactly the
-    // defect the label exists to prevent. `mountWorkspace` passes the store's
-    // status unconditionally, so a host that has not supplied `words.change`
-    // would otherwise get the greying with the label suppressed one branch
-    // below, on the very path the optional vocabulary exists to keep working.
-    //
-    // THE FACT IS NOT LOST TO A HOST. `mount.ts` publishes the same status on
-    // the element the host holds, which is the reader this attribute was never
-    // for: this one is the stylesheet's hook, so it is absent exactly when the
-    // stylesheet must not act.
+    // The greyed rail and the held sentence in the log are one treatment, and
+    // the change words are required, so the sentence is always there to
+    // explain the greying.
     //
     // §17k'S TWO READER DECISIONS RIDE THE SAME ROOT, and for the same reason
     // `data-order` does: the stylesheet is the only party that knows which of
@@ -3718,14 +3767,10 @@ export function renderWorkspace(
     // asked for and each container block reads the one it has a use for.
     // Neither attribute means anything at the width where its zone is a zone.
     //
-    // BOTH ARE ALWAYS STAMPED, unlike `data-order`. That one is withheld where
-    // its label cannot be drawn — a greyed rail with no word is worse than
-    // neither — and these two have no such pair: the value is the full state,
-    // and an absent attribute would read as the strip being open and the
-    // inspector being lifted, which is the opposite of both defaults.
-    changeWords === undefined
-      ? `<div class="ig-workspace"${narrowState}>`
-      : `<div class="ig-workspace" data-order="${orderStatus}"${narrowState}>`,
+    // Both are always stamped: the value is the full state, and an absent
+    // attribute would read as the strip being open and the inspector being
+    // lifted, which is the opposite of both defaults.
+    `<div class="ig-workspace" data-order="${orderStatus}"${narrowState}>`,
     zone(
       'header',
       ids.header,
@@ -3735,35 +3780,29 @@ export function renderWorkspace(
           overlay === null ? '' : renderAuditHeader(overlay, { open: auditOpen }),
           options.words,
         ),
-        // §17c'S SUMMARY LIVES IN THE HEADER, NOT AT THE TOP OF THE RAIL, and
-        // the frame draws them adjacent so this is a real departure worth the
-        // sentence. The rail zone is the SCROLLER — `mount.ts` preserves
-        // `railBefore.scrollTop` across every redraw — so a summary placed
-        // inside it scrolls away from the reader, and §17c's rule is that the
-        // summary "persists until the next edit or an explicit dismiss". A
-        // summary that survives a dismiss but not a scroll is not persistent.
-        //
-        // The header is where #135 settled that a workspace-wide fact is
-        // stated, and it is stated in exactly one zone. The chips carry the
-        // adjacency instead: cause in the header, effect on the row.
-        // "A STALE-BUT-LABELLED ORDER BEATS A HALF-COMPUTED ONE." §17c greys the
-        // held rail and says WHY beside it, and the greying without the label
-        // is the half of that pair which communicates nothing.
-        //
-        // THE LABEL IS `summarySpec`'S, INSIDE ITS LIVE REGION, and it was a
-        // sibling of that region until a reader pointed out this made it
-        // silent. The store clears `lastChange` when a write goes PENDING, so
-        // the region is empty in exactly the state the label exists for — a
-        // sighted reader got the greying and the sentence, and a screen-reader
-        // user was told nothing about the ranks having gone stale.
-        changeWords === undefined
-          ? ''
-          : renderMarkup(summarySpec(change.summary, changeWords, { held: change.held })),
         // THE LOG IS IN THE HEADER because the header is the one zone drawn at
         // every width: under 640 the grid keeps only the header and the view.
         // A write that did not save keeps its Retry and Discard there whatever
         // the width and whatever is selected.
-        specMarkup(logSpec(log, options.words.recovery, options.diffOpen ?? null)),
+        //
+        // §17c'S SUMMARY LEADS THE LOG, NOT THE TOP OF THE RAIL. The rail zone
+        // is the SCROLLER — `mount.ts` preserves `railBefore.scrollTop` across
+        // every redraw — so a summary placed inside it would scroll away from
+        // the reader, and the summary stays until it is dismissed. The chips
+        // carry the adjacency instead: cause in the header, effect on the row.
+        //
+        // "A STALE-BUT-LABELLED ORDER BEATS A HALF-COMPUTED ONE." §17c greys the
+        // held rail and says WHY beside it, and the held sentence is
+        // `summarySpec`'s, inside its live region, so a screen-reader user is
+        // told the ranks have gone stale as well.
+        renderMarkup(
+          logSpec(
+            log,
+            summarySpec(change.summary, changeWords, { held: change.held }),
+            options.words,
+            options.diffOpen ?? null,
+          ),
+        ),
         // THE TABS ARE THE HEADER'S LAST CHILD, because the header is the one
         // zone nothing replaces after this render: the mount swaps the canvas
         // zone's children for the tree, and a tab inside it would vanish there.
