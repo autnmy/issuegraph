@@ -1400,7 +1400,7 @@ export function legend(): ElementSpec {
   // aria-label and draws no caption: content.md rules out the small uppercase
   // label above a group. The accessible name is the word the caption carried.
   return element('fieldset', { class: 'ig-legend', 'aria-label': 'Relationships' }, [
-    ...EDGE_ORDER.map((field) => {
+    ...LEGEND_ORDER.map((field) => {
       const treatment = treatmentFor(field);
       return element('span', { class: 'ig-legend-item' }, [
         legendSample(field),
@@ -1419,15 +1419,30 @@ export function legend(): ElementSpec {
         element('span', { class: 'ig-legend-item' }, [station(fill), element('span', {}, [label])]),
       ),
       // BEING WORKED IS THE FOURTH KEY, as the export's readiness key lists it.
-      // Its mark is the dot a NOW row carries, the one this package draws for
-      // work in flight, so the key matches what it explains.
+      // Its mark is drawn as the dot a NOW row carries, the one this package
+      // draws for work in flight, so the key matches what it explains. A class
+      // of its own, because the NOW row's classes are what tell a host's
+      // render that a job is running, and the key is drawn without one.
       element('span', { class: 'ig-legend-item' }, [
-        element('span', { class: 'ig-now-pulse', 'aria-hidden': 'true' }),
+        element('span', { class: 'ig-legend-working', 'aria-hidden': 'true' }),
         element('span', {}, [BEING_WORKED]),
       ]),
     ]),
   ]);
 }
+
+/**
+ * The relationships, in the order the export's legend draws them (#296). Not
+ * {@link EDGE_ORDER}, the format's field order, which is alphabetical: the
+ * legend leads with the one kind that decides the order.
+ */
+const LEGEND_ORDER: readonly EdgeField[] = Object.freeze([
+  'blocked-by',
+  'serialize-with',
+  'together-with',
+  'duplicate-of',
+  'decomposed-from',
+]);
 
 /** The readiness keys, in the export's words and order (#296). */
 const STATION_KEYS: readonly (readonly [StationFill, string])[] = Object.freeze([

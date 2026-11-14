@@ -257,6 +257,9 @@ describe('the public surface', () => {
       // THE SELECTION SET's gesture rules and stored form, so a host editor
       // builds a set by the same rules the mount does, never a copy of them.
       'isNarrowBox',
+      // The `#` a bare issue number carries wherever a reader sees it (#296),
+      // for `@issuegraph/editor`, which draws refs the way the rail does.
+      'issueNumber',
       // The one construction of "which verb, read from which end". The rail
       // badge and the inspector row draw one edge one zone apart, and a
       // consumer left to write the ternary itself has a second copy whose

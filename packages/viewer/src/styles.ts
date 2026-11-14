@@ -803,8 +803,10 @@ export const viewerStylesheet = `
   white-space: nowrap;
 }
 
-/* The pulse is the frame's, and it is the one moving thing in the panel. */
-.ig-now-pulse {
+/* The pulse is the frame's, and it is the one moving thing in the panel. The
+   legend's "Being worked" key draws the same dot under a class of its own. */
+.ig-now-pulse,
+.ig-legend-working {
   background: var(--ig-accent);
   block-size: var(--ig-space-tight);
   border-radius: 50%;
