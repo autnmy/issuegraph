@@ -1592,7 +1592,7 @@ ${heldRailDeclarations}
    what keeps both off the three wider layouts. The block at the foot of the
    sheet draws them. */
 /* THE DESIGN'S TABS PART: FILLED, NOT BORDERED. An idle tab is muted text on
-   no fill; hover takes the secondary fill (--ig-surface-2); the selected tab
+   no fill; hover takes the secondary fill (--ig-surface-2) with full text; the selected tab
    takes the strong fill (--ig-surface) with full text. 32 tall, 12 inline
    padding, the control radius, 4 apart. The package has no 32 or 4 token, so
    both are written from the spacing scale: 2 x --ig-space-loose and
@@ -1619,6 +1619,7 @@ ${heldRailDeclarations}
 
 .ig-workspace .ig-narrow-tab:hover {
   background: var(--ig-surface-2);
+  color: var(--ig-text);
 }
 
 .ig-workspace .ig-narrow-tab[aria-selected='true'] {

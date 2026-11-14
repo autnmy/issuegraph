@@ -1822,8 +1822,10 @@ describe("the narrow tabs are the design's Tabs part: filled, not bordered", () 
     assert.match(rule('.ig-workspace .ig-narrow-tabs'), /gap:\s*calc\(var\(--ig-space-micro\) \* 2\);/);
   });
 
-  it('fills a hovered tab with the secondary fill and the selected tab with the strong fill and full text', () => {
-    assert.match(rule('.ig-workspace .ig-narrow-tab:hover'), /background:\s*var\(--ig-surface-2\);/);
+  it('fills a hovered tab with the secondary fill and full text, and the selected tab with the strong fill and full text', () => {
+    const hovered = rule('.ig-workspace .ig-narrow-tab:hover');
+    assert.match(hovered, /background:\s*var\(--ig-surface-2\);/);
+    assert.match(hovered, /color:\s*var\(--ig-text\);/);
     const selected = rule(".ig-workspace .ig-narrow-tab[aria-selected='true']");
     assert.match(selected, /background:\s*var\(--ig-surface\);/);
     assert.match(selected, /color:\s*var\(--ig-text\);/);
