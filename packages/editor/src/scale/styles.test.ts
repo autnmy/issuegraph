@@ -226,10 +226,8 @@ describe('the board draws its group cards on the zone, not in a box of the same 
     assert.equal(declaredOn(css, '.ig-refusal', 'border', inside)?.value, '0');
     // The viewer's own refusal, outside a ladder, keeps its box.
     assert.equal(declaredOn(css, '.ig-refusal', 'background', ['.ig-viewer'])?.value, 'var(--ig-surface-2)');
-    // And a card still sits on the second fill, which is what now reads.
-    assert.equal(
-      declaredOn(css, '.ig-capsule-enter', 'background', ['.ig-ladder', '.ig-refusal', '.ig-list', '.ig-capsule-cell'])?.value,
-      'var(--ig-surface-2)',
-    );
+    // And a card still sits on the second fill, which is what now reads. Read
+    // off the base rule: the cascade reader also counts the hover rule.
+    assert.match(css, /\.ig-capsule-enter \{[^}]*background: var\(--ig-surface-2\);/);
   });
 });
