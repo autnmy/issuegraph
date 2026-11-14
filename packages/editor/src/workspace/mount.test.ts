@@ -17,7 +17,7 @@ import { afterEach, beforeEach, describe, it } from 'node:test';
 
 import type { GraphDocument, StoreSnapshot, DataSource } from '@issuegraph/store';
 import { type OrderDeriver, createScriptedSource, createStore, makeEdge } from '@issuegraph/store';
-import { THEME_TOKENS, treatmentFor, viewerStylesheet } from '@issuegraph/viewer';
+import { THEME_TOKENS, treatmentFor } from '@issuegraph/viewer';
 import { JSDOM } from 'jsdom';
 
 import { KIND_KEYS, RELATE_KEY } from '../create/keys.ts';
