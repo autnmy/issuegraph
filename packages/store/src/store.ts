@@ -298,8 +298,17 @@ export function createStore(config: StoreConfig): Store {
    * `publish` derives once, when nothing is pending, and diffs against the
    * rows held since the period began. `landing` stays `undefined` when no
    * write landed, because then nothing was saved and there is no summary.
+   *
+   * `baseline` IS WHAT THE SUMMARY DIFFS AGAINST when somebody else's change
+   * was adopted before any write landed: a read, or an `unchanged` answer. The
+   * held rows predate that change, so diffing against them would credit its
+   * movement to the save. It is derived privately, so the order still holds.
+   * A foreign change adopted AFTER a landing in the same period cannot be told
+   * apart from the save's own movement, and is counted in its summary.
    */
-  let owed: { readonly landing: Mutation | undefined } | undefined;
+  let owed:
+    | { readonly landing: Mutation | undefined; readonly baseline: readonly OrderRow[] | undefined }
+    | undefined;
   /**
    * ONE AUTHORITATIVE OPERATION AT A TIME, and the rest queued.
    *
@@ -388,9 +397,9 @@ export function createStore(config: StoreConfig): Store {
     // empties the pending set — a settle, a refusal, a restored resolve, a
     // read — cannot be missed by a call site that forgot to ask.
     if (owed !== undefined && !anyPending(records)) {
-      const { landing } = owed;
+      const { landing, baseline } = owed;
       owed = undefined;
-      reDerive(landing);
+      reDerive(landing, baseline);
     }
     const nextProjected = project(landed, records, new Set(selection));
     const nextOrderStatus: OrderStatus = anyPending(records) ? 'held' : 'settled';
@@ -462,14 +471,18 @@ export function createStore(config: StoreConfig): Store {
    * escape into the dispatch queue, where it would strand every edit behind it.
    * The previously derived rows stand, `orderError` says why they are stale, and
    * no change summary is emitted for an order nobody computed.
+   *
+   * A SAVE WITH NO SUMMARY CLEARS THE OLD ONE. Left standing, it would sit
+   * beside an order that later saves produced, read as the newest save's effect.
    */
-  function reDerive(cause: Mutation | undefined): void {
-    const previous = rows;
+  function reDerive(cause: Mutation | undefined, baseline: readonly OrderRow[] | undefined): void {
+    const previous = baseline ?? rows;
     let next: readonly OrderRow[];
     try {
       next = derive(landed);
     } catch (thrown) {
       orderError = messageOf(thrown);
+      if (cause !== undefined) lastChange = undefined;
       return;
     }
     // RECOVERING FROM A STALE BASELINE EMITS NO SUMMARY. While `orderError`
@@ -480,7 +493,7 @@ export function createStore(config: StoreConfig): Store {
     const recovering = orderError !== undefined;
     orderError = undefined;
     rows = ownRows(next);
-    if (cause !== undefined && !recovering) lastChange = diffOrder(previous, rows, cause);
+    if (cause !== undefined) lastChange = recovering ? undefined : diffOrder(previous, rows, cause);
   }
 
   /**
@@ -489,7 +502,22 @@ export function createStore(config: StoreConfig): Store {
    * landing keeps the one already recorded.
    */
   function owe(landing: Mutation | undefined): void {
-    owed = { landing: landing ?? owed?.landing };
+    const prior = owed;
+    // Only a held period needs one: otherwise `publish` derives at once.
+    const foreignFirst = landing === undefined && prior?.landing === undefined && anyPending(records);
+    owed = {
+      landing: landing ?? prior?.landing,
+      baseline: foreignFirst ? privateDerive() : prior?.baseline,
+    };
+  }
+
+  /** The order `landed` gives now, without publishing it; none when the deriver throws. */
+  function privateDerive(): readonly OrderRow[] | undefined {
+    try {
+      return ownRows(derive(landed));
+    } catch {
+      return undefined;
+    }
   }
 
   function recordFor(mutationId: MutationId): WriteRecord | undefined {

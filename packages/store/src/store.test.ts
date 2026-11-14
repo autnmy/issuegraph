@@ -3,6 +3,7 @@ import { test } from 'node:test';
 
 import { type GraphDocument, type StoredEdge, edgeId, makeEdge } from './model.ts';
 import type { EdgeGuard, OrderDeriver, OrderRow } from './source.ts';
+import { diffOrder } from './change.ts';
 import { createStore } from './store.ts';
 import { createMemorySource } from './adapters/memory.ts';
 import { createScriptedSource } from './adapters/scripted.ts';
@@ -1771,4 +1772,74 @@ test('a held period that a failed retry-on-latest read closes still derives the 
   assert.equal(after.order.status, 'settled');
   assert.deepEqual(refs(after.order.rows), ['2', '3', '1']);
   assert.equal(after.lastChange?.mutation.mutationId, landed.mutationId);
+});
+
+test('a save the deriver could not summarise clears the old summary, and so does the recovery after it', async () => {
+  // Left standing, the first save's summary would sit beside an order that the
+  // later saves produced, and read as their effect.
+  const source = createScriptedSource(threeOpenIssues(), applyEdit);
+  let explode = false;
+  const store = createStore({
+    source,
+    derive: (document) => {
+      if (explode) throw new Error('the deriver fell over');
+      return simpleDeriver(document);
+    },
+  });
+  await store.hydrate();
+
+  const first = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  await source.whenPending(first.mutationId);
+  source.settleNext('applied');
+  await first.settled;
+  assert.ok(store.getSnapshot().lastChange !== undefined, 'the first save has a summary to clear');
+
+  explode = true;
+  const second = store.propose({ op: 'create', kind: 'blocked-by', from: '3', to: '2' });
+  await source.whenPending(second.mutationId);
+  source.settleNext('applied');
+  await second.settled;
+  assert.ok(store.getSnapshot().orderError !== undefined, 'the order is stale');
+  assert.equal(store.getSnapshot().lastChange, undefined, 'the failed period left the old summary standing');
+
+  explode = false;
+  const third = store.propose({ op: 'create', kind: 'duplicate-of', from: '3', to: '1' });
+  await source.whenPending(third.mutationId);
+  source.settleNext('applied');
+  await third.settled;
+  assert.equal(store.getSnapshot().orderError, undefined, 'the order recovered');
+  assert.equal(store.getSnapshot().lastChange, undefined, 'the recovery period claimed a summary');
+});
+
+test('a redo on the latest version credits only its own movement, not the upstream change it read', async () => {
+  // The read inside the redo adopts somebody else's edge while the order is
+  // held. Diffing the redo's landing against the rows from before that read
+  // would count the upstream movement as the reader's own save.
+  const upstream = withEdge(threeOpenIssues(), 'blocked-by', '2', '3');
+  const scripted = createScriptedSource(upstream, applyEdit);
+  let readable = threeOpenIssues();
+  const store = createStore({
+    source: { hydrate: () => Promise.resolve(readable), dispatch: (mutation) => scripted.dispatch(mutation) },
+    derive: simpleDeriver,
+  });
+  await store.hydrate();
+
+  const handle = store.propose({ op: 'create', kind: 'blocked-by', from: '1', to: '2' });
+  await scripted.whenPending(handle.mutationId);
+  scripted.settleNext({ outcome: 'conflict', upstream });
+  await handle.settled;
+
+  readable = upstream;
+  const redo = store.retryOnLatest(handle.mutationId);
+  await scripted.whenPending(handle.mutationId);
+  scripted.settleNext('applied');
+  await redo.settled;
+
+  const change = store.getSnapshot().lastChange;
+  assert.ok(change !== undefined, 'the redo saved, so it has a summary');
+  const saved = withEdge(upstream, 'blocked-by', '1', '2');
+  const own = diffOrder(simpleDeriver(upstream), simpleDeriver(saved), change.mutation);
+  const credited = diffOrder(simpleDeriver(threeOpenIssues()), simpleDeriver(saved), change.mutation);
+  assert.notDeepEqual(own.deltas, credited.deltas, 'the upstream edge moves nothing, so this test is vacuous');
+  assert.deepEqual(change.deltas, own.deltas);
 });

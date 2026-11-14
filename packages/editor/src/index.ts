@@ -400,6 +400,10 @@ export {
   // of `WorkspaceOptions.log`, so without it a host could build the array and
   // could not name it.
   type WorkspaceLogEntry,
+  // The two shapes a failed or conflicted log entry's required `write` is
+  // built from, exported for the same reason as `WorkspaceLogEntry`.
+  type WorkspaceLoggedEdge,
+  type WorkspaceLoggedWrite,
   type WorkspaceResult,
   type WorkspaceView,
   type WorkspaceWords,
