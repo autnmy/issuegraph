@@ -48,6 +48,7 @@ import { type CanvasMode, type NarrowView, isNarrowTab, pressNarrowTab } from '.
 import {
   INITIAL_SELECTION,
   type WorkspaceSelection,
+  issuesSelection,
   selectedEdgeId,
   selectedKey,
   selectionReducer,
@@ -1160,7 +1161,17 @@ export function reconcileHost(
   // off an edge, and an edge can name an issue the document does not list;
   // asking the question of the selection that came IN would let that one
   // through unchecked, which is the stale name this function exists to refuse.
-  const selection = issueKey !== null && !known.has(issueKey) ? INITIAL_SELECTION : resolved;
+  // A SET KEEPS THE MEMBERS THE DOCUMENT STILL LISTS, in their order, and
+  // becomes one issue or none as members go; it is unchanged, by identity,
+  // while every member stands.
+  const selection =
+    resolved.kind === 'issues'
+      ? resolved.keys.every((key) => known.has(key))
+        ? resolved
+        : issuesSelection(resolved.keys.filter((key) => known.has(key)))
+      : issueKey !== null && !known.has(issueKey)
+        ? INITIAL_SELECTION
+        : resolved;
   const draftStands =
     (state.draft.source === null || known.has(state.draft.source)) &&
     (state.draft.target === null || known.has(state.draft.target));

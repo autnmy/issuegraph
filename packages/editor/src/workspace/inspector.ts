@@ -179,6 +179,12 @@ export interface InspectorView {
          */
         readonly whyRank: InspectorWhyRank | null;
       }
+    /**
+     * Two or more issues: the panel says how many and lists them, in the
+     * order they were added. It offers nothing to do with them — the batch
+     * interface is a later change — so it lists no relationships either.
+     */
+    | { readonly kind: 'issues'; readonly issues: readonly ViewerIssue[] }
     | { readonly kind: 'edge'; readonly relationship: InspectorRelationship };
   /**
    * The relationships on show: every one touching the selected issue, the one
@@ -244,6 +250,21 @@ export function inspectorView(
   // calling it directly gets the same answer the workspace does. Idempotent, so
   // the workspace normalizing first costs a pass and changes nothing.
   const document = normalizeDocument(raw).document;
+
+  // A SET LISTS THE ISSUES IT NAMES, as given and once each, and only those
+  // the document still carries. A set that resolves to one issue is that
+  // issue's panel, so the panel and the rail cannot disagree on what one
+  // selected issue looks like.
+  if (selection.kind === 'issues') {
+    const issues = [...new Set(selection.keys)].flatMap((key) => {
+      const issue = document.issues.find((candidate) => candidate.key === key);
+      return issue === undefined ? [] : [issue];
+    });
+    const [only] = issues;
+    if (only === undefined) return EMPTY;
+    if (issues.length === 1) return inspectorView(raw, { kind: 'issue', key: only.key });
+    return { subject: { kind: 'issues', issues }, relationships: [], filtered: false };
+  }
 
   if (selection.kind === 'issue') {
     // CANONICALIZED TO THE SLOT LEAD, because a together unit is ONE row and

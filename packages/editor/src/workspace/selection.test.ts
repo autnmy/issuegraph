@@ -5,6 +5,7 @@ import {
   type WorkspaceSelection,
   INITIAL_SELECTION,
   selectedKey,
+  selectedKeys,
   selectionReducer,
 } from './selection.ts';
 
@@ -95,5 +96,56 @@ describe('reveal-issue is the directed move, and does not toggle', () => {
       selectionReducer({ kind: 'edge', edgeId: 'e' }, { kind: 'reveal-issue', key: 'b' }),
       { kind: 'issue', key: 'b' },
     );
+  });
+});
+
+describe('a set of issues', () => {
+  const ORDER = ['e', 'b', 'f', 'a', 'd', 'c'];
+  const set = (...keys: string[]): WorkspaceSelection => ({ kind: 'issues', keys });
+
+  it('starts from a plain select and adds and drops with toggle, by exact value and in addition order', () => {
+    let selection = selectionReducer(INITIAL_SELECTION, { kind: 'select-issue', key: 'a' });
+    assert.deepEqual(selection, { kind: 'issue', key: 'a' });
+    selection = selectionReducer(selection, { kind: 'toggle-issue', key: 'c' });
+    assert.deepEqual(selection, set('a', 'c'));
+    selection = selectionReducer(selection, { kind: 'toggle-issue', key: 'b' });
+    assert.deepEqual(selection, set('a', 'c', 'b'));
+    selection = selectionReducer(selection, { kind: 'toggle-issue', key: 'a' });
+    assert.deepEqual(selection, set('c', 'b'));
+    selection = selectionReducer(selection, { kind: 'toggle-issue', key: 'c' });
+    assert.deepEqual(selection, { kind: 'issue', key: 'b' }, 'one issue left is `issue`, never a one-key set');
+    assert.deepEqual(selectionReducer(selection, { kind: 'toggle-issue', key: 'b' }), INITIAL_SELECTION);
+  });
+
+  it('ranges over the whole rank order from the most recently added issue, the clicked one last', () => {
+    // Anchor b (rank 2), click d (rank 5): f and a lie between.
+    assert.deepEqual(selectionReducer(set('c', 'b'), { kind: 'range-issue', key: 'd', order: ORDER }), set('c', 'b', 'f', 'a', 'd'));
+    // Upward from d: a, f, then b.
+    assert.deepEqual(selectionReducer({ kind: 'issue', key: 'd' }, { kind: 'range-issue', key: 'b', order: ORDER }), set('d', 'a', 'f', 'b'));
+    // With no issue to extend from, a range is a replace.
+    assert.deepEqual(selectionReducer(INITIAL_SELECTION, { kind: 'range-issue', key: 'b', order: ORDER }), { kind: 'issue', key: 'b' });
+  });
+
+  it('lets a relationship replace a set, and an issue toggled over a relationship start a new one', () => {
+    assert.deepEqual(selectionReducer(set('a', 'b'), { kind: 'select-edge', edgeId: 'x' }), { kind: 'edge', edgeId: 'x' });
+    assert.deepEqual(selectionReducer({ kind: 'edge', edgeId: 'x' }, { kind: 'toggle-issue', key: 'a' }), { kind: 'issue', key: 'a' });
+  });
+
+  it('limits a set to its most recently added issue, and clears it', () => {
+    assert.deepEqual(selectionReducer(set('c', 'a', 'b'), { kind: 'limit-to-one' }), { kind: 'issue', key: 'b' });
+    assert.deepEqual(selectionReducer({ kind: 'edge', edgeId: 'x' }, { kind: 'limit-to-one' }), { kind: 'edge', edgeId: 'x' });
+    assert.deepEqual(selectionReducer(set('a', 'b'), { kind: 'clear' }), INITIAL_SELECTION);
+  });
+
+  it('replaces the set with the issue on a plain click on one of its members', () => {
+    assert.deepEqual(selectionReducer(set('a', 'b', 'c'), { kind: 'select-issue', key: 'b' }), { kind: 'issue', key: 'b' });
+  });
+
+  it('answers selectedKey with null for a set, and selectedKeys with every member in order', () => {
+    assert.equal(selectedKey(set('a', 'b')), null);
+    assert.deepEqual(selectedKeys(set('a', 'b')), ['a', 'b']);
+    assert.deepEqual(selectedKeys({ kind: 'issue', key: 'a' }), ['a']);
+    assert.deepEqual(selectedKeys({ kind: 'edge', edgeId: 'x' }), []);
+    assert.deepEqual(selectedKeys(INITIAL_SELECTION), []);
   });
 });

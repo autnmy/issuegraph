@@ -5,7 +5,8 @@ import { EDGE_FIELDS, edgeIdentity, isSymmetricEdgeField } from '@issuegraph/cor
 
 import { inspectorView } from './inspector.ts';
 import { INITIAL_SELECTION } from './selection.ts';
-import { backlogOf } from '../testing/workspace.ts';
+import { WORKSPACE_WORDS, backlogOf } from '../testing/workspace.ts';
+import { renderWorkspace } from './render.ts';
 
 const DOCUMENT = backlogOf(6, {
   held: ['i0005'],
@@ -214,5 +215,62 @@ describe('an unresolvable selection renders as nothing, never as last render\'s 
     const view = inspectorView(document, { kind: 'issue', key: 'i0001' });
     if (view.subject.kind !== 'issue') throw new Error('expected an issue subject');
     assert.equal(view.subject.position, null);
+  });
+});
+
+describe('the inspector with a set of issues selected', () => {
+  it('lists exactly the selected issues in the order they were added, with no relationships', () => {
+    for (const keys of [['i0003', 'i0001'], ['i0005', 'i0002', 'i0004']]) {
+      const view = inspectorView(DOCUMENT, { kind: 'issues', keys });
+      assert.equal(view.subject.kind, 'issues');
+      if (view.subject.kind !== 'issues') continue;
+      assert.deepEqual(view.subject.issues.map((issue) => issue.key), keys);
+      assert.deepEqual(view.relationships, []);
+      assert.equal(view.filtered, false);
+    }
+  });
+
+  it('lists only the members the document carries, and is one issue when one is left', () => {
+    const one = inspectorView(DOCUMENT, { kind: 'issues', keys: ['i0002', 'gone'] });
+    assert.equal(one.subject.kind, 'issue');
+    assert.deepEqual(inspectorView(DOCUMENT, { kind: 'issues', keys: ['gone', 'also-gone'] }).subject, { kind: 'none' });
+  });
+});
+
+describe('the inspector drawing a set', () => {
+  /** The inspector's set region, as markup. */
+  function setRegion(markup: string): string {
+    const start = markup.indexOf('<div class="ig-inspector-issues">');
+    assert.ok(start !== -1, 'no set region was drawn');
+    const end = markup.indexOf('</ul></div>', start);
+    return markup.slice(start, end + '</ul></div>'.length);
+  }
+
+  it('says how many for 2 and 3, lists exactly the selected issues, and holds no control', () => {
+    for (const keys of [['i0004', 'i0001'], ['i0002', 'i0006', 'i0003']]) {
+      const { markup } = renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, selection: { kind: 'issues', keys } });
+      const region = setRegion(markup);
+      assert.ok(region.includes(`${String(keys.length)} issues selected`), region);
+      const listed = [...region.matchAll(/<span class="ig-id">([^<]*)<\/span>/g)].map((match) => match[1]);
+      assert.deepEqual(listed, keys);
+      assert.doesNotMatch(region, /<button|<a |data-ig-command|data-ig-key|tabindex/);
+      // No `+ add` and no relationship list for a set, anywhere in the panel.
+      assert.doesNotMatch(markup, /data-ig-command="add"/);
+      assert.doesNotMatch(markup, /class="ig-inspector-relationships"/);
+    }
+  });
+
+  it('draws a title holding markup characters as text', () => {
+    const hostile = {
+      ...DOCUMENT,
+      issues: DOCUMENT.issues.map((issue) =>
+        issue.key === 'i0002' ? { ...issue, title: '<b>"Tom" & <i>Jerry</i></b>' } : issue,
+      ),
+    };
+    const { markup } = renderWorkspace(hostile, { words: WORKSPACE_WORDS, selection: { kind: 'issues', keys: ['i0002', 'i0003'] } });
+    const region = setRegion(markup);
+    // Quotes are safe in a text node, so only the markup characters are escaped.
+    assert.ok(region.includes('&lt;b&gt;"Tom" &amp; &lt;i&gt;Jerry&lt;/i&gt;&lt;/b&gt;'), region);
+    assert.doesNotMatch(region, /<b>|<i>/);
   });
 });

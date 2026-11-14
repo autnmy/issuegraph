@@ -266,6 +266,7 @@ export const WORKSPACE_WORDS: MountWords = {
   loading: 'Loading your issues',
   inspector: 'Inspector',
   nothingSelected: 'Select an issue or a relationship to see its details.',
+  issuesSelected: (count) => `${String(count)} issues selected`,
   clearSelection: 'Clear selection',
   // §17k's strip. Below 1120 the canvas collapses to a handle and this is the
   // handle's label, so it names the ZONE rather than a direction: the button is

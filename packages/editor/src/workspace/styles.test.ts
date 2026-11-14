@@ -483,6 +483,8 @@ const RENDERS = [
     selection: { kind: 'issue', key: 'i0001' },
     relatedGroup: 'blocked-by',
   }),
+  // A SELECTED SET, so the inspector's set list is a drawn state too.
+  renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, selection: { kind: 'issues', keys: ['i0001', 'i0002'] } }),
 ];
 
 /**

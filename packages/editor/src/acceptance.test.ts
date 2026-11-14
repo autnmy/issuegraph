@@ -810,6 +810,7 @@ const WORKSPACE_WORDS: surface.WorkspaceWords = {
   encoded: 'carry relationships',
   inspector: 'the detail panel',
   nothingSelected: 'pick a row to inspect it',
+  issuesSelected: (count: number) => `${String(count)} issues selected`,
   clearSelection: 'clear the selection',
   showCanvas: 'unfold the graph',
   hideCanvas: 'put the graph away',

@@ -351,6 +351,7 @@ export {
   INITIAL_SELECTION,
   selectedEdgeId,
   selectedKey,
+  selectedKeys,
   selectionReducer,
 } from './workspace/selection.ts';
 

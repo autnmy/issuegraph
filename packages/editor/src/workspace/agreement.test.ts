@@ -40,12 +40,13 @@ import { describe, it } from 'node:test';
 
 import { edgeIdentity } from '@issuegraph/core';
 import type { ViewerDocument } from '@issuegraph/viewer';
-import { normalizeDocument, renderViewer } from '@issuegraph/viewer';
+import { normalizeDocument, recedingOf, renderViewer } from '@issuegraph/viewer';
 
 import { WORKSPACE_WORDS, backlogOf } from '../testing/workspace.ts';
 import { inspectorView } from './inspector.ts';
 import { type RailWindowOptions, railWindow } from './rail.ts';
 import { renderWorkspace } from './render.ts';
+import { type WorkspaceSelection, issuesSelection } from './selection.ts';
 
 interface CorpusCase {
   readonly name: string;
@@ -81,6 +82,17 @@ function withEdges(
  * failure report says which property of a document broke the agreement.
  */
 const CORPUS: readonly CorpusCase[] = [
+  {
+    name: 'two together units, so a set can hold members of both',
+    document: backlogOf(12, {
+      unitOf: { i0004: 'i0003', i0008: 'i0007' },
+      edges: [
+        ['together-with', 'i0003', 'i0004'],
+        ['together-with', 'i0007', 'i0008'],
+        ['blocked-by', 'i0004', 'i0001'],
+      ],
+    }),
+  },
   { name: 'a flat backlog', document: backlogOf(8) },
   { name: 'a backlog longer than one window', document: backlogOf(64) },
   {
@@ -395,4 +407,103 @@ describe('the workspace zones name one subject', () => {
       }
     });
   }
+});
+
+/** Every key layer 1 marks current among the given row classes. */
+function currentKeys(markup: string, rowClass: RegExp): readonly string[] {
+  return [...markup.matchAll(/<li class="([^"]+)"[^>]*>/g)]
+    .filter((match) => rowClass.test(match[1] ?? '') && match[0].includes('aria-current="true"'))
+    .map((match) => /data-ig-key="([^"]+)"/.exec(match[0])?.[1] ?? '');
+}
+
+/** Every key layer 1 drew a row for among the given row classes. */
+function drawnKeys(markup: string, rowClass: RegExp): readonly string[] {
+  return [...markup.matchAll(/<li class="([^"]+)"[^>]*data-ig-key="([^"]+)"/g)]
+    .filter((match) => rowClass.test(match[1] ?? ''))
+    .map((match) => match[2] ?? '');
+}
+
+const RAIL_ROWS = /^ig-(?:slot|footer-row)$/;
+const CANVAS_ROWS = /^ig-rail-row$/;
+
+/**
+ * A set of issues for a document: a unit member where there is one, the last
+ * slot's lead, and an excluded issue where there is one — so the set holds
+ * members of different stations, and on the two-unit document members of two
+ * units.
+ */
+function setOf(document: ViewerDocument): readonly string[] {
+  const sound = normalizeDocument(document).document;
+  const members = sound.order.slots.flatMap((slot) => slot.members.filter((member) => member !== slot.lead));
+  const lastLead = sound.order.slots.at(-1)?.lead;
+  const excluded = sound.order.excluded[0]?.key;
+  const firstLead = sound.order.slots[0]?.lead;
+  const keys = [...members, lastLead, excluded, firstLead].filter((key): key is string => key !== undefined);
+  return [...new Set(keys)].slice(0, 4);
+}
+
+describe('the order, the graph and the inspector agree for none, one relationship, one issue and several issues', () => {
+  for (const { name, document } of CORPUS) {
+    it(`agrees on every kind of selection in ${name}`, () => {
+      const sound = normalizeDocument(document).document;
+      const total = sound.order.slots.length;
+      const { stationOf } = renderViewer(document, { projection: 'linear' }).scene;
+      const edge = sound.edges[0];
+      const set = setOf(document);
+      const selections: readonly WorkspaceSelection[] = [
+        { kind: 'none' },
+        ...(edge === undefined ? [] : [{ kind: 'edge' as const, edgeId: edgeIdentity(edge.field, edge.from, edge.to) }]),
+        ...(sound.issues[0] === undefined ? [] : [{ kind: 'issue' as const, key: sound.issues[0].key }]),
+        issuesSelection(set),
+      ];
+      for (const selection of selections) {
+        const result = renderWorkspace(document, {
+          words: WORKSPACE_WORDS,
+          selection,
+          rail: { start: 0, count: Math.max(total, 1) },
+        });
+        const keys = selection.kind === 'issues' ? selection.keys : selection.kind === 'issue' ? [selection.key] : [];
+        const stations = new Set(keys.map((key) => stationOf.get(key) ?? key));
+        const where = `${name}, ${JSON.stringify(selection)}`;
+        const rail = currentKeys(result.markup, RAIL_ROWS);
+        const railDrawn = new Set(drawnKeys(result.markup, RAIL_ROWS));
+        assert.deepEqual(
+          new Set(rail),
+          new Set([...stations].filter((key) => railDrawn.has(key))),
+          `${where}: the rail marks ${JSON.stringify(rail)}`,
+        );
+        const canvas = currentKeys(result.markup, CANVAS_ROWS);
+        const canvasDrawn = new Set(drawnKeys(result.markup, CANVAS_ROWS));
+        assert.deepEqual(
+          new Set(canvas),
+          new Set([...stations].filter((key) => canvasDrawn.has(key))),
+          `${where}: the canvas marks ${JSON.stringify(canvas)}`,
+        );
+        const subject = result.view.inspector.subject;
+        if (selection.kind === 'issues') {
+          assert.equal(subject.kind, 'issues', `${where}: the inspector does not list the set`);
+          if (subject.kind === 'issues') assert.deepEqual(subject.issues.map((issue) => issue.key), selection.keys);
+        } else {
+          assert.equal(subject.kind, selection.kind, `${where}: the inspector resolved ${subject.kind}`);
+        }
+      }
+    });
+  }
+
+  it('recedes the drawn rail rows as the whole document says, for a set with a member outside the window', () => {
+    const document = backlogOf(64, { edges: [['blocked-by', 'i0002', 'i0064'], ['blocked-by', 'i0003', 'i0040']] });
+    const selection = issuesSelection(['i0064', 'i0040']);
+    const result = renderWorkspace(document, { words: WORKSPACE_WORDS, selection, rail: { start: 0, count: 5 } });
+    const drawn = drawnKeys(result.markup, RAIL_ROWS);
+    assert.ok(!drawn.includes('i0064') && !drawn.includes('i0040'), 'the window drew a selected issue, so this proves nothing');
+    const receding = recedingOf(normalizeDocument(document).document, { key: ['i0064', 'i0040'], edge: null });
+    let stamped = 0;
+    for (const [tag] of result.markup.matchAll(/<li class="ig-slot"[^>]*>/g)) {
+      const key = /data-ig-key="([^"]+)"/.exec(tag)?.[1] ?? '';
+      assert.equal(tag.includes('data-recede="true"'), receding.keys.has(key), `the rail row ${key}`);
+      if (tag.includes('data-recede="true"')) stamped += 1;
+    }
+    assert.ok(stamped > 0, 'no drawn row receded');
+    assert.ok(stamped < drawn.length, 'every drawn row receded, so the neighbours i0002 and i0003 were not kept');
+  });
 });
