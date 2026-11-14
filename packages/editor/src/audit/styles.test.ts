@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { THEME_TOKENS } from '@issuegraph/viewer';
+import { THEME_TOKENS, viewerStylesheet } from '@issuegraph/viewer';
 
 import { AUDIT_SEVERITY_ATTRIBUTE } from './surface.ts';
 import { auditStylesheet } from './styles.ts';
+import { countTypeMisses, regressionsOf } from '../testing/counts.ts';
 
 describe('the structural stylesheet', () => {
   /** Every `var(--…)` name the stylesheet references. */
@@ -190,5 +191,25 @@ describe('the leaves size nothing, and ring the stops their markup declares', ()
     assert.ok(ring !== undefined, 'the panel is a tab stop with no focus treatment');
     assert.match(ring, /outline:\s*var\(--ig-focus-ring\) solid var\(--ig-focus\)\s*;/);
     assert.match(ring, /outline-offset:\s*calc\(var\(--ig-focus-ring\) \* -1\)\s*;/);
+  });
+});
+
+describe('the counts this sheet draws are body text with tabular figures (#254)', () => {
+  // The header's finding count and the panel's: counts both, read as numbers,
+  // so neither keeps the mono face an issue key is copied in.
+  const COUNTS = ['.ig-audit-count', '.ig-audit-panel-count'];
+
+  it('sets the body sans, the body size and tabular figures on each, alone and over the viewer sheet', () => {
+    assert.deepEqual(countTypeMisses(auditStylesheet, COUNTS), []);
+    assert.deepEqual(countTypeMisses(`${viewerStylesheet}\n${auditStylesheet}`, COUNTS), []);
+  });
+
+  it('fails a later rule that puts the mono face or a smaller size back', () => {
+    const css = `${viewerStylesheet}\n${auditStylesheet}`;
+    for (const target of COUNTS) {
+      for (const later of regressionsOf(css, target)) {
+        assert.notDeepEqual(countTypeMisses(later, [target]), [], `${target} passed with its old type put back`);
+      }
+    }
   });
 });

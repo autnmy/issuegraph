@@ -170,9 +170,16 @@ export const mountStylesheet = `
   z-index: 2;
 }
 
+/* THE KEYS LINE UNDER THE INSPECTOR, AT THE BODY SIZE. It is a sentence the
+   reader reads, not a key they type, so it takes the body sans with tabular
+   figures, as every count does; muted is what keeps it quiet. The face is
+   stated rather than inherited so no sheet installed above this one can carry
+   it back to mono. */
 .ig-chrome-keys {
   margin: 0;
-  font-size: var(--ig-font-size-small);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
+  font-variant-numeric: tabular-nums;
   color: var(--ig-text-muted);
 }
 

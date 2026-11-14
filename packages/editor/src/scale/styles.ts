@@ -159,14 +159,16 @@ export const scaleLadderStylesheet = `
   color: var(--ig-edge-blocked-by);
 }
 
-/* THE COUNT LEADS, so it is the one part sized to be read down the board rather
-   than within a card. The --ig-font-size-rank token is the one the theme defines
-   for exactly this — "the rank number itself" — so a capsule's count and a rail
-   rank are one size by declaration rather than by coincidence. */
+/* THE COUNT LEADS BY ITS PLACE AND ITS INK, NOT ITS FACE. It is a count, and
+   every count both packages draw is the body sans at the body size with
+   tabular figures (#254), so a column of capsule counts still lines up down the
+   board. It was the rank face and size; a rank is a position in the order, which
+   a capsule's member count is not. It stays first in the card and at full
+   text colour, which is what makes it the part read first. */
 .ig-capsule-size {
   grid-column: 1;
-  font-family: var(--ig-font-mono);
-  font-size: var(--ig-font-size-rank);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
   font-variant-numeric: tabular-nums;
   color: var(--ig-text);
 }
@@ -174,7 +176,12 @@ export const scaleLadderStylesheet = `
 /* END-ALIGNED AND CONTENT-WIDTH. A grid item stretches by default, which drew
    the cycle badge as a full-width bar across the top of the card. The pill is
    the frame's: the blocked count and the cycle sit in one slot, so they read as
-   one kind of thing rather than as a bordered badge beside bare text. */
+   one kind of thing rather than as a bordered badge beside bare text.
+
+   THE BLOCKED COUNT IS A COUNT, so it takes the body type every count takes.
+   The cycle pill also carries layer 1's .ig-badge, whose micro mono is
+   installed first; this rule ties it on specificity and wins on order, so the
+   slot reads one way whichever of the two it holds. */
 .ig-capsule-load {
   grid-column: 2;
   justify-self: end;
@@ -182,8 +189,8 @@ export const scaleLadderStylesheet = `
   border: var(--ig-stroke) solid var(--ig-line);
   border-radius: var(--ig-radius);
   padding: var(--ig-space-micro) var(--ig-space-snug);
-  font-family: var(--ig-font-mono);
-  font-size: var(--ig-font-size-small);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
   font-variant-numeric: tabular-nums;
   color: var(--ig-text-muted);
 }

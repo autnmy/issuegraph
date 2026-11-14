@@ -1,0 +1,234 @@
+/**
+ * A reading of the cascade for one element, shared by the tests that pin the
+ * type of every count the editor draws.
+ *
+ * THE RULE (#254): the keys line and the counts the packages render use the
+ * body sans at the body size with tabular figures, not 11px mono. Each sheet's
+ * test names its own count selectors and asks what the cascade gives each one,
+ * in that sheet alone and after the viewer sheet the editor installs first — so
+ * a later or more specific rule that puts mono or a smaller size back fails in
+ * the test of the sheet that wrote it.
+ *
+ * jsdom applies no stylesheet, so this evaluates the sheet itself, and it reads
+ * PESSIMISTICALLY: a rule counts when its last compound can select the element,
+ * whatever its ancestors are and whatever state it names, because a count that
+ * reads mono in one context is the defect. A container query is taken to hold.
+ * A pseudo-element styles another box, so it never counts.
+ *
+ * Its own file because five sheets' tests read it. The viewer's sheet test
+ * carries its own copy: a package test reaching into a sibling's source is the
+ * seam `check:isolation` keeps.
+ */
+
+/** The three declarations every count and the keys line carry. */
+export const COUNT_TYPE: Readonly<Record<string, string>> = Object.freeze({
+  'font-family': 'var(--ig-font-ui)',
+  'font-size': 'var(--ig-font-size)',
+  'font-variant-numeric': 'tabular-nums',
+});
+
+/**
+ * The counts and the keys line the VIEWER draws. The editor installs the
+ * viewer's sheet beneath its own, so the workspace test asks that no editor
+ * sheet puts mono or a smaller size back on any of them either.
+ */
+export const VIEWER_COUNTS: readonly string[] = Object.freeze([
+  '.ig-count-chip',
+  '.ig-count',
+  '.ig-notice-progress',
+  '.ig-unit-count',
+  '.ig-badge[data-omitted]',
+  '.ig-legend-item',
+  '.ig-legend-keys',
+]);
+
+/** One attribute selector, or one attribute an element carries. */
+interface Attribute {
+  readonly name: string;
+  readonly operator: string | null;
+  readonly value: string | null;
+}
+
+/** One compound selector: what an element must be to match it. */
+interface Compound {
+  /** `null` matches any tag; a target with no tag matches no rule that names one. */
+  readonly tag: string | null;
+  readonly classes: readonly string[];
+  readonly attributes: readonly Attribute[];
+}
+
+/** One declaration and the rule it came from. */
+export interface Declared {
+  readonly value: string;
+  readonly selector: string;
+}
+
+/** How an attribute selector's operator compares the value it names with the one the element holds. */
+const OPERATORS: Readonly<Record<string, (wanted: string, held: string) => boolean>> = {
+  '=': (wanted, held) => held === wanted,
+  '~=': (wanted, held) => held.split(/\s+/).includes(wanted),
+};
+
+/** `text` split at `separator` wherever it is outside every bracket and parenthesis. */
+function splitOutside(text: string, separator: RegExp): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  [...text].forEach((char, index) => {
+    if (char === '(' || char === '[') depth += 1;
+    if (char === ')' || char === ']') depth -= 1;
+    if (depth === 0 && separator.test(char)) {
+      parts.push(text.slice(start, index));
+      start = index + 1;
+    }
+  });
+  return [...parts, text.slice(start)].map((part) => part.trim()).filter((part) => part !== '');
+}
+
+/** The compound a selector styles: its last, outside every `:not(…)` and attribute value. */
+function lastCompound(selector: string): string {
+  return splitOutside(selector, /[\s>+~]/).at(-1) ?? '';
+}
+
+/** A compound with every pseudo-class removed, balanced parentheses and all. A state is taken as reachable. */
+function withoutStates(compound: string): string {
+  let bare = '';
+  let at = 0;
+  while (at < compound.length) {
+    if (compound[at] !== ':') {
+      bare += compound[at] ?? '';
+      at += 1;
+      continue;
+    }
+    at += 1;
+    while (at < compound.length && /[\w-]/.test(compound[at] ?? '')) at += 1;
+    if (compound[at] !== '(') continue;
+    let depth = 0;
+    do {
+      if (compound[at] === '(') depth += 1;
+      if (compound[at] === ')') depth -= 1;
+      at += 1;
+    } while (at < compound.length && depth > 0);
+  }
+  return bare;
+}
+
+function attributeOf(text: string): Attribute | null {
+  const match = /^\[\s*([\w-]+)\s*(?:([~|^$*]?=)\s*(?:'([^']*)'|"([^"]*)"|([^\s\]]+)))?\s*\]$/.exec(text);
+  if (match === null) return null;
+  return { name: match[1] ?? '', operator: match[2] ?? null, value: match[3] ?? match[4] ?? match[5] ?? null };
+}
+
+/** A compound selector's parts, or `null` when it is not one this reading understands, which then styles nothing. */
+function compoundOf(text: string): Compound | null {
+  const bare = withoutStates(text);
+  const tag = /^(?:\*|[a-z][\w-]*)/i.exec(bare)?.[0] ?? null;
+  const rest = bare.slice(tag?.length ?? 0);
+  const parts = rest.match(/\.[\w-]+|\[[^\]]*\]/g) ?? [];
+  if (parts.join('') !== rest || (tag === null && parts.length === 0)) return null;
+  const attributes = parts.filter((part) => part.startsWith('[')).map(attributeOf);
+  if (attributes.some((one) => one === null)) return null;
+  return {
+    tag: tag === '*' ? null : tag,
+    classes: parts.filter((part) => part.startsWith('.')).map((part) => part.slice(1)),
+    attributes: attributes.filter((one): one is Attribute => one !== null),
+  };
+}
+
+/** Whether a rule's compound can select an element that is exactly `element`. */
+function canStyle(rule: Compound, element: Compound): boolean {
+  if (rule.tag !== null && rule.tag !== element.tag) return false;
+  return (
+    rule.classes.every((name) => element.classes.includes(name)) &&
+    rule.attributes.every((wanted) =>
+      element.attributes.some((held) => {
+        if (held.name !== wanted.name) return false;
+        const compare = wanted.operator === null ? undefined : OPERATORS[wanted.operator];
+        // AN OPERATOR THIS READING DOES NOT MODEL MATCHES ON PRESENCE, so it
+        // over-counts a rule rather than missing one.
+        return compare === undefined || compare(wanted.value ?? '', held.value ?? '');
+      }),
+    )
+  );
+}
+
+/**
+ * A selector's specificity, folded to one comparable number: ids, then classes,
+ * attributes and pseudo-classes, then tags. `:not(…)`, `:is(…)` and `:has(…)`
+ * take their argument's, which the counts below reach because the argument is
+ * in the same string.
+ */
+function specificity(selector: string): number {
+  const count = (pattern: RegExp): number => (selector.match(pattern) ?? []).length;
+  return (
+    count(/#[\w-]+/g) * 10000 +
+    count(/\.[\w-]+|\[[^\]]*\]|:(?!not\(|is\(|has\(|where\()[\w-]+/g) * 100 +
+    count(/(?:^|[\s>+~(,])[a-z][\w-]*/gi)
+  );
+}
+
+/** Every rule of a sheet, in source order, with a container query's rules among them. */
+function rulesOf(css: string): { readonly selectors: readonly string[]; readonly body: string }[] {
+  return [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .map((match) => ({ selectors: splitOutside((match[1] ?? '').trim(), /,/), body: match[2] ?? '' }))
+    .filter((rule) => !rule.selectors.some((selector) => selector.startsWith('@')));
+}
+
+/**
+ * What the cascade gives `property` on an element that is exactly `target`:
+ * the most specific rule that can style it, and of those the last. The `font`
+ * shorthand resets all three properties, so it is read as setting each of them.
+ */
+export function declaredOn(css: string, target: string, property: string): Declared | undefined {
+  const element = compoundOf(target);
+  if (element === null) throw new Error(`${target} is not a compound selector`);
+  let winner: (Declared & { readonly rank: number }) | undefined;
+  for (const rule of rulesOf(css)) {
+    const declarations = rule.body
+      .split(';')
+      .filter((line) => line.includes(':'))
+      .map((line) => ({ name: line.slice(0, line.indexOf(':')).trim(), value: line.slice(line.indexOf(':') + 1).trim() }))
+      .filter(({ name }) => name === property || name === 'font');
+    for (const selector of rule.selectors) {
+      if (selector.includes('::')) continue;
+      const styled = compoundOf(lastCompound(selector));
+      if (styled === null || !canStyle(styled, element)) continue;
+      for (const { name, value } of declarations) {
+        const rank = specificity(selector) + (value.includes('!important') ? 1_000_000 : 0);
+        if (winner === undefined || rank >= winner.rank) {
+          winner = { rank, selector, value: name === 'font' ? `font: ${value}` : value };
+        }
+      }
+    }
+  }
+  return winner === undefined ? undefined : { value: winner.value, selector: winner.selector };
+}
+
+/** Every one of `targets` the cascade does not give {@link COUNT_TYPE}, one line per property. */
+export function countTypeMisses(css: string, targets: readonly string[]): string[] {
+  return targets.flatMap((target) =>
+    Object.entries(COUNT_TYPE).flatMap(([property, expected]) => {
+      const declared = declaredOn(css, target, property);
+      return declared?.value === expected
+        ? []
+        : [`${target} reads ${property}: ${declared?.value ?? 'nothing'} (from ${declared?.selector ?? 'no rule'})`];
+    }),
+  );
+}
+
+/**
+ * Two later rules that each put the old type back on `target` — the mono face,
+ * and the small size — written on the selector that wins today, so each ties it
+ * on specificity and wins on order. A reading that passes either is blind.
+ */
+export function regressionsOf(css: string, target: string): string[] {
+  const oldType: readonly (readonly [string, string])[] = [
+    ['font-family', 'var(--ig-font-mono)'],
+    ['font-size', 'var(--ig-font-size-small)'],
+  ];
+  return oldType.map(([property, value]) => {
+    const winner = declaredOn(css, target, property);
+    if (winner === undefined) throw new Error(`no rule sets ${property} on ${target}`);
+    return `${css}\n${winner.selector} {\n  ${property}: ${value};\n}\n`;
+  });
+}

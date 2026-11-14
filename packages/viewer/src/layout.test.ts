@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { type ViewerDocument, normalizeDocument } from './document.ts';
+import { type ViewerDocument, type ViewerEdge, normalizeDocument } from './document.ts';
 import { edgeGeometry, layoutGraph, measureLabel } from './layout.ts';
-import { badgeTexts } from './parts.ts';
+import { ROW_BADGE_BUDGET, badgeTexts } from './parts.ts';
 import { fixtureDocument } from './testing/fixtures.ts';
 import { defaultTheme, extendTheme } from './theme.ts';
 
@@ -261,7 +261,7 @@ describe('layoutGraph', () => {
     // `101` is held, so it carries the two chips that used to lose their glyph.
     const held = document.order.slots.find((slot) => slot.lead === '101');
     assert.ok(held !== undefined);
-    const texts = badgeTexts(document, held, document.byKey.get('101'), ['101']);
+    const { texts } = badgeTexts(document, held, document.byKey.get('101'), ['101']);
     assert.ok(
       texts.some((text) => text.startsWith('⊘')),
       'the not-ready chip is measured without its glyph',
@@ -269,6 +269,87 @@ describe('layoutGraph', () => {
     for (const text of texts) {
       assert.ok(text.length > 0, 'a chip measures as nothing at all');
     }
+  });
+
+  it('reserves the rows its chips take on a graph card with more than ROW_BADGE_BUDGET relationships', () => {
+    // PAST THE BUDGET A CARD DRAWS AN OVERFLOW CHIP, and that chip is a count:
+    // the sheet sets it in the body sans at --ig-font-size while every other
+    // chip stays at the micro size (#254). The packer measured it with
+    // --ig-label-char-width, a ceiling for SMALL text, so where the browser
+    // wraps the chip onto a row of its own the card had kept it on the row
+    // before — one row short, and the next card is drawn over the chip.
+    //
+    // So the card is sized to put the chip on exactly that boundary: it fits
+    // beside the last row of chips at the small size and does not at the body
+    // size. The body width here is the small measure scaled by the theme's own
+    // two sizes, which is a floor on what the chip draws rather than the
+    // packer's ceiling, so this pins the rows and not the constant behind them.
+    // KEYS OF GROWING LENGTH, so the chips differ in width. Twelve chips of one
+    // width fill their rows exactly or leave the last row two or more chips
+    // short, and neither leaves room between the two measures for the search
+    // below to find.
+    const blockers = Array.from({ length: ROW_BADGE_BUDGET + 1 }, (_, index) => `b${'x'.repeat(index)}`);
+    const hubWith = (relationships: number): ReturnType<typeof normalizeDocument>['document'] => {
+      const keys = blockers.slice(0, relationships);
+      const edge = (to: string): ViewerEdge => ({ field: 'blocked-by', from: 'hub', to });
+      return normalizeDocument({
+        issues: [
+          { key: 'hub', title: 'Hub', open: true, priority: 2 },
+          ...keys.map((key) => ({ key, title: `Blocker ${key}`, open: true, priority: 2 })),
+        ],
+        edges: keys.map(edge),
+        order: { slots: [{ rank: 1, lead: 'hub', members: ['hub'], ready: true, holds: [] }], excluded: [] },
+        cycles: [],
+      }).document;
+    };
+    const within = hubWith(ROW_BADGE_BUDGET);
+    const past = hubWith(ROW_BADGE_BUDGET + 1);
+    const chipsOf = (document: ReturnType<typeof normalizeDocument>['document']): ReturnType<typeof badgeTexts> =>
+      badgeTexts(document, document.slotByLead.get('hub'), document.byKey.get('hub'), ['hub']);
+    const { texts } = chipsOf(within);
+    const { texts: pastTexts, overflow } = chipsOf(past);
+    assert.deepEqual(pastTexts, texts, 'the chips under the budget differ, so the two cards cannot be compared');
+    assert.ok(overflow !== null, 'no overflow chip past the budget');
+
+    const metrics = defaultTheme.metrics;
+    const gap = metrics['--ig-space-tight'];
+    // What the sheet draws around a chip's text: its inline padding, its
+    // border, and the gap between a glyph and its label.
+    const chrome = gap * 3 + metrics['--ig-stroke'] * 2;
+    const bodyScale =
+      Number.parseFloat(defaultTheme.type['--ig-font-size']) / Number.parseFloat(defaultTheme.type['--ig-font-size-small']);
+    const chips = texts.map((text) => measureLabel(defaultTheme, text) + chrome);
+    const small = measureLabel(defaultTheme, overflow) + chrome;
+    const body = measureLabel(defaultTheme, overflow) * bodyScale + chrome;
+    /** The rows `widths` take when wrapped into `inner`, `gap` apart: the flex row `.ig-badges` draws. */
+    const rows = (widths: readonly number[], inner: number): number => {
+      let used = 0;
+      let count = 1;
+      for (const width of widths) {
+        if (used > 0 && used + gap + width > inner) {
+          count += 1;
+          used = width;
+        } else {
+          used += (used > 0 ? gap : 0) + width;
+        }
+      }
+      return count;
+    };
+    const spineWidth = Array.from({ length: 600 }, (_, step) => 200 + step).find((width) => {
+      const inner = width - metrics['--ig-space'] * 2;
+      const under = rows(chips, inner);
+      return rows([...chips, small], inner) === under && rows([...chips, body], inner) === under + 1;
+    });
+    assert.ok(spineWidth !== undefined, 'no card width puts the chip on the boundary, so this proves nothing');
+
+    const theme = extendTheme(defaultTheme, { metrics: { '--ig-spine-width': spineWidth } });
+    const heightOf = (document: ReturnType<typeof normalizeDocument>['document']): number =>
+      layoutGraph(document, theme).nodes.get('hub')?.height ?? Number.NaN;
+    const row = metrics['--ig-card-line'] + metrics['--ig-space-micro'] * 2 + metrics['--ig-stroke'] * 2 + gap;
+    assert.ok(
+      heightOf(past) - heightOf(within) >= row,
+      `the card reserved ${String(heightOf(past) - heightOf(within))}px for the row its overflow chip wraps onto, under ${String(row)}px`,
+    );
   });
 
   it('aligns a gutter card with an unslotted NOW station, not just with a slot', () => {

@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { THEME_TOKENS } from '@issuegraph/viewer';
+import { THEME_TOKENS, viewerStylesheet } from '@issuegraph/viewer';
 
 import { renderScaleLadder } from './render.ts';
 import { scaleLadderStylesheet } from './styles.ts';
+import { countTypeMisses, regressionsOf } from '../testing/counts.ts';
 import { componentsSumming, documentOf } from '../testing/documents.ts';
 
 /** The stylesheet with its comments removed — a comment is not a declaration. */
@@ -95,5 +96,27 @@ describe('the isolated list says what it is a list of', () => {
       isolatedChip: false,
     }).markup;
     assert.equal(/class="ig-isolated-caption"/.test(shut), false);
+  });
+});
+
+describe('the counts this sheet draws are body text with tabular figures (#254)', () => {
+  // A capsule card's member count and its blocked count. The blocked slot holds
+  // the cycle pill on a stuck component, and that pill also carries layer 1's
+  // .ig-badge, whose micro mono is installed first — so the slot is named in
+  // both shapes and the reading has to see this sheet win over the viewer's.
+  const COUNTS = ['.ig-capsule-size', '.ig-capsule-load', ".ig-capsule-load.ig-badge[data-edge='blocked-by']"];
+
+  it('sets the body sans, the body size and tabular figures on each, alone and over the viewer sheet', () => {
+    assert.deepEqual(countTypeMisses(scaleLadderStylesheet, COUNTS), []);
+    assert.deepEqual(countTypeMisses(`${viewerStylesheet}\n${scaleLadderStylesheet}`, COUNTS), []);
+  });
+
+  it('fails a later rule that puts the mono face or a smaller size back', () => {
+    const css = `${viewerStylesheet}\n${scaleLadderStylesheet}`;
+    for (const target of COUNTS) {
+      for (const later of regressionsOf(css, target)) {
+        assert.notDeepEqual(countTypeMisses(later, [target]), [], `${target} passed with its old type put back`);
+      }
+    }
   });
 });

@@ -135,8 +135,13 @@ ${heldRailDeclarations}
   content: '·' / '';
 }
 
+/* A COUNT IS BODY TEXT: the body sans at the body size, with tabular figures
+   so "2 moved" and "12 moved" keep their digits in one column. Mono is the
+   face of a key a reader copies, and a count is read rather than copied. */
 .ig-change-count {
-  font-family: var(--ig-font-mono);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
+  font-variant-numeric: tabular-nums;
   color: var(--ig-text);
 }
 

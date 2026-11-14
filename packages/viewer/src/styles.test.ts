@@ -856,3 +856,157 @@ describe('the recede rules win over every card and station variant', () => {
     assert.deepEqual([...new Set([...shares, ...opacities])], [RECEDE_ALPHA]);
   });
 });
+
+/**
+ * #254: THE KEYS LINE AND EVERY COUNT THIS PACKAGE DRAWS ARE BODY TEXT — the
+ * body sans at the body size with tabular figures, not the small mono. The
+ * issue key keeps the mono face.
+ *
+ * jsdom is not a dependency here, so this reads the cascade off the sheet
+ * itself, and PESSIMISTICALLY: a rule counts when its last compound can select
+ * the element, whatever its ancestors are and whatever state it names, and a
+ * container query is taken to hold — a count that reads mono in one context is
+ * the defect. A pseudo-element styles another box, so it never counts. The
+ * editor's tests carry the same reading in `testing/counts.ts`; a package test
+ * reaching into a sibling's source is the seam `check:isolation` keeps.
+ */
+const COUNT_TYPE: Readonly<Record<string, string>> = Object.freeze({
+  'font-family': 'var(--ig-font-ui)',
+  'font-size': 'var(--ig-font-size)',
+  'font-variant-numeric': 'tabular-nums',
+});
+
+/** One attribute selector, or one attribute an element carries. */
+interface CountAttribute {
+  readonly name: string;
+  readonly operator: string | null;
+  readonly value: string | null;
+}
+
+/** One compound selector: what an element must be to match it. `tag: null` matches any tag. */
+interface CountCompound {
+  readonly tag: string | null;
+  readonly classes: readonly string[];
+  readonly attributes: readonly CountAttribute[];
+}
+
+/** How an attribute selector's operator compares the value it names with the one the element holds. */
+const ATTRIBUTE_OPERATORS: Readonly<Record<string, (wanted: string, held: string) => boolean>> = {
+  '=': (wanted, held) => held === wanted,
+  '~=': (wanted, held) => held.split(/\s+/).includes(wanted),
+};
+
+/** A compound's parts with every pseudo-class removed, or null when it is not a plain compound. */
+function countCompoundOf(text: string): CountCompound | null {
+  const bare = text.replace(/:[\w-]+(?:\([^()]*\))?/g, '');
+  const tag = /^(?:\*|[a-z][\w-]*)/i.exec(bare)?.[0] ?? null;
+  const rest = bare.slice(tag?.length ?? 0);
+  const parts = rest.match(/\.[\w-]+|\[[^\]]*\]/g) ?? [];
+  if (parts.join('') !== rest || (tag === null && parts.length === 0)) return null;
+  const attributes = parts
+    .filter((part) => part.startsWith('['))
+    .map((part) => /^\[\s*([\w-]+)\s*(?:([~|^$*]?=)\s*(?:'([^']*)'|"([^"]*)"|([^\s\]]+)))?\s*\]$/.exec(part));
+  if (attributes.some((match) => match === null)) return null;
+  return {
+    tag: tag === '*' ? null : tag,
+    classes: parts.filter((part) => part.startsWith('.')).map((part) => part.slice(1)),
+    attributes: attributes
+      .filter((match): match is RegExpExecArray => match !== null)
+      .map((match) => ({ name: match[1] ?? '', operator: match[2] ?? null, value: match[3] ?? match[4] ?? match[5] ?? null })),
+  };
+}
+
+/** Whether a rule's compound can select an element that is exactly `element`. */
+function canStyleCount(rule: CountCompound, element: CountCompound): boolean {
+  if (rule.tag !== null && rule.tag !== element.tag) return false;
+  return (
+    rule.classes.every((name) => element.classes.includes(name)) &&
+    rule.attributes.every((wanted) =>
+      element.attributes.some((held) => {
+        if (held.name !== wanted.name) return false;
+        const compare = wanted.operator === null ? undefined : ATTRIBUTE_OPERATORS[wanted.operator];
+        // An operator this reading does not model matches on presence, so it
+        // over-counts a rule rather than missing one.
+        return compare === undefined || compare(wanted.value ?? '', held.value ?? '');
+      }),
+    )
+  );
+}
+
+/**
+ * What the cascade gives `property` on an element that is exactly `target`:
+ * the most specific rule that can style it, and of those the last. The `font`
+ * shorthand resets all three properties, so it is read as setting each.
+ */
+function declaredOn(css: string, target: string, property: string): { value: string; selector: string } | undefined {
+  const element = countCompoundOf(target);
+  assert.ok(element !== null, `${target} is not a compound selector`);
+  let winner: { rank: number; value: string; selector: string } | undefined;
+  for (const rule of declaredRules(css)) {
+    if (rule.selector.includes('::')) continue;
+    const styled = countCompoundOf(styledCompound(rule.selector));
+    if (styled === null || !canStyleCount(styled, element)) continue;
+    for (const { name, value } of rule.declarations) {
+      if (name !== property && name !== 'font') continue;
+      const rank = specificity(rule.selector) + (value.includes('!important') ? 1_000_000 : 0);
+      if (winner === undefined || rank >= winner.rank) {
+        winner = { rank, value: name === 'font' ? `font: ${value}` : value, selector: rule.selector };
+      }
+    }
+  }
+  return winner === undefined ? undefined : { value: winner.value, selector: winner.selector };
+}
+
+/** Every one of `targets` the cascade does not give COUNT_TYPE, one line per property. */
+function countTypeMisses(css: string, targets: readonly string[]): string[] {
+  return targets.flatMap((target) =>
+    Object.entries(COUNT_TYPE).flatMap(([property, expected]) => {
+      const declared = declaredOn(css, target, property);
+      return declared?.value === expected
+        ? []
+        : [`${target} reads ${property}: ${declared?.value ?? 'nothing'} (from ${declared?.selector ?? 'no rule'})`];
+    }),
+  );
+}
+
+describe('the keys line and every count are body text with tabular figures (#254)', () => {
+  // "The keys line" names no class, so both things it can mean are here: the
+  // legend bar's items and its readiness keys. The rest are every count the
+  // viewer draws, the overflow chip among them — it is a count, not an edge.
+  const COUNTS = [
+    '.ig-count-chip',
+    '.ig-count',
+    '.ig-notice-progress',
+    '.ig-unit-count',
+    '.ig-badge[data-omitted]',
+    '.ig-legend-item',
+    '.ig-legend-keys',
+  ];
+
+  it('sets the body sans, the body size and tabular figures on each of them, as the last rule that can style it', () => {
+    assert.deepEqual(countTypeMisses(viewerStylesheet, COUNTS), []);
+  });
+
+  it('fails a later rule that puts the mono face or a smaller size back', () => {
+    // WRITTEN ON THE SELECTOR THAT WINS TODAY, so the added rule ties it on
+    // specificity and wins on order — the shape a careless later edit takes.
+    const regressions: readonly (readonly [string, string])[] = [
+      ['font-family', 'var(--ig-font-mono)'],
+      ['font-size', 'var(--ig-font-size-small)'],
+    ];
+    for (const target of COUNTS) {
+      for (const [property, value] of regressions) {
+        const winner = declaredOn(viewerStylesheet, target, property);
+        assert.ok(winner !== undefined, `no rule sets ${property} on ${target}`);
+        const later = `${viewerStylesheet}\n${winner.selector} {\n  ${property}: ${value};\n}\n`;
+        assert.notDeepEqual(countTypeMisses(later, [target]), [], `${target} passed with ${property}: ${value} put back`);
+      }
+    }
+  });
+
+  it('keeps the issue key in the mono face', () => {
+    // The key and the count shared one rule, and splitting it is what lets the
+    // count move without the key: an issue key is copied as typed, as label:P0 is.
+    assert.equal(declaredOn(viewerStylesheet, '.ig-id', 'font-family')?.value, 'var(--ig-font-mono)');
+  });
+});

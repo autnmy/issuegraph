@@ -62,9 +62,13 @@ export const auditStylesheet = `
   color: var(--ig-text);
 }
 
+/* A COUNT, SO BODY TEXT: the body sans at the body size, with tabular figures
+   to hold its digits still. The mono face is for keys a reader copies, and a
+   count is read as a number, not copied. */
 .ig-audit-count {
   color: var(--ig-text);
-  font-family: var(--ig-font-mono);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
   font-variant-numeric: tabular-nums;
 }
 
@@ -132,10 +136,12 @@ export const auditStylesheet = `
   font-size: var(--ig-font-size-small);
 }
 
+/* The panel's count is a count like the header's: body sans, body size,
+   tabular figures. The gold is what ties it to the mark beside it. */
 .ig-audit-panel-count {
   color: var(--ig-edge-serialize-with);
-  font-family: var(--ig-font-mono);
-  font-size: var(--ig-font-size-small);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
   font-variant-numeric: tabular-nums;
 }
 

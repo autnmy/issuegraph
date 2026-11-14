@@ -14,12 +14,17 @@ import { JSDOM } from 'jsdom';
 
 import { auditStylesheet } from '../audit/styles.ts';
 import { AUDIT_SEVERITY_ATTRIBUTE } from '../audit/surface.ts';
+import { firstPassStylesheet } from '../firstpass/styles.ts';
+import { edgeOverlayStylesheet } from '../overlay/styles.ts';
+import { pickerStylesheet } from '../picker/styles.ts';
 import { INITIAL_SCALE_STATE } from '../scale/commands.ts';
+import { mountStylesheet } from './chrome.ts';
 import { ZONES, renderWorkspace } from './render.ts';
 import { reevaluateStylesheet } from '../reevaluate/styles.ts';
 import { renderScaleLadder } from '../scale/render.ts';
 import { scaleLadderStylesheet } from '../scale/styles.ts';
 import { workspaceStylesheet } from './styles.ts';
+import { VIEWER_COUNTS, countTypeMisses, declaredOn, regressionsOf } from '../testing/counts.ts';
 import { WORKSPACE_WORDS, backlogOf, keysOf } from '../testing/workspace.ts';
 import {
   WORDS as CHANGE_WORDS,
@@ -2030,5 +2035,66 @@ describe('the Related search status line stays in the accessibility tree', () =>
     for (const [, selector, body] of rules) {
       assert.doesNotMatch(body ?? '', /display:\s*none|visibility:\s*hidden/, `${(selector ?? '').trim()} hides the status line`);
     }
+  });
+});
+
+describe('the counts this sheet draws are body text with tabular figures (#254)', () => {
+  // The rail footer's tally, the middle zone head's caption and its numbers,
+  // and the header's adoption pair — each container and each number in it, so
+  // a rule on either one cannot put the mono face or a smaller size back.
+  const COUNTS = [
+    '.ig-rail-footer',
+    '.ig-rail-count',
+    '.ig-canvas-caption',
+    '.ig-canvas-count',
+    '.ig-workspace-counts',
+    '.ig-workspace-count',
+  ];
+  /**
+   * Every sheet a mounted workspace installs, in the order it installs them:
+   * `renderWorkspace`'s list, then the three the mount appends (see the
+   * `styles` list in render.ts and the sheet join in mount.ts).
+   */
+  const INSTALLED = [
+    viewerStylesheet,
+    scaleLadderStylesheet,
+    edgeOverlayStylesheet,
+    auditStylesheet,
+    reevaluateStylesheet,
+    workspaceStylesheet,
+    pickerStylesheet,
+    firstPassStylesheet,
+    mountStylesheet,
+  ].join('\n');
+
+  it('sets the body sans, the body size and tabular figures on each, alone and over the viewer sheet', () => {
+    assert.deepEqual(countTypeMisses(workspaceStylesheet, COUNTS), []);
+    assert.deepEqual(countTypeMisses(`${viewerStylesheet}\n${workspaceStylesheet}`, COUNTS), []);
+  });
+
+  it('leaves the viewer’s own counts and keys line as the viewer set them, under every sheet the mount installs', () => {
+    // THE OTHER DIRECTION. The viewer sheet is installed first, so a rule in
+    // any editor sheet above it can carry one of its counts back to mono.
+    assert.deepEqual(countTypeMisses(INSTALLED, [...VIEWER_COUNTS, ...COUNTS]), []);
+  });
+
+  it('fails a later rule that puts the mono face or a smaller size back', () => {
+    const css = `${viewerStylesheet}\n${workspaceStylesheet}`;
+    for (const target of COUNTS) {
+      for (const later of regressionsOf(css, target)) {
+        assert.notDeepEqual(countTypeMisses(later, [target]), [], `${target} passed with its old type put back`);
+      }
+    }
+  });
+
+  it('keeps the issue key in the mono face, and draws the header numbers as counts rather than keys', () => {
+    assert.equal(declaredOn(INSTALLED, '.ig-id', 'font-family')?.value, 'var(--ig-font-mono)');
+    const header = renderWorkspace(
+      { ...DOCUMENT, host: { adoption: { counts: { declaring: 64, total: 312 } } } },
+      { words: WORKSPACE_WORDS },
+    ).markup;
+    const pair = header.slice(header.indexOf('class="ig-workspace-counts"'));
+    assert.match(pair, /^class="ig-workspace-counts"><span class="ig-workspace-count">312<\/span>/);
+    assert.equal(/class="ig-id">(?:312|64)</.test(header), false, 'a header count is drawn as an issue key');
   });
 });

@@ -17,11 +17,12 @@ import { afterEach, beforeEach, describe, it } from 'node:test';
 
 import type { GraphDocument, StoreSnapshot, DataSource } from '@issuegraph/store';
 import { type OrderDeriver, createScriptedSource, createStore, makeEdge } from '@issuegraph/store';
-import { THEME_TOKENS, treatmentFor } from '@issuegraph/viewer';
+import { THEME_TOKENS, treatmentFor, viewerStylesheet } from '@issuegraph/viewer';
 import { JSDOM } from 'jsdom';
 
 import { KIND_KEYS, RELATE_KEY } from '../create/keys.ts';
 import type { Candidate } from '../firstpass/candidates.ts';
+import { countTypeMisses, regressionsOf } from '../testing/counts.ts';
 import { FIRST_PASS_WORDS } from '../testing/firstpass.ts';
 import { PICKER_WORDS } from '../testing/picker.ts';
 import { WORDS as CHANGE_WORDS } from '../testing/reevaluate.ts';
@@ -1630,6 +1631,16 @@ describe('the mount stylesheet carries structure, never a value', () => {
 
   it('declares no animation and no transition', () => {
     assert.equal(/\banimation\b|\btransition\b|@keyframes/.test(css), false);
+  });
+
+  it('sets the keys line under the Inspector in the body sans at the body size, with tabular figures (#254)', () => {
+    // `MountWords.keys` is one of the two things "the keys line" can mean; the
+    // viewer's legend bar is the other, pinned in the viewer's own sheet test.
+    assert.deepEqual(countTypeMisses(mountStylesheet, ['.ig-chrome-keys']), []);
+    assert.deepEqual(countTypeMisses(`${viewerStylesheet}\n${mountStylesheet}`, ['.ig-chrome-keys']), []);
+    for (const later of regressionsOf(`${viewerStylesheet}\n${mountStylesheet}`, '.ig-chrome-keys')) {
+      assert.notDeepEqual(countTypeMisses(later, ['.ig-chrome-keys']), [], 'the keys line passed with its old type put back');
+    }
   });
 });
 
