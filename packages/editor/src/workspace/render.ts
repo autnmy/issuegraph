@@ -641,6 +641,12 @@ export interface NarrowWords {
    */
   readonly view: string;
   /**
+   * Opens the Related list's head under `640`, before the selected issue's
+   * number and the count: the board's "Around #2290 17", which stands in for
+   * the Inspector's "Relationships 17" at that width.
+   */
+  readonly around: string;
+  /**
    * Names the control that closes the Inspector's sheet under `640`. Nothing
    * in this version draws that sheet, so nothing reads this yet.
    */
@@ -1981,7 +1987,21 @@ function relatedListParts(
     case 'listed':
       // NOTHING IS REFUSED HERE: a refusal is stated in the Inspector, beside
       // the controls that answer it, so the fold is the only rule.
-      return listingSpecs(view.listing, shownGroups, (row) => relatedRowSpec(row, subject), () => false, words);
+      // THE HEAD CARRIES THE TOTAL (the board's 390 list opens "Around #2290 17"),
+      // as the Inspector's heading does at wider widths. Drawn in a group head's
+      // shape, words left and count right; with no issue to centre on (a
+      // selected relationship) there is nothing for it to name.
+      return [
+        ...(subject === null
+          ? []
+          : [
+              element('div', { class: 'ig-relationship-group-head' }, [
+                element('span', {}, [`${words.narrow.around} `, element('span', { class: 'ig-id' }, [issueNumber(subject)])]),
+                element('span', { class: 'ig-relationship-count' }, [String(view.total)]),
+              ]),
+            ]),
+        ...listingSpecs(view.listing, shownGroups, (row) => relatedRowSpec(row, subject), () => false, words),
+      ];
   }
 }
 

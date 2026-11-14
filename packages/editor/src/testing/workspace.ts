@@ -86,6 +86,7 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
     subIssues: 'child tree',
     view: 'view picker',
     closeSheet: 'fold the sheet down',
+    around: 'centred on',
     noSelection: 'select an issue to list its links',
   },
   whyRank: 'why rank',

@@ -22,7 +22,7 @@ import type { WorkspaceSelection } from './selection.ts';
 export type RelatedListView =
   | { readonly kind: 'no-selection' }
   | { readonly kind: 'no-relationships' }
-  | { readonly kind: 'listed'; readonly listing: InspectorListing };
+  | { readonly kind: 'listed'; readonly listing: InspectorListing; readonly total: number };
 
 const NO_SELECTION: RelatedListView = Object.freeze({ kind: 'no-selection' });
 const NO_RELATIONSHIPS: RelatedListView = Object.freeze({ kind: 'no-relationships' });
@@ -32,5 +32,5 @@ export function relatedListView(document: ViewerDocument, selection: WorkspaceSe
   const inspected = inspectorView(document, selection);
   if (inspected.subject.kind === 'none') return NO_SELECTION;
   if (inspected.relationships.length === 0) return NO_RELATIONSHIPS;
-  return { kind: 'listed', listing: inspectorListing(inspected.relationships) };
+  return { kind: 'listed', listing: inspectorListing(inspected.relationships), total: inspected.relationships.length };
 }

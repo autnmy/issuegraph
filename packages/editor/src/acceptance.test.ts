@@ -845,6 +845,7 @@ const WORKSPACE_WORDS: surface.WorkspaceWords = {
     subIssues: 'child tree',
     view: 'view picker',
     closeSheet: 'fold the sheet down',
+    around: 'centred on',
     noSelection: 'select an issue to list its links',
   },
   whyRank: 'why rank',

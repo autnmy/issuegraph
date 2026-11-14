@@ -2994,6 +2994,20 @@ describe('the narrow tabs and the Related groups list', () => {
     ]);
   });
 
+  it('#303 the narrow list opens with the selected issue and its total, the board’s "Around #2290 17"', () => {
+    // The Inspector's "Relationships N" is not drawn under 640, so the list carries the total.
+    const hub = backlogOf(14, { edges: relatedHubEdges(13) });
+    const canvas = canvasOf(
+      renderWorkspace(hub, { ...WORDS, selection: { kind: 'issue', key: 'i0001' }, narrowView: 'canvas', canvas: 'neighbourhood' })
+        .markup,
+    );
+    const list = canvas.slice(canvas.indexOf('<div class="ig-related">'));
+    assert.match(
+      list,
+      /^<div class="ig-related"><div class="ig-relationship-group-head"><span>centred on <span class="ig-id">[^<]*i0001<\/span><\/span><span class="ig-relationship-count">13<\/span><\/div>/,
+    );
+  });
+
   it('R17 the narrow tabs are named by the host narrow words, in the order Order, Related groups, Sub-issues', () => {
     const narrow = {
       ...WORKSPACE_WORDS.narrow,

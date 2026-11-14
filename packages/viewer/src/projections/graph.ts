@@ -418,12 +418,12 @@ function cardMark(
       return element(
         'div',
         { class: 'ig-badges' },
-        [
-          cardPriorityBadge(document.byKey.get(key)),
-          // THE REASON WORD, muted after the number (q336; issue-graph b699f1d
-          // draws "#2210 Parked"): the one fact about a hold the card shows.
-          reasonWord(heldReason(slot)),
-        ].filter((badge): badge is ElementSpec => badge !== null),
+        // THE REASON WORD IN THE PRIORITY'S PLACE (q336; RULES 5b5f1cc; the
+        // boards draw "#2210 Parked" and "#2255 Duplicate" with no tag): the one
+        // fact about why the card is off the order, muted, else its priority.
+        [reasonWord(heldReason(document, key)) ?? cardPriorityBadge(document.byKey.get(key))].filter(
+          (badge): badge is ElementSpec => badge !== null,
+        ),
       );
   }
 }

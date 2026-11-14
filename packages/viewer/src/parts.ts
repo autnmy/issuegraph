@@ -1236,17 +1236,24 @@ export type CardBlock =
    */
   | { readonly kind: 'badges'; readonly texts: readonly string[] };
 
+/** The word an excluded duplicate is tagged with, on its card and its footer row (#296). */
+export const DUPLICATE_WORD = 'Duplicate';
+
 /**
- * The word a held card carries after its number: the tracker's own label for the
- * hold ("Parked", "Not eligible"), as the order list's footer tags it. Null when
- * no hold names one (q336: an off-order node keeps its reason word).
+ * The word an off-order card carries in its priority's place, as the order
+ * list's footer tags the same issue: the tracker's own label for a hold
+ * ("Parked", "Not eligible"), or "Duplicate" for an issue the order excludes
+ * as one. Null when neither applies (q336; RULES 5b5f1cc: the issue "shows its
+ * reason in the priority's place", and the boards draw "#2210 Parked" and
+ * "#2255 Duplicate" with no tag).
  */
-export function heldReason(slot: ViewerSlot | undefined): string | null {
-  const labelled = slot?.holds.find(
+export function heldReason(document: NormalizedDocument, key: string): string | null {
+  const labelled = document.slotByLead.get(key)?.holds.find(
     (hold): hold is Extract<ViewerHold, { family: 'tracker' }> =>
       hold.family === 'tracker' && hold.label !== undefined && hold.label !== '',
   );
-  return labelled?.label ?? null;
+  const excluded = document.order.excluded.some((exclusion) => exclusion.key === key);
+  return labelled?.label ?? (excluded ? DUPLICATE_WORD : null);
 }
 
 /**
@@ -1287,12 +1294,10 @@ export function cardBlocks(
     blocks.push({ kind: 'head', key });
   }
 
+  // THE REASON TAKES THE PRIORITY'S PLACE: one tag, never both.
   const priority = cardPriorityBadge(issue);
-  const reason = heldReason(slot);
-  const texts = [priority === null ? null : textOf(priority), reason].filter(
-    (text): text is string => text !== null,
-  );
-  if (texts.length > 0) blocks.push({ kind: 'badges', texts });
+  const tag = heldReason(document, key) ?? (priority === null ? null : textOf(priority));
+  if (tag !== null) blocks.push({ kind: 'badges', texts: [tag] });
   return blocks;
 }
 

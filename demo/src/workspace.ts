@@ -296,6 +296,7 @@ export const WORKSPACE_WORDS: MountWords = {
     subIssues: 'Sub-issues',
     view: 'View',
     closeSheet: 'Close',
+    around: 'Around',
     noSelection: 'Select an issue to list its relationships.',
   },
   // §17a's inspector explains the position before it lists the relationships.

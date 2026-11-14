@@ -15,7 +15,11 @@ it('#303 relatedListView lists the selection as the Inspector does: flat up to 8
   for (const count of [2, 8, 9, 61]) {
     const view = relatedListView(hub(count), SUBJECT);
     // RULES, Graphs, Dense neighbourhoods: "Under 640 the list does the same."
-    assert.deepEqual(view, { kind: 'listed', listing: inspectorListing(inspectorView(hub(count), SUBJECT).relationships) });
+    assert.deepEqual(view, {
+      kind: 'listed',
+      listing: inspectorListing(inspectorView(hub(count), SUBJECT).relationships),
+      total: count,
+    });
     if (view.kind !== 'listed') throw new Error('expected a listing');
     assert.equal(view.listing.kind, count > 8 ? 'grouped' : 'flat', `${String(count)} relationships`);
   }
@@ -38,5 +42,6 @@ it('#303 relatedListView lists a selected relationship alone, with no head', () 
   assert.deepEqual(relatedListView(document, selection), {
     kind: 'listed',
     listing: { kind: 'flat', relationships: [edge] },
+    total: 1,
   });
 });

@@ -2059,14 +2059,14 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 /* THE LEGEND AS A SWITCH (RULES, Graphs, Dense neighbourhoods): past 8
    relationships on the selection each kind is a ghost button with its swatch,
    its words and its count, set tighter than the key (the board's 4 between
-   items and 4 above and below) so the bar keeps one row. A kind switched off
+   items and 4 above and below, twice the micro step) so the bar keeps one row. A kind switched off
    keeps its swatch faded and its words muted; switched on, its words take the
    full ink. The swatch fades as a receded line does, by stroke and fill
    opacity on its marks, and the words beside it by colour alone.
    The drawn figure ends the bar, pushed to its far edge. */
 .ig-legend[data-switch='true'] {
-  column-gap: var(--ig-space-micro);
-  padding-block: var(--ig-space-micro);
+  column-gap: calc(var(--ig-space-micro) * 2);
+  padding-block: calc(var(--ig-space-micro) * 2);
 }
 
 .ig-legend-switch {

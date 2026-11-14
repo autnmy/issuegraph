@@ -33,7 +33,8 @@ import {
   legend,
   notReadyBadge,
   nowRows,
-  priorityBadge,
+  DUPLICATE_WORD,
+  cardPriorityBadge,
   priorityRaise,
   provenanceLine,
   slotLabel,
@@ -352,7 +353,9 @@ export function slotRow(
   // A UNIT'S HEAD IS ITS ENCLOSURE, not a joined title. Every other row keeps
   // the frame's two-line pair: the title, and the identity 2px beneath it.
   const badges = [
-    priorityBadge(lead?.provenance),
+    // THE TAG A NODE CARRIES, never a query's text (q339: "the order row: the
+    // number, then its one fact"; the board's row reads "#2290 · P0 · ...").
+    cardPriorityBadge(lead),
     priorityRaise(lead?.provenance),
     evidenceBadge(lead),
     notReadyBadge(slot),
@@ -584,7 +587,7 @@ export function excludedRow(
       // THE BOARD'S CASE (#296): its reason tags read "Duplicate", "Parked",
       // "Claimed" and "Not eligible". The consequence ("which gets worked
       // instead") rides the accessible name.
-      element('span', { class: 'ig-badge', 'data-hold': 'duplicate' }, ['Duplicate']),
+      element('span', { class: 'ig-badge', 'data-hold': 'duplicate' }, [DUPLICATE_WORD]),
       footerRelationships(document, [key]),
     ),
   );

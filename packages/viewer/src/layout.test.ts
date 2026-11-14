@@ -208,9 +208,10 @@ describe('layoutGraph', () => {
     );
   });
 
-  it('keeps a held card\u2019s reason word after its number (q336)', () => {
+  it('puts a held card\u2019s reason word in its priority\u2019s place (q336)', () => {
     // issue-graph b699f1d draws an off-order node as "#2210 Parked": the
-    // tracker's own label for the hold, muted, in place of a relationship list.
+    // tracker's own label for the hold, muted, and no priority tag beside it
+    // (RULES 5b5f1cc: it "shows its reason in the priority's place").
     const { document } = normalizeDocument({
       issues: [
         { key: 'parked', title: 'Parked work', open: true, priority: 2 },
@@ -234,7 +235,25 @@ describe('layoutGraph', () => {
     });
     const badges = cardBlocks(document, 'parked', ['parked'], false).find((block) => block.kind === 'badges');
     assert.ok(badges?.kind === 'badges', 'the held card describes no reason word');
-    assert.ok(badges.texts.includes('Parked'), 'the held card lost its reason word');
+    assert.deepEqual(badges.texts, ['Parked'], 'the held card should carry its reason alone');
+  });
+
+  it('words an excluded duplicate\u2019s card "Duplicate", as its footer row does', () => {
+    const { document } = normalizeDocument({
+      issues: [
+        { key: 'dup', title: 'The duplicate', open: true, priority: 2 },
+        { key: 'canon', title: 'The original', open: true, priority: 2 },
+      ],
+      edges: [{ field: 'duplicate-of', from: 'dup', to: 'canon' }],
+      order: {
+        slots: [{ rank: 1, lead: 'canon', members: ['canon'], ready: true, holds: [] }],
+        excluded: [{ key: 'dup', canonical: 'canon', reason: 'duplicate-of' }],
+      },
+      cycles: [],
+    });
+    const badges = cardBlocks(document, 'dup', ['dup'], false).find((block) => block.kind === 'badges');
+    assert.ok(badges?.kind === 'badges', 'the duplicate card describes no tag');
+    assert.deepEqual(badges.texts, ['Duplicate']);
   });
 
   it('describes a graph card as its title, number and priority only, however many relationships it has (#303)', () => {

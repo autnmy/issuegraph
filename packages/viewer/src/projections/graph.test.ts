@@ -1806,6 +1806,11 @@ describe('the legend as a switch for each kind (#303, RULES, Graphs, Dense neigh
   it('styles a switched-off swatch faded and its words muted, the switched-on words in full ink', () => {
     assert.match(viewerStylesheet, /\.ig-legend-switch\[data-drawn='false'\] svg > \* \{\s*fill-opacity: 0\.5;\s*stroke-opacity: 0\.5;/);
     assert.match(viewerStylesheet, /\.ig-legend-switch \{[^}]*color: var\(--ig-text-muted\);/);
+    // THE BOARD'S 4 BETWEEN ITEMS AND ABOVE AND BELOW (its .ig-legend.is-switch, var(--space-1)).
+    assert.match(
+      viewerStylesheet,
+      /\.ig-legend\[data-switch='true'\] \{\s*column-gap: calc\(var\(--ig-space-micro\) \* 2\);\s*padding-block: calc\(var\(--ig-space-micro\) \* 2\);/,
+    );
     assert.match(viewerStylesheet, /\.ig-legend-switch\[data-drawn='true'\] \{\s*color: var\(--ig-text\);/);
   });
 });
@@ -1844,5 +1849,57 @@ describe('a card a query placed shows no query (#303, RULES, Graphs, Dense neigh
   it('words the query in the board’s words wherever the provenance is said', () => {
     const markup = renderViewer(fixtureDocument, { projection: 'linear' }).markup;
     assert.match(markup, /Matched ordering query 1, <span class="ig-copy-key">label:P1<\/span>/);
+  });
+});
+
+describe('an off-order card shows its reason in its priority’s place (q336, RULES 5b5f1cc)', () => {
+  // The boards draw "#2210 Parked" and "#2255 Duplicate", muted, with no tag.
+  const offOrder: ViewerDocument = {
+    issues: [
+      // EACH DECLARES A TIER, so a missing tag is the rule at work and not an empty provenance.
+      { key: 'parked', title: 'Parked work', open: true, priority: 1, provenance: { kind: 'declared-tier', priority: 1 } },
+      { key: 'dup', title: 'The duplicate', open: true, priority: 2, provenance: { kind: 'declared-tier', priority: 2 } },
+      { key: 'canon', title: 'The original', open: true, priority: 2, provenance: { kind: 'declared-tier', priority: 2 } },
+    ],
+    edges: [
+      { field: 'blocked-by', from: 'canon', to: 'parked' },
+      { field: 'duplicate-of', from: 'dup', to: 'canon' },
+    ],
+    order: {
+      slots: [
+        {
+          rank: null,
+          lead: 'parked',
+          members: ['parked'],
+          ready: false,
+          holds: [{ family: 'tracker', reason: 'parked by its owner', label: 'Parked' }],
+        },
+        { rank: 1, lead: 'canon', members: ['canon'], ready: true, holds: [] },
+      ],
+      excluded: [{ key: 'dup', canonical: 'canon', reason: 'duplicate-of' }],
+    },
+    cycles: [],
+  };
+  /** The card for `key`, from its key to the next keyed element's. */
+  function cardOf(markup: string, key: string): string {
+    const start = markup.indexOf(`data-ig-key="${key}"`);
+    assert.notEqual(start, -1, `no card for ${key}`);
+    const next = markup.indexOf('data-ig-key="', start + 1);
+    return markup.slice(start, next === -1 ? undefined : next);
+  }
+
+  for (const [key, word] of [
+    ['parked', 'Parked'],
+    ['dup', 'Duplicate'],
+  ] as const) {
+    it(`draws "${word}" muted on ${key}, with no priority tag`, () => {
+      const card = cardOf(render(offOrder), key);
+      assert.match(card, new RegExp(`<span class="ig-reason">${word}</span>`));
+      assert.equal(/data-priority=/.test(card), false, 'the priority was drawn beside the reason');
+    });
+  }
+
+  it('keeps the priority on a card with no reason', () => {
+    assert.match(cardOf(render(offOrder), 'canon'), /<span class="ig-badge" data-priority="tier">P2<\/span>/);
   });
 });
