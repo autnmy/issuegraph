@@ -35,7 +35,8 @@
  *
  * ## Nothing here renders host text
  *
- * The only value that reaches the markup is a COUNT, and a count is a number.
+ * The only values that reach the markup are a COUNT, which is a number, and
+ * the worst finding's CLASS, which is a name from this package's own table.
  * That is what makes {@link renderAuditHeader} safe while it concatenates by
  * hand, and it is a boundary rather than a happy accident: a finding's `detail`
  * is prose about issues a host supplied. Findings travel as data; whatever
@@ -83,6 +84,16 @@ export const AUDIT_FILTER_ATTRIBUTE = 'data-ig-audit-filter';
  * these"*), so one control no longer carries two meanings.
  */
 export const AUDIT_PANEL_ATTRIBUTE = 'data-ig-audit-panel';
+
+/**
+ * The attribute on the header's state dot: the class of the worst finding, so
+ * the stylesheet colours the dot by that class's state (#293).
+ *
+ * ITS OWN NAME, NOT `./panel.ts`'s kind attribute: that module imports this
+ * one, and a chip's kind and the header's worst class are two facts that only
+ * happen to share a vocabulary.
+ */
+export const AUDIT_WORST_ATTRIBUTE = 'data-ig-audit-worst';
 
 /** What one affected row is told about itself. */
 export interface AuditRow {
@@ -251,6 +262,23 @@ function rowWeight(row: AuditRow): number {
 }
 
 /**
+ * The class of the heaviest finding, or `undefined` when nothing was found.
+ *
+ * BY THE CLASS TABLE'S WEIGHT, the same ordering {@link AuditRow.severity}
+ * picks a row's class by, so the header's dot and the rail's bar agree about
+ * which finding is worst.
+ */
+function worstClass(overlay: AuditOverlay): AuditClass | undefined {
+  let worst: AuditClass | undefined;
+  for (const found of overlay.findings) {
+    if (worst === undefined || AUDIT_CLASS_SPECS[found.kind].weight > AUDIT_CLASS_SPECS[worst].weight) {
+      worst = found.kind;
+    }
+  }
+  return worst;
+}
+
+/**
  * The heaviest row among several refs, or `undefined` when all of them are clean.
  *
  * FOR A ROW THAT SPEAKS FOR MORE THAN ONE ISSUE. A `together-with` unit is one
@@ -306,10 +334,23 @@ export interface AuditHeaderOptions {
  *
  * A `button` with `aria-pressed`, because a filter toggle is a toggle: it has
  * two states and a screen reader has to be able to say which one is on.
+ *
+ * THE DOT OF THE WORST PROBLEM LEADS THE COUNT (#293), as the export's head
+ * draws its problems button: a state dot coloured by the worst finding's
+ * class, before "2 problems". It is decoration, so `aria-hidden`: the count
+ * and its word already say what was found. At zero there is no worst finding,
+ * so no dot is drawn.
  */
 export function renderAuditHeader(overlay: AuditOverlay, options: AuditHeaderOptions = {}): string {
   const count = String(overlay.count);
   const open = options.open === true;
+  // A CLASS NAME FROM THE PACKAGE'S OWN TABLE, never host text, so it is as
+  // safe to concatenate here as the count is.
+  const worst = worstClass(overlay);
+  const dot =
+    worst === undefined
+      ? ''
+      : `<span class="ig-audit-dot" aria-hidden="true" ${AUDIT_WORST_ATTRIBUTE}="${worst}"></span>`;
   return [
     `<div class="ig-audit" ${AUDIT_COUNT_ATTRIBUTE}="${count}">`,
     // `aria-expanded`, NOT `aria-pressed`. The two say different things and the
@@ -318,7 +359,11 @@ export function renderAuditHeader(overlay: AuditOverlay, options: AuditHeaderOpt
     // something, which is what an overlay anchored here is. A reader told
     // "pressed" would be waiting for a state, not for a panel.
     `<button type="button" class="ig-audit-toggle" aria-expanded="${String(open)}"`,
+    // The worst class rides on the button too, so its words can take the
+    // neutral state's muted ink when a closed blocker is the worst problem.
+    worst === undefined ? '' : ` ${AUDIT_WORST_ATTRIBUTE}="${worst}"`,
     ` ${AUDIT_PANEL_ATTRIBUTE}>`,
+    dot,
     `<span class="ig-audit-count">${count}</span>`,
     `<span class="ig-audit-label">${overlay.count === 1 ? 'problem' : 'problems'}</span>`,
     `</button>`,

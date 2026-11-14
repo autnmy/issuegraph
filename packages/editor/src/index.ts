@@ -148,6 +148,7 @@ export {
   AUDIT_FILTER_ATTRIBUTE,
   AUDIT_PANEL_ATTRIBUTE,
   AUDIT_SEVERITY_ATTRIBUTE,
+  AUDIT_WORST_ATTRIBUTE,
   auditFilterKeeps,
   auditOverlay,
   auditRowAttributes,

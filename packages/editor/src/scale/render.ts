@@ -226,7 +226,11 @@ function capsuleLabel(capsule: ScaleCapsule): string {
   // make the same claim. It used to read "Focus <title> (<key>)", which names
   // the component after one issue in the one channel that cannot show the
   // layout making it an anchor.
-  return `Draw the group around ${capsule.lead}, ${capsule.name}: ${String(capsule.size)} issues, ${blocking}, ${clusterReachLabel(capsule.reach)}`;
+  // THE REACH IS SENTENCE CASE WHERE IT STARTS ITS OWN LINE; mid-sentence
+  // here it continues the name, as "has a loop" does, so its first letter is
+  // lowered for the name alone.
+  const reach = clusterReachLabel(capsule.reach);
+  return `Draw the group around ${capsule.lead}, ${capsule.name}: ${String(capsule.size)} issues, ${blocking}, ${reach.charAt(0).toLowerCase()}${reach.slice(1)}`;
 }
 
 /**
@@ -311,8 +315,11 @@ function capsuleSpec(capsule: ScaleCapsule): ElementSpec {
         // module, not a decision: the rest of this package hands every sentence
         // to the host, and a scale surface that cannot be translated is worth
         // fixing when the port is added.
+        //
+        // IN SENTENCE CASE (#293): the anchor opens its own line, and the
+        // export's group card reads "Around #2201 · …".
         element('span', { class: 'ig-capsule-name' }, [
-          element('span', { class: 'ig-capsule-anchor' }, ['around ']),
+          element('span', { class: 'ig-capsule-anchor' }, ['Around ']),
           element('span', { class: 'ig-id' }, [capsule.lead]),
           ' \u00b7 ',
           capsule.name,

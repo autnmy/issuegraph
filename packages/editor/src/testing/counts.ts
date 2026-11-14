@@ -44,7 +44,8 @@ export const SMALL_TYPE: RoleType = Object.freeze({
 
 /**
  * A tag, as the export draws one (#288): the small role in the sans at medium
- * weight. The row badges and the capsule's loop tag take it.
+ * weight. A row's one tag and the capsule's loop tag take it; the chips after a
+ * row's tag are muted text since #293.
  */
 export const TAG_TYPE: RoleType = Object.freeze({
   'font-family': 'var(--ig-font-ui)',

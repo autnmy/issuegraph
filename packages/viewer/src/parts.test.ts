@@ -6,6 +6,7 @@ import { normalizeDocument } from './document.ts';
 import {
   atStations,
   priorityBadge,
+  priorityRaise,
   provenanceClause,
   provenanceLine,
   slotPosition,
@@ -258,5 +259,26 @@ describe('atStations over a selected set', () => {
     assert.deepEqual(atStations({ selected: ['12', '22', '11'] }, stations).selected, ['21', '11']);
     assert.equal(named.focused, '11');
     assert.equal(atStations({ selected: '12' }, stations).selected, '11', 'a single key is still a string');
+  });
+});
+
+describe('a raised priority is its tag and the muted words after it (#293)', () => {
+  const raised = (notation: string): RankProvenance => ({ kind: 'promotion', notation, promotedBy: [] });
+
+  it('puts the priority the row has now in the tag and "from P3" after it, with either arrow', () => {
+    for (const notation of ['P3 -> 0', 'P3 → 0', 'P3->0']) {
+      assert.equal(renderMarkup(priorityBadge(raised(notation))!), '<span class="ig-badge" data-priority="promoted">P0</span>');
+      assert.equal(renderMarkup(priorityRaise(raised(notation))!), '<span class="ig-badge" data-raise="3">from P3</span>');
+    }
+  });
+
+  it('keeps a notation it cannot read whole in the tag, and adds no words', () => {
+    assert.equal(renderMarkup(priorityBadge(raised('urgent'))!), '<span class="ig-badge" data-priority="promoted">urgent</span>');
+    assert.equal(priorityRaise(raised('urgent')), null);
+  });
+
+  it('adds no words to a row that was not raised', () => {
+    assert.equal(priorityRaise({ kind: 'declared-tier', priority: 2 }), null);
+    assert.equal(priorityRaise(undefined), null);
   });
 });

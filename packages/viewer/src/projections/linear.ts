@@ -32,6 +32,7 @@ import {
   notReadyBadge,
   nowRows,
   priorityBadge,
+  priorityRaise,
   provenanceLine,
   slotLabel,
   slotTitle,
@@ -389,6 +390,7 @@ export function slotRow(
   // the frame's two-line pair: the title, and the identity 2px beneath it.
   const badges = [
     priorityBadge(lead?.provenance),
+    priorityRaise(lead?.provenance),
     evidenceBadge(lead),
     notReadyBadge(slot),
     ...caveatBadges(lead),

@@ -53,6 +53,24 @@ export const COLOR_TOKENS = Object.freeze([
   '--ig-state-invalid',
   '--ig-state-failed',
   '--ig-state-conflict',
+  // THE FILL A FAILED STATE'S TAG SITS ON, as the export's error tag draws its
+  // label on an error fill (#293). A colour of its own rather than the state
+  // hue mixed at a tint, because a host maps its error fill to one role and a
+  // mix of the text hue lands on a different colour in every theme.
+  '--ig-state-failed-fill',
+  // THE EXPORT'S FILL-STRONG ROLE (#293): a ground for a placeholder, an ink
+  // laid at a low alpha over whatever surface lies beneath. The loading
+  // skeleton reads it, so this package's own themes draw the skeleton the
+  // way a host's fill-strong does. It is NOT `--ig-surface`, which is an
+  // opaque surface a host may map to something else.
+  '--ig-fill-strong',
+  // A STATE'S MARK, BESIDE ITS HUE (#293). The hue colours a state's words and
+  // strokes, and a host maps it to the state's text ink; a dot that states a
+  // state wants the state's own colour, which on a light ground is not that
+  // ink. Defaulted to the hue, so nothing this package draws changes until a
+  // host maps the two apart.
+  '--ig-state-failed-mark',
+  '--ig-state-conflict-mark',
 ] as const);
 
 export type ColorToken = (typeof COLOR_TOKENS)[number];
@@ -114,6 +132,9 @@ export const TYPE_TOKENS = Object.freeze([
   '--ig-font-size-compact',
   '--ig-font-size-row',
   '--ig-font-size-rank',
+  // THE EXPORT'S PANEL-TITLE STEP (#293): a panel's own title, a step above
+  // the body. The theme had none, so a panel title took the body size.
+  '--ig-font-size-panel-title',
 ] as const);
 
 export type TypeToken = (typeof TYPE_TOKENS)[number];
@@ -187,6 +208,8 @@ export const METRIC_TOKENS = Object.freeze([
   // the line height a card's own height is counted in.
   '--ig-station-box',
   '--ig-card-line',
+  // The panel title's own line height (#293), the pair of the type step above.
+  '--ig-panel-title-line',
 ] as const);
 
 export type MetricToken = (typeof METRIC_TOKENS)[number];
@@ -298,6 +321,17 @@ export const defaultTheme: Theme = Object.freeze({
     // Two versions are held and neither is adopted. Gold rather than red: a
     // conflict is not a failure, and the design's own table says so.
     '--ig-state-conflict': '#F5C542',
+    // A dark warm ground the failed hue reads on at well over 4.5:1, where
+    // the tag used to mix that hue at the chip tint over whatever lay beneath.
+    '--ig-state-failed-fill': '#2A1C17',
+    // The export's dark fill-strong verbatim: its light ink at 8%. TRANSLUCENT
+    // ON PURPOSE, so it reads the same over the ground and over the second
+    // surface; it is the one colour here that is not a hex, and theme.test.ts
+    // says why.
+    '--ig-fill-strong': 'rgb(232 233 238 / 0.08)',
+    // The two hues above, so the default dot is the colour it was.
+    '--ig-state-failed-mark': '#FFAF8E',
+    '--ig-state-conflict-mark': '#F5C542',
   }),
   type: Object.freeze({
     '--ig-font-ui': "Geist, ui-sans-serif, system-ui, sans-serif",
@@ -305,7 +339,9 @@ export const defaultTheme: Theme = Object.freeze({
     // fallback would make the spine's numbers wander.
     '--ig-font-mono': "'JetBrains Mono', ui-monospace, SFMono-Regular, monospace",
     '--ig-font-size': '13px',
-    '--ig-font-size-small': '11px',
+    // 12, THE EXPORT'S SMALL ROLE (#293). It was 11, a size the export does
+    // not have, so a host had nothing to map it to.
+    '--ig-font-size-small': '12px',
     '--ig-line-height': '1.45',
     // §16a draws a relationship badge at 10px and an uppercase status pill
     // ("now", "⧉ one unit · 2 issues") at 9.5px. Both are read values, not a
@@ -343,6 +379,8 @@ export const defaultTheme: Theme = Object.freeze({
     '--ig-font-size-compact': '12.5px',
     '--ig-font-size-row': '13.5px',
     '--ig-font-size-rank': '14px',
+    // The export's panel title in its compact tier, 14 on a 20 line.
+    '--ig-font-size-panel-title': '14px',
   }),
   metrics: Object.freeze({
     '--ig-space': 12,
@@ -399,7 +437,11 @@ export const defaultTheme: Theme = Object.freeze({
     // CEILING was tried and is wrong in the other direction: at the widest
     // glyph's advance, ordinary titles truncate at roughly half their length,
     // which this package's own fixtures caught immediately.
-    '--ig-label-char-width': 6,
+    //
+    // 6.6 SINCE THE SMALL SIZE MOVED FROM 11 TO 12 (#293): the 6 it was, scaled
+    // by 12/11 and rounded UP, because this is a reservation and one that
+    // reserves too little is overlapped by the next rank.
+    '--ig-label-char-width': 6.6,
     '--ig-focus-ring': 2,
     // Read off §16a: 2px between a row title and its metadata, 8px between the
     // row's blocks, 16px and 20px for the panel's own inset
@@ -470,6 +512,8 @@ export const defaultTheme: Theme = Object.freeze({
     // about its own metric: a card that reserves slightly too much leaves a
     // gap, and one that reserves too little overlaps the row beneath it.
     '--ig-card-line': 18,
+    // The panel title's line, 20, as the export's compact tier sets it.
+    '--ig-panel-title-line': 20,
   }),
   effects: Object.freeze({
     // ONE PAIR FOR ALL FIVE RELATIONSHIP CHIPS, at the value §16a draws most

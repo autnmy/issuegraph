@@ -50,6 +50,13 @@ export const paperTheme = extendTheme(defaultTheme, {
     '--ig-state-invalid': '#5A0000',
     '--ig-state-failed': '#3D0F00',
     '--ig-state-conflict': '#5C4300',
+    // The light ground a failed tag's word sits on.
+    '--ig-state-failed-fill': '#F6E3DC',
+    // The export's light fill-strong: its dark ink at 8% over the ground.
+    '--ig-fill-strong': 'rgb(25 28 34 / 0.08)',
+    // The two state hues again, for the dot that marks each state.
+    '--ig-state-failed-mark': '#3D0F00',
+    '--ig-state-conflict-mark': '#5C4300',
   },
 });
 

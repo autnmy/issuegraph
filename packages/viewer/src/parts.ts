@@ -238,15 +238,54 @@ export function priorityBadge(provenance: RankProvenance | undefined): ElementSp
       return element('span', { class: 'ig-badge', 'data-priority': 'tier' }, [
         `P${String(provenance.priority)}`,
       ]);
-    case 'promotion':
+    case 'promotion': {
+      // THE TAG HOLDS THE PRIORITY THE ROW HAS NOW (#293). The board draws a
+      // raise as the current priority's tag with "from P3" muted after it,
+      // which {@link priorityRaise} draws. A notation this cannot read keeps
+      // the whole string in the tag, as it always did.
+      const raise = raiseOf(provenance.notation);
       return element('span', { class: 'ig-badge', 'data-priority': 'promoted' }, [
-        provenance.notation,
+        raise === null ? provenance.notation : `P${raise.to}`,
       ]);
+    }
     case 'order-strategy':
       // NO CHIP. The chip names the priority that ranked the row, and the tail
       // has none; §16h draws its row with the provenance line alone (#130).
       return null;
   }
+}
+
+/**
+ * The spec's raise notation, `P3 -> 0`, read into its two priorities.
+ *
+ * A FIXED GRAMMAR, NOT A JUDGEMENT: `@issuegraph/derive` writes exactly
+ * `P<declared> -> <effective>`, and a host may draw the arrow as `→`. Anything
+ * else is not read, and the caller draws the notation whole.
+ */
+const RAISE_NOTATION = /^P(\d+)\s*(?:->|→)\s*(\d+)$/u;
+
+function raiseOf(notation: string): { readonly from: string; readonly to: string } | null {
+  const match = RAISE_NOTATION.exec(notation.trim());
+  const from = match?.[1];
+  const to = match?.[2];
+  return from === undefined || to === undefined ? null : { from, to };
+}
+
+/**
+ * The muted words after a raised priority's tag: `from P3`, or nothing (#293).
+ *
+ * THE BOARD'S OWN WORDS AND ITS OWN SHAPE: one tag holding the priority the
+ * row has now, and the priority it was raised from as a second condition,
+ * muted text after it. It is a `.ig-badge` like the relationships, so the
+ * badge row, the drop order and the graph's chip packer treat it as one more
+ * chip; `data-raise` carries the old priority and is what the sheet sets as
+ * muted text.
+ */
+export function priorityRaise(provenance: RankProvenance | undefined): ElementSpec | null {
+  if (provenance?.kind !== 'promotion') return null;
+  const raise = raiseOf(provenance.notation);
+  if (raise === null) return null;
+  return element('span', { class: 'ig-badge', 'data-raise': raise.from }, [`from P${raise.from}`]);
 }
 
 /**
@@ -810,23 +849,34 @@ export function unitBlock(document: NormalizedDocument, slot: ViewerSlot): Eleme
  * IN SENTENCE CASE IN THE WORDS, because the stylesheet no longer capitalises
  * them (#288): the export draws "One unit · 2 issues" as a plain label, and an
  * uppercase transform was the only thing that made the lower-case words read
- * as a heading. The card's banner reads the same two strings.
+ * as a heading. The card's banner draws the same label.
+ *
+ * NO GLYPH AND NO NOTE (#293). The export's label is those words alone, with
+ * no `⧉` before them and no "Worked together" beside them: the enclosure
+ * already says the issues go together, and the note said it twice.
  */
 export function unitMark(slot: ViewerSlot): ElementSpec | null {
   if (slot.members.length < 2) return null;
-  return element('div', { class: 'ig-unit-mark' }, [
-    element('span', { class: 'ig-unit-pill' }, [unitLabel(slot.members.length)]),
-    element('span', { class: 'ig-unit-note' }, [UNIT_NOTE]),
+  return element('div', { class: 'ig-unit-mark' }, [unitPill(slot.members.length)]);
+}
+
+/**
+ * The unit label as drawn, one spelling for the row and the card: the count in
+ * a span of its own, because the export sets it regular and muted inside the
+ * medium label.
+ */
+export function unitPill(members: number): ElementSpec {
+  return element('span', { class: 'ig-unit-pill' }, [
+    'One unit · ',
+    element('span', { class: 'ig-unit-num' }, [String(members)]),
+    ' issues',
   ]);
 }
 
-/** The unit label's words, one spelling for the row and the card. */
+/** The unit label's text, which the layout measures: read off {@link unitPill}, so the two cannot drift. */
 function unitLabel(members: number): string {
-  return `⧉ One unit · ${String(members)} issues`;
+  return textOf(unitPill(members));
 }
-
-/** The note beside the unit label. */
-const UNIT_NOTE = 'Worked together';
 
 /**
  * The two caveats a host can put on a row, each ONE row child so the slot grid
@@ -877,12 +927,12 @@ export function caveatBadges(issue: ViewerIssue | undefined): readonly ElementSp
   const chips: ElementSpec[] = [];
   if (issue.previewOnly !== undefined) {
     chips.push(
-      element('span', { class: 'ig-badge', 'data-caveat': 'preview-only' }, glyphAndLabel('◐', 'estimated')),
+      element('span', { class: 'ig-badge', 'data-caveat': 'preview-only' }, glyphAndLabel('◐', 'Estimated')),
     );
   }
   if (issue.disagreement !== undefined) {
     chips.push(
-      element('span', { class: 'ig-badge', 'data-caveat': 'disagree' }, glyphAndLabel('◆', 'priorities disagree')),
+      element('span', { class: 'ig-badge', 'data-caveat': 'disagree' }, glyphAndLabel('◆', 'Priorities disagree')),
     );
   }
   return chips;
@@ -1139,6 +1189,7 @@ export function badgeTexts(
   // The builders are the one source; nothing here restates what they draw.
   const chips = [
     priorityBadge(issue?.provenance),
+    priorityRaise(issue?.provenance),
     evidenceBadge(issue),
     slot === undefined ? null : notReadyBadge(slot),
     ...caveatBadges(issue),
@@ -1250,7 +1301,7 @@ export function cardBlocks(
     blocks.push({
       kind: 'banner',
       mark: unitLabel(members.length),
-      note: UNIT_NOTE,
+      note: '',
     });
     blocks.push({ kind: 'unit', members });
   } else {
@@ -1297,7 +1348,7 @@ export function noteText(document: NormalizedDocument, key: string): readonly st
 export function cardText(document: NormalizedDocument, block: CardBlock): readonly string[] {
   switch (block.kind) {
     case 'banner':
-      return [`${block.mark} ${block.note}`];
+      return [block.note === '' ? block.mark : `${block.mark} ${block.note}`];
     case 'head': {
       const issue = document.byKey.get(block.key);
       return [issue?.title ?? block.key, block.key];

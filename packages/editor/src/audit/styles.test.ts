@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import { THEME_TOKENS, viewerStylesheet } from '@issuegraph/viewer';
 
-import { AUDIT_SEVERITY_ATTRIBUTE } from './surface.ts';
+import { AUDIT_SEVERITY_ATTRIBUTE, AUDIT_WORST_ATTRIBUTE } from './surface.ts';
 import { auditStylesheet } from './styles.ts';
 import { countTypeMisses, declaredOn, regressionsOf, typeMisses } from '../testing/counts.ts';
 
@@ -195,9 +195,11 @@ describe('the leaves size nothing, and ring the stops their markup declares', ()
 });
 
 describe('the counts this sheet draws are body text with tabular figures (#254)', () => {
-  // The header's finding count and the panel's: counts both, read as numbers,
-  // so neither keeps the mono face an issue key is copied in.
-  const COUNTS = ['.ig-audit-count', '.ig-audit-panel-count'];
+  // The header's finding count: a count, read as a number, so it does not keep
+  // the mono face an issue key is copied in. The panel's count left this list
+  // with #293: it sits inside the panel title and takes the title's size, so
+  // the heading is one size; its sans and figures are pinned with the title.
+  const COUNTS = ['.ig-audit-count'];
 
   it('sets the body sans, the body size and tabular figures on each, alone and over the viewer sheet', () => {
     assert.deepEqual(countTypeMisses(auditStylesheet, COUNTS), []);
@@ -217,13 +219,14 @@ describe('the counts this sheet draws are body text with tabular figures (#254)'
 describe('the problems panel head is one title with the count inside it (#288)', () => {
   // The export draws one panel title, the count and then the host's words, in
   // the sans at medium weight in text colour. It was an uppercase mono label in
-  // gold with a gold count beside it. The theme has no token for the export's
-  // panel-title step, so the title takes the body size.
+  // gold with a gold count beside it. Since #293 the theme carries the export's
+  // panel-title step and its line, and the title takes both.
   const css = `${viewerStylesheet}\n${auditStylesheet}`;
   const TITLE: Readonly<Record<string, string>> = {
     'font-family': 'var(--ig-font-ui)',
-    'font-size': 'var(--ig-font-size)',
+    'font-size': 'var(--ig-font-size-panel-title)',
     'font-weight': 'var(--ig-weight-medium)',
+    'line-height': 'var(--ig-panel-title-line)',
   };
 
   it('sets the title in the sans at medium weight in text colour, with no capitals or tracking', () => {
@@ -241,14 +244,78 @@ describe('the problems panel head is one title with the count inside it (#288)',
     assert.equal(declaredOn(css, '.ig-audit-refused-heading', 'text-transform'), undefined, 'the peer heading is still capitalised');
   });
 
-  it('draws the count in the title’s own ink, not gold', () => {
+  it('draws the count in the title’s own ink and size, not gold, in the sans with tabular figures', () => {
     const inside = ['.ig-audit-panel', '.ig-audit-panel-head', '.ig-audit-panel-heading'];
     assert.equal(declaredOn(css, '.ig-audit-panel-count', 'color', inside)?.value, 'inherit');
+    // ONE SIZE IN THE HEADING (#293): a count a step below the words it leads
+    // would be two sizes in one title.
+    assert.equal(declaredOn(css, '.ig-audit-panel-count', 'font-size', inside)?.value, 'inherit');
+    assert.equal(declaredOn(css, '.ig-audit-panel-count', 'font-family', inside)?.value, 'var(--ig-font-ui)');
+    assert.equal(declaredOn(css, '.ig-audit-panel-count', 'font-variant-numeric', inside)?.value, 'tabular-nums');
   });
 
   it('fails a later rule that puts the mono face or the small size back on the title', () => {
     for (const later of regressionsOf(css, '.ig-audit-panel-heading')) {
       assert.notDeepEqual(typeMisses(later, ['.ig-audit-panel-heading'], TITLE), [], 'the title passed with its old type put back');
     }
+  });
+});
+
+describe('the header count leads with the dot of the worst problem (#293)', () => {
+  // The export draws the problems button with the state dot of the worst
+  // problem, coloured by that problem's state: a loop is the error state, a
+  // duplicate of a closed issue and an unreadable block the attention state,
+  // and a closed blocker the neutral state, a ring.
+  const css = `${viewerStylesheet}\n${auditStylesheet}`;
+  const inside = ['.ig-audit', '.ig-audit-toggle'];
+  const dot = (kind: string): string => `.ig-audit-dot[${AUDIT_WORST_ATTRIBUTE}='${kind}']`;
+
+  it('draws a dot the export\u2019s size, round', () => {
+    assert.equal(declaredOn(css, '.ig-audit-dot', 'block-size', inside)?.value, 'var(--ig-space-snug)');
+    assert.equal(declaredOn(css, '.ig-audit-dot', 'inline-size', inside)?.value, 'var(--ig-space-snug)');
+    assert.equal(declaredOn(css, '.ig-audit-dot', 'border-radius', inside)?.value, '50%');
+  });
+
+  it('colours it by the worst class\u2019s state', () => {
+    // THE MARK TOKENS, NOT THE HUES: a host maps a state's hue to its text
+    // ink, which drew the dot near black on a light ground.
+    assert.equal(declaredOn(css, dot('cycle'), 'background', inside)?.value, 'var(--ig-state-failed-mark)');
+    assert.equal(declaredOn(css, dot('dead-duplicate-ref'), 'background', inside)?.value, 'var(--ig-state-conflict-mark)');
+    assert.equal(declaredOn(css, dot('encoding-refused'), 'background', inside)?.value, 'var(--ig-state-conflict-mark)');
+    assert.equal(declaredOn(css, dot('stale-blocker'), 'background', inside), undefined, 'the neutral dot is filled');
+    assert.equal(
+      declaredOn(css, dot('stale-blocker'), 'box-shadow', inside)?.value,
+      'inset 0 0 0 var(--ig-stroke) var(--ig-station-pending)',
+    );
+  });
+
+  it('sets the dot twelve from its count and the words in text ink, muted only for a closed blocker', () => {
+    assert.equal(declaredOn(css, '.ig-audit-dot', 'margin-inline-end', inside)?.value, 'var(--ig-space-tight)');
+    assert.match(css, /\.ig-audit-toggle \{[^}]*color: var\(--ig-text\);/);
+    assert.equal(
+      declaredOn(css, `.ig-audit-toggle[${AUDIT_WORST_ATTRIBUTE}='stale-blocker']`, 'color', ['.ig-audit'])?.value,
+      'var(--ig-text-muted)',
+    );
+    assert.equal(/\.ig-audit-toggle\[aria-pressed/.test(css), false, 'a dead pressed rule is back');
+  });
+
+  it('sets the count and its word on one baseline, and centres the dot alone', () => {
+    // An inline-flex box takes its baseline from its first baseline-aligned
+    // item; with every item centred the empty dot's bottom edge was the
+    // button's baseline, and the count rode high.
+    // READ OFF THE RULE'S TEXT: the toggle also sets the `font` shorthand, which
+    // the cascade reader counts as a candidate for every property.
+    assert.match(css, /\.ig-audit-toggle \{[^}]*align-items: baseline;/);
+    for (const target of ['.ig-audit-count', '.ig-audit-label']) {
+      assert.equal(declaredOn(css, target, 'align-self', inside), undefined, `${target} leaves the baseline`);
+    }
+    assert.equal(declaredOn(css, '.ig-audit-dot', 'align-self', inside)?.value, 'center');
+  });
+
+  it('keeps the rail bar off the dot, which carries no severity attribute', () => {
+    // The rail's gold bar is an unqualified rule on the severity attribute; a
+    // dot wearing it would draw that bar whatever its class.
+    assert.notEqual(AUDIT_WORST_ATTRIBUTE, AUDIT_SEVERITY_ATTRIBUTE);
+    assert.equal(declaredOn(css, dot('cycle'), 'box-shadow', inside), undefined);
   });
 });

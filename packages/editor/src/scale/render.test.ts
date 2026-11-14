@@ -99,9 +99,10 @@ describe('the refusal, as a reader sees it', () => {
           // connected component has no name to invent. The ORDER this test
           // exists for is unchanged, so the assertion keeps its shape and only
           // widens the one slot whose contents moved.
-          `<span class="ig-capsule-name"><span class="ig-capsule-anchor">around </span>` +
+          // In sentence case since #293, as the export's group card reads it.
+          `<span class="ig-capsule-name"><span class="ig-capsule-anchor">Around </span>` +
           `<span class="ig-id">${capsule.lead}</span> \u00b7 ${capsule.name}</span>` +
-          `<span class="ig-capsule-reach">longest chain ${String(capsule.chainDepth)}</span>`,
+          `<span class="ig-capsule-reach">Longest chain ${String(capsule.chainDepth)}</span>`,
       ),
     );
   });
@@ -162,16 +163,16 @@ describe('the refusal, as a reader sees it', () => {
     )?.[0];
     assert.ok(card !== undefined);
     assert.match(card, />Loop</);
-    assert.match(card, />nothing can start</);
+    assert.match(card, />Nothing can start</);
     // The tint the frame puts on the whole stuck card is a rule on this hook.
     assert.match(card, /data-reach="cyclic"/);
-    assert.equal(/longest chain/.test(card), false);
+    assert.equal(/longest chain/i.test(card), false);
     // THE REACH SLOT, not a bare digit probe over the whole card: the size, the
     // edge count and the title all carry digits, so a substring test would
     // false-fail wherever those share one, and pass for the wrong reason on a
     // fixture whose depth is a digit nothing else uses.
     const reach = card.match(/<span class="ig-capsule-reach">([^<]*)<\/span>/)?.[1];
-    assert.equal(reach, 'nothing can start');
+    assert.equal(reach, 'Nothing can start');
     // And the blocking count gives way to the cycle, because on a stuck
     // component it is not the fact that changes what the reader does.
     assert.equal(/\u2298/.test(card), false);

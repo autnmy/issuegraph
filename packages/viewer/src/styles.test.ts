@@ -333,20 +333,18 @@ describe('the stylesheet keeps text on text-grade colours', () => {
     );
   });
 
-  it('still carries the hue on the badge border and its fill, so no channel was lost', () => {
-    // The fix moves the hue rather than dropping it. Losing it here would be a
-    // quieter regression than the one it repairs.
-    // THE HUE IS NOW MIXED RATHER THAN SET FLAT, because §16a's chip is a tinted
-    // fill inside a heavier border of the same hue and a bare outline carries a
-    // third of the weight the design gives it. What the rule holds is unchanged
-    // — the badge names the relationship's own hue — so the assertion names the
-    // token and not the exact function it is spent through.
+  it('keeps the glyph on every relationship, now that no chip carries its hue (#293)', () => {
+    // The export draws a relationship as muted words after the one tag, so the
+    // per-kind tint went with the pill. The glyph is what stays beside the
+    // words to tell the five apart, so it is the channel asserted here.
     const css = withoutComments(viewerStylesheet);
-    const rule = /\.ig-badge\[data-edge='duplicate-of'\]\s*\{([^}]*)\}/.exec(css);
-    assert.ok(rule !== null, 'the stylesheet gives duplicate-of no badge treatment');
-    const body = rule[1] ?? '';
-    assert.match(body, /border-color:[^;]*var\(--ig-edge-duplicate-of\)/);
-    assert.match(body, /background:[^;]*var\(--ig-edge-duplicate-of\)/);
+    assert.equal(/\.ig-badge\[data-edge='[a-z-]+'\]/.test(css), false, 'a relationship chip still takes a per-kind treatment');
+    const markup = renderViewer(fixtureDocument, { projection: 'linear' }).markup;
+    const chips = [...markup.matchAll(/<span class="ig-badge" data-edge="[^"]*"[^>]*>(.*?)<\/span><\/span>/g)];
+    assert.ok(chips.length > 0, 'the fixture draws no relationship, so this proves nothing');
+    for (const chip of chips) {
+      assert.match(chip[1] ?? '', /^<span class="ig-glyph" aria-hidden="true">/, 'a relationship lost its glyph');
+    }
   });
 });
 
@@ -1161,15 +1159,15 @@ describe('the chrome the export draws differently, drawn as the export draws it 
     ['font-size', 'var(--ig-font-size-micro)'],
   ];
 
-  it('sets every row badge as a tag: the small role in the sans at medium weight', () => {
-    // "P3", "blocks 512", "decomposed from 470" and "not ready" are words a
-    // reader reads, not keys they copy, so none is mono.
+  it('sets every row tag as a tag: the small role in the sans at medium weight', () => {
+    // "P3" and a hold label are words a reader reads, not keys they copy, so
+    // neither is mono. The relationships and caveats beside them were tags
+    // here too until #293 made them muted text; that block pins them below.
     const BADGES = [
       '.ig-badge',
-      ".ig-badge[data-edge='blocked-by']",
-      ".ig-badge[data-edge='decomposed-from']",
       ".ig-badge[data-priority='tier']",
-      ".ig-badge[data-not-ready='true']",
+      ".ig-badge[data-priority='promoted']",
+      ".ig-badge[data-hold='claimed']",
     ];
     assert.deepEqual(typeMisses(viewerStylesheet, BADGES, TAG_TYPE), []);
     assert.deepEqual(blindTo('.ig-badge', TAG_TYPE, MONO_OR_MICRO), []);
@@ -1243,10 +1241,11 @@ describe('the chrome the export draws differently, drawn as the export draws it 
 
   it('draws the loading placeholder on one static fill, lines as short pills in their line height, blocks with the card corner', () => {
     const css = viewerStylesheet;
-    // ONE FILL, the stronger surface, everywhere — no ground-specific override.
-    // Read in a row and on the header's own ground, where an override used to be.
-    assert.equal(declaredOn(css, '.ig-skeleton-block', 'background', ['.ig-viewer', '.ig-list', '.ig-slot'])?.value, 'var(--ig-surface)');
-    assert.equal(declaredOn(css, '.ig-skeleton-block', 'background', ['.ig-viewer', '.ig-header', '.ig-header-top'])?.value, 'var(--ig-surface)');
+    // ONE FILL, the fill-strong role (its own token since #293), everywhere — no
+    // ground-specific override. Read in a row and on the header's own ground,
+    // where an override used to be.
+    assert.equal(declaredOn(css, '.ig-skeleton-block', 'background', ['.ig-viewer', '.ig-list', '.ig-slot'])?.value, 'var(--ig-fill-strong)');
+    assert.equal(declaredOn(css, '.ig-skeleton-block', 'background', ['.ig-viewer', '.ig-header', '.ig-header-top'])?.value, 'var(--ig-fill-strong)');
     // A LINE IS A PILL ONE SNUG STEP TALL, whose margins make up its line.
     const lines: readonly (readonly [string, string])[] = [
       ['title', '--ig-row-title-line'],
@@ -1268,5 +1267,158 @@ describe('the chrome the export draws differently, drawn as the export draws it 
     assert.equal(declaredOn(css, chip, 'border-radius')?.value, 'var(--ig-space)');
     // A BLOCK TAKES THE CARD'S CORNER.
     assert.equal(declaredOn(css, ".ig-skeleton-block[data-shape='card']", 'border-radius')?.value, 'var(--ig-radius-large)');
+  });
+});
+
+describe('the tag, the rank, the unit count and the legend, as the export draws them (#293)', () => {
+  /** Every later rule in `wrong`, set on `selector`, that the reading under `inside` does not see. */
+  const missedBy = (
+    target: string,
+    selector: string,
+    inside: readonly string[],
+    wrong: readonly (readonly [string, string])[],
+  ): string[] =>
+    wrong.flatMap(([property, value]) => {
+      const later = `${viewerStylesheet}\n${selector} {\n  ${property}: ${value};\n}\n`;
+      return declaredOn(later, target, property, inside)?.value === value ? [] : [`${target} hid a later ${property}: ${value}`];
+    });
+  // READ ON A GRAPH CARD'S BADGE ROW, where no rail-density rule reaches: the
+  // dense rail strips every chip to text on purpose, and that rule would
+  // otherwise stand in for the wide one.
+  const CARD = ['.ig-viewer', '.ig-card', '.ig-badges'];
+
+  it('draws the one tag as a pill 20 tall, padded 0 8, on the second fill with no border', () => {
+    const PILL: Readonly<Record<string, string>> = {
+      background: 'var(--ig-surface-2)',
+      'block-size': 'var(--ig-space-wide)',
+      border: '0',
+      'border-radius': 'var(--ig-radius-large)',
+      padding: '0 var(--ig-space-snug)',
+      color: 'var(--ig-text)',
+    };
+    const tags: readonly (readonly [string, readonly string[]])[] = [
+      ['.ig-badge', CARD],
+      [".ig-badge[data-priority='tier']", CARD],
+      [".ig-badge[data-priority='promoted']", CARD],
+      // A hold label is the one tag its explanation line holds.
+      [".ig-badge[data-hold='claimed']", ['.ig-viewer', '.ig-slot', '.ig-hold']],
+    ];
+    for (const [target, inside] of tags) {
+      for (const [property, expected] of Object.entries(PILL)) {
+        assert.equal(declaredOn(viewerStylesheet, target, property, inside)?.value, expected, `${target} reads ${property}`);
+      }
+    }
+    // NO BORDER ON ANY TAG, the promoted one included: the accent tint it wore
+    // was a second treatment the export does not draw.
+    assert.equal(/\.ig-badge\[data-priority='promoted'\]\s*\{/.test(withoutComments(viewerStylesheet)), false, 'the promoted tag keeps a treatment of its own');
+    assert.deepEqual(missedBy('.ig-badge', '.ig-badge', CARD, [['border', 'var(--ig-stroke) solid var(--ig-line)'], ['border-radius', 'var(--ig-radius-small)']]), []);
+  });
+
+  it('draws every chip after the tag as muted words: no fill, no corner, no padding, regular weight', () => {
+    // ONE TAG PER CELL, A SECOND CONDITION IS MUTED TEXT AFTER IT. The board
+    // draws a row's relationships and its caveats as plain muted words after
+    // the priority tag, and the count of the rest as a muted number.
+    const SECOND = [
+      ".ig-badge[data-edge='blocked-by']",
+      ".ig-badge[data-edge='decomposed-from']",
+      // A raise, "from P3", after the raised priority's tag.
+      ".ig-badge[data-raise='3']",
+      ".ig-badge[data-caveat='disagree']",
+      ".ig-badge[data-caveat='preview-only']",
+      ".ig-badge[data-evidence='verified']",
+      ".ig-badge[data-not-ready='true']",
+      '.ig-badge[data-omitted]',
+    ];
+    const TEXT: Readonly<Record<string, string>> = {
+      background: 'none',
+      'block-size': 'auto',
+      'border-radius': '0',
+      color: 'var(--ig-text-muted)',
+      'font-weight': 'var(--ig-weight-regular)',
+      padding: '0',
+    };
+    for (const target of SECOND) {
+      for (const [property, expected] of Object.entries(TEXT)) {
+        assert.equal(declaredOn(viewerStylesheet, target, property, CARD)?.value, expected, `${target} reads ${property}`);
+      }
+    }
+    // THE WORDS STAY AT THE SMALL ROLE IN THE SANS, which is the size the
+    // graph's packer measures them at; the overflow count keeps the body size
+    // every count takes, pinned with the counts above.
+    for (const target of SECOND.filter((one) => one !== '.ig-badge[data-omitted]')) {
+      assert.equal(declaredOn(viewerStylesheet, target, 'font-size', CARD)?.value, 'var(--ig-font-size-small)', `${target} left the small role`);
+    }
+    assert.deepEqual(
+      missedBy(".ig-badge[data-edge='blocked-by']", '.ig-badge[data-edge]', CARD, [
+        ['background', 'var(--ig-surface-2)'],
+        ['font-weight', 'var(--ig-weight-medium)'],
+      ]),
+      [],
+    );
+  });
+
+  it('sets the rank muted and regular at the body size, held or not', () => {
+    // The export draws the rank as body text in muted ink; it was strong in
+    // text colour at 14, and the export's rules forbid a weight of 600.
+    const inside = ['.ig-viewer', '.ig-slot', '.ig-rank-cell'];
+    const RANK: Readonly<Record<string, string>> = {
+      color: 'var(--ig-text-muted)',
+      'font-size': 'var(--ig-font-size)',
+      'font-weight': 'var(--ig-weight-regular)',
+    };
+    for (const target of ['.ig-rank', ".ig-rank[data-held='true']"]) {
+      for (const [property, expected] of Object.entries(RANK)) {
+        assert.equal(declaredOn(viewerStylesheet, target, property, inside)?.value, expected, `${target} reads ${property}`);
+      }
+    }
+    assert.deepEqual(
+      missedBy('.ig-rank', '.ig-rank', inside, [
+        ['font-weight', 'var(--ig-weight-strong)'],
+        ['font-size', 'var(--ig-font-size-rank)'],
+      ]),
+      [],
+    );
+  });
+
+  it('sets the count inside the unit label regular and muted, and draws no glyph and no note', () => {
+    const inside = ['.ig-viewer', '.ig-slot', '.ig-unit-mark', '.ig-unit-pill'];
+    assert.equal(declaredOn(viewerStylesheet, '.ig-unit-num', 'color', inside)?.value, 'var(--ig-text-muted)');
+    assert.equal(declaredOn(viewerStylesheet, '.ig-unit-num', 'font-weight', inside)?.value, 'var(--ig-weight-regular)');
+    // The label around it keeps the medium weight, so the two read apart.
+    assert.equal(declaredOn(viewerStylesheet, '.ig-unit-pill', 'font-weight', ['.ig-viewer', '.ig-slot', '.ig-unit-mark'])?.value, 'var(--ig-weight-medium)');
+    const markup = renderViewer(fixtureDocument, { projection: 'linear' }).markup;
+    assert.match(markup, /<span class="ig-unit-pill">One unit · <span class="ig-unit-num">\d+<\/span> issues<\/span>/);
+    assert.equal(/⧉ One unit|Worked together/.test(markup), false, 'the unit label still draws its glyph or its note');
+  });
+
+  it('draws a refusal capsule\u2019s loop as a tag in the error state, as the editor\u2019s capsule draws it', () => {
+    const inside = ['.ig-viewer', '.ig-refusal', '.ig-capsule'];
+    const LOOP: Readonly<Record<string, string>> = {
+      background: 'var(--ig-state-failed-fill)',
+      'block-size': 'var(--ig-space-wide)',
+      'border-radius': 'var(--ig-radius-large)',
+      color: 'var(--ig-state-failed)',
+      'font-family': 'var(--ig-font-ui)',
+      'font-size': 'var(--ig-font-size-small)',
+      'font-weight': 'var(--ig-weight-medium)',
+      padding: '0 var(--ig-space-snug)',
+    };
+    for (const [property, expected] of Object.entries(LOOP)) {
+      assert.equal(declaredOn(viewerStylesheet, '.ig-loop-tag', property, inside)?.value, expected, `the loop tag reads ${property}`);
+    }
+    assert.deepEqual(
+      missedBy('.ig-loop-tag', '.ig-loop-tag', inside, [
+        ['background', 'color-mix(in srgb, var(--ig-state-failed) var(--ig-tint-fill), transparent)'],
+        ['font-size', 'var(--ig-font-size-micro)'],
+      ]),
+      [],
+    );
+  });
+
+  it('draws the legend bar on no ground of its own, and a docked one on the root ground', () => {
+    assert.equal(declaredOn(viewerStylesheet, '.ig-legend', 'background', ['.ig-viewer']), undefined, 'the legend bar still paints a ground');
+    // DOCKED, IT IS STICKY OVER ROWS THAT SCROLL BENEATH IT, so it takes the
+    // root's ground rather than letting them show through.
+    assert.equal(declaredOn(viewerStylesheet, '.ig-legend', 'background', [".ig-viewer[data-legend='docked']"])?.value, 'var(--ig-bg)');
   });
 });

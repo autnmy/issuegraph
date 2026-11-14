@@ -143,7 +143,7 @@ describe('the host-facts port', () => {
     const markup = renderViewer(hostedFixtureDocument).markup;
     assert.match(
       markup,
-      /<span class="ig-badge" data-caveat="preview-only"><span class="ig-glyph" aria-hidden="true">◐<\/span><span>estimated<\/span><\/span>/,
+      /<span class="ig-badge" data-caveat="preview-only"><span class="ig-glyph" aria-hidden="true">◐<\/span><span>Estimated<\/span><\/span>/,
     );
     assert.match(
       markup,

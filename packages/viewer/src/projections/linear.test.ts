@@ -111,7 +111,9 @@ describe('the linear projection', () => {
     // long title, and the unit is the one place the design draws an enclosure
     // to say the opposite.
     // SENTENCE CASE IN THE WORDS (#288): the sheet no longer capitalises the label.
-    assert.match(unit, /<span class="ig-unit-pill">⧉ One unit · 2 issues<\/span><span class="ig-unit-note">Worked together<\/span>/);
+    // NO GLYPH AND NO NOTE (#293): the export's label is the words alone, with
+    // the count in a span of its own so it can be set regular and muted.
+    assert.match(unit, /<div class="ig-unit-mark"><span class="ig-unit-pill">One unit · <span class="ig-unit-num">2<\/span> issues<\/span><\/div>/);
     // THE IDENTITY GOES THROUGH `identity`, so a member with a URL keeps the
     // deep-link chip §16e calls "the only external link". The fixture's unit
     // has none, so both draw as plain keys — the linked case is asserted below.
@@ -247,9 +249,13 @@ describe('the linear projection', () => {
       row(render(), '102'),
       /Priority raised <span class=\"ig-id\">P3 -&gt; 0<\/span><span> because it blocks <span class=\"ig-id\">101<\/span>/,
     );
-    // And the same fact as a chip on the badge row, which is where a reader
-    // scanning a column of rows meets it.
-    assert.match(row(render(), '102'), /<span class="ig-badge" data-priority="promoted">P3 -&gt; 0<\/span>/);
+    // And the same fact on the badge row, which is where a reader scanning a
+    // column of rows meets it: the tag holds the priority the row has now, and
+    // the raise is muted text after it, as the board draws it (#293).
+    assert.match(
+      row(render(), '102'),
+      /<span class="ig-badge" data-priority="promoted">P0<\/span><span class="ig-badge" data-raise="3">from P3<\/span>/,
+    );
   });
 
   it('renders the other two provenance forms', () => {

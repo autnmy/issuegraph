@@ -12,6 +12,7 @@ import {
   AUDIT_FILTER_ATTRIBUTE,
   AUDIT_PANEL_ATTRIBUTE,
   AUDIT_SEVERITY_ATTRIBUTE,
+  AUDIT_WORST_ATTRIBUTE,
   auditFilterKeeps,
   auditOverlay,
   auditRowAttributes,
@@ -308,6 +309,28 @@ describe('the header count', () => {
     assert.match(renderAuditHeader(overlay), /aria-expanded="false"/);
     assert.match(renderAuditHeader(overlay, { open: true }), /aria-expanded="true"/);
     assert.equal(/aria-pressed/.test(renderAuditHeader(overlay)), false);
+  });
+
+  it('leads the count with the dot of the worst problem, hidden from a screen reader (#293)', () => {
+    // The export's head draws its problems button with the state dot of the
+    // worst problem before the count. The count and its word already say what
+    // was found, so the dot is decoration.
+    const both = overlayOf(
+      [...CYCLE.issues, issue('gone', 'closed')],
+      [...CYCLE.edges, ['blocked-by', 'a', 'gone']],
+    );
+    assert.equal(both.count, 2);
+    assert.match(
+      renderAuditHeader(both),
+      new RegExp(`<span class="ig-audit-dot" aria-hidden="true" ${AUDIT_WORST_ATTRIBUTE}="cycle"></span><span class="ig-audit-count">2</span>`),
+    );
+    // A closed blocker alone is the worst there is, so it speaks for the dot.
+    const stale = overlayOf([issue('a'), issue('gone', 'closed')], [['blocked-by', 'a', 'gone']]);
+    assert.match(renderAuditHeader(stale), new RegExp(`${AUDIT_WORST_ATTRIBUTE}="stale-blocker"`));
+    // AT ZERO THERE IS NO WORST PROBLEM, so no dot, while the count stays.
+    const clean = renderAuditHeader(overlayOf([issue('a'), issue('b')], [['blocked-by', 'a', 'b']]));
+    assert.equal(/ig-audit-dot/.test(clean), false, 'a clean graph draws a problem dot');
+    assert.match(clean, /<span class="ig-audit-count">0<\/span>/);
   });
 
   it('renders no host-supplied text at all', () => {
