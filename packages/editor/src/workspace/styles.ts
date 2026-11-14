@@ -1910,14 +1910,16 @@ ${heldRailDeclarations}
     box-shadow: var(--ig-elevation-overlay);
   }
 
-  /* THE CANVAS LEGEND ENDS WHERE THE LIFTED INSPECTOR BEGINS (#303). The
-     switch's drawn figure ("14 of 19 drawn") sits at the legend's far end, as
-     the board draws it; the board's Inspector is a column, so nothing covers
-     it there. Here the panel lies over the canvas, so a legend running the
-     canvas's full width put that figure under it. The clearance is the
-     panel's own inline-size, the rule above. */
-  .ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='canvas'] .ig-legend {
-    margin-inline-end: calc(var(--ig-char-width) * 42);
+  /* THE CANVAS ZONE'S CONTENT ENDS WHERE THE LIFTED INSPECTOR BEGINS (#303).
+     The board's Inspector is a column, so nothing covers the canvas's far
+     edge there; here the panel lies over the canvas, and everything set at
+     that edge went under it: the head's count ("Selected: #3104 · 74 related"),
+     the switch's "14 of 19 drawn", the Related list's counts. Padding the zone,
+     not each part, keeps every part clear at once; the panel itself is a
+     sibling in the same grid area, so the padding does not move it. The
+     clearance is the panel's own inline-size, the rule above. */
+  .ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='canvas'] {
+    padding-inline-end: calc(var(--ig-char-width) * 42);
   }
 
   /* OPENED BY SELECTION, DISMISSED ON ESCAPE — 17k's own words, and both
@@ -1978,9 +1980,9 @@ ${heldRailDeclarations}
     box-shadow: none;
   }
 
-  /* THE INSPECTOR IS A COLUMN AGAIN, so the legend has nothing to clear. */
-  .ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='canvas'] .ig-legend {
-    margin-inline-end: 0;
+  /* THE INSPECTOR IS A COLUMN AGAIN, so the canvas has nothing to clear. */
+  .ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='canvas'] {
+    padding-inline-end: 0;
   }
 
   /* THE DISMISSAL MEANS NOTHING HERE, and saying so is the undo of the middle

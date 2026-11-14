@@ -2266,7 +2266,7 @@ describe('one recovery card per failed write: the log stands down where the Insp
   });
 });
 
-describe('the canvas legend clears the lifted Inspector (#303)', () => {
+describe('the canvas zone clears the lifted Inspector (#303)', () => {
   const css = workspaceStylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
   const blockOf = (condition: string): string => {
     const at = css.indexOf(`@container ig-workspace (${condition})`);
@@ -2274,14 +2274,14 @@ describe('the canvas legend clears the lifted Inspector (#303)', () => {
     const next = css.indexOf('@container ig-workspace', at + 1);
     return css.slice(at, next < 0 ? undefined : next);
   };
-  const legend = ".ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='canvas'] .ig-legend";
+  const zone = ".ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='canvas']";
   const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&');
   const margin = (value: string): RegExp =>
-    new RegExp(`${escaped(legend)} \\{\\s*margin-inline-end: ${escaped(value)};`);
+    new RegExp(`${escaped(zone)} \\{\\s*padding-inline-end: ${escaped(value)};`);
 
-  it('stops the legend where the overlay starts, at the overlay’s own width', () => {
+  it('stops the canvas content where the overlay starts, at the overlay’s own width', () => {
     // THE SAME WIDTH BOTH WAYS: the clearance is read off the panel's own rule, so
-    // the switch's drawn figure cannot slide under a panel that changed size.
+    // the head's count, the switch's figure and the list's counts cannot slide under a panel that changed size.
     const middle = blockOf('width < 1360px');
     const panel = middle.match(/\.ig-workspace \.ig-zone\[data-zone='inspector'\] \{[^}]*inline-size: ([^;]+);/)?.[1];
     assert.ok(panel !== undefined, 'the lifted panel has no inline-size');
