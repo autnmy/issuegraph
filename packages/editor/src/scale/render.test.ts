@@ -92,7 +92,8 @@ describe('the refusal, as a reader sees it', () => {
     assert.match(
       result.markup,
       new RegExp(
-        `<span class="ig-capsule-size">${String(capsule.size)}</span>` +
+        // A count with its noun since #296, as the export's group card reads it.
+        `<span class="ig-capsule-size">${String(capsule.size)} issues</span>` +
           `<span class="ig-capsule-load">\u2298 ${String(capsule.blockedByEdges)}</span>` +
           // THE NAME SLOT NOW HOLDS THE ANCHOR, not a bare title: RULINGS.md
           // §4 identifies a capsule by "around #488 · <title>" because a
@@ -164,7 +165,8 @@ describe('the refusal, as a reader sees it', () => {
     assert.ok(card !== undefined);
     assert.match(card, />Loop</);
     assert.match(card, />Nothing can start</);
-    // The tint the frame puts on the whole stuck card is a rule on this hook.
+    // The hook stays on the stuck card, for a host that wants to style it;
+    // this sheet marks it with the tag alone (#296).
     assert.match(card, /data-reach="cyclic"/);
     assert.equal(/longest chain/i.test(card), false);
     // THE REACH SLOT, not a bare digit probe over the whole card: the size, the

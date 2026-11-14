@@ -86,20 +86,20 @@ describe('the linear projection', () => {
     assert.notEqual(footerAt, -1);
     assert.ok(trackerHeld > footerAt, 'a tracker-held slot stayed in the ranked list');
     assert.equal(/class="ig-rank"/.test(row(markup, '105')), false);
-    // THE REASON IS ON SCREEN, not in a tooltip: it is the one thing a footer
-    // entry exists to say, and a `title` is invisible until hovered and never
-    // reached on touch. It stays in the accessible name too.
+    // THE REASON RIDES THE ACCESSIBLE NAME, and the row's tag is what a reader
+    // sees (#296): the export draws no second line of reasons.
     assert.match(row(markup, '105'), /aria-label="[^"]*claimed by another run"/);
-    assert.match(row(markup, '105'), /<p class="ig-footer-why">claimed by another run<\/p>/);
+    assert.equal(row(markup, '105').includes('ig-footer-why'), false);
     assert.equal(/ title="claimed by another run"/.test(row(markup, '105')), false, 'the reason is drawn twice');
   });
 
   it('renders a duplicate in the footer naming its canonical', () => {
     const markup = render();
     assert.ok(markup.indexOf('data-ig-key="106"') > markup.indexOf('ig-footer'));
-    assert.match(row(markup, '106'), /<span class="ig-badge" data-hold="duplicate">duplicate<\/span>/);
-    assert.match(row(markup, '106'), /<p class="ig-footer-why">The original gets worked instead\.<\/p>/);
-    assert.match(row(markup, '106'), /aria-label="[^"]*duplicate of 105, which gets worked instead"/);
+    // THE BOARD'S CASE FOR THE REASON TAG (#296).
+    assert.match(row(markup, '106'), /<span class="ig-badge" data-hold="duplicate">Duplicate<\/span>/);
+    assert.equal(row(markup, '106').includes('ig-footer-why'), false);
+    assert.match(row(markup, '106'), /aria-label="[^"]*duplicate of #105, which gets worked instead"/);
   });
 
   it('renders a together unit as one row naming both members', () => {
@@ -117,8 +117,8 @@ describe('the linear projection', () => {
     // THE IDENTITY GOES THROUGH `identity`, so a member with a URL keeps the
     // deep-link chip §16e calls "the only external link". The fixture's unit
     // has none, so both draw as plain keys — the linked case is asserted below.
-    assert.match(unit, /<li class="ig-unit-member"><span class="ig-title">Split the invoice writer<\/span><span class="ig-id"><span class="ig-id">103<\/span> · P2<\/span><\/li>/);
-    assert.match(unit, /<li class="ig-unit-member"><span class="ig-title">Split the invoice reader<\/span><span class="ig-id"><span class="ig-id">104<\/span> · P2<\/span><\/li>/);
+    assert.match(unit, /<li class="ig-unit-member"><span class="ig-title">Split the invoice writer<\/span><span class="ig-id"><span class="ig-id">#103<\/span> · P2<\/span><\/li>/);
+    assert.match(unit, /<li class="ig-unit-member"><span class="ig-title">Split the invoice reader<\/span><span class="ig-id"><span class="ig-id">#104<\/span> · P2<\/span><\/li>/);
     assert.equal(markup.includes('data-ig-key="104"'), false, '104 rendered as its own row');
   });
 
@@ -153,7 +153,8 @@ describe('the linear projection', () => {
     const markup = render(heldTogetherDocument);
     const unit = row(markup, '1');
 
-    assert.match(unit, /data-edge="blocked-by"[^>]*aria-label="blocked by 3"/);
+    // The other issue carries its "#" (#296).
+    assert.match(unit, /data-edge="blocked-by"[^>]*aria-label="blocked by #3"/);
   });
 
   it('renders an edge internal to a unit once, not once per member', () => {
@@ -247,7 +248,7 @@ describe('the linear projection', () => {
     // text.
     assert.match(
       row(render(), '102'),
-      /Priority raised <span class=\"ig-id\">P3 -&gt; 0<\/span><span> because it blocks <span class=\"ig-id\">101<\/span>/,
+      /Priority raised <span class=\"ig-id\">P3 -&gt; 0<\/span><span> because it blocks <span class=\"ig-id\">#101<\/span>/,
     );
     // And the same fact on the badge row, which is where a reader scanning a
     // column of rows meets it: the tag holds the priority the row has now, and
@@ -352,7 +353,7 @@ describe('the linear projection', () => {
   });
 
   it('names a duplicate with the vocabulary label rather than a second spelling', () => {
-    assert.match(row(render(), '106'), /aria-label="[^"]*duplicate of 105, which gets worked instead"/);
+    assert.match(row(render(), '106'), /aria-label="[^"]*duplicate of #105, which gets worked instead"/);
   });
 
   it('marks the selected row and gives the focused row the tab stop', () => {

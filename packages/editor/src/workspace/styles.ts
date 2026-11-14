@@ -2077,18 +2077,27 @@ ${heldRailDeclarations}
     display: none;
   }
 
-  /* THE ORDER TAB HIDES THE CANVAS ZONE BUT NOT THE AUDIT OVERLAY IN IT. The
-     header's problem count opens findings in that zone, and display:none would
-     take them down with it on the one tab a reader starts on. visibility is the
-     property a child can turn back on, and a hidden box is also out of hit
-     testing, the tab order and the accessibility tree, so the rail beneath it
-     stays the view. */
+  /* THE ORDER TAB HIDES THE CANVAS ZONE. visibility rather than display, so a
+     hidden box is out of hit testing, the tab order and the accessibility tree
+     while the zone keeps its place in the grid. The problems panel in it is
+     the one exception, and it is drawn IN FLOW, at the end of this block. */
   .ig-workspace[data-tab='order'] .ig-zone[data-zone='canvas'] {
     visibility: hidden;
   }
 
-  .ig-workspace[data-tab='order'] .ig-zone[data-zone='canvas'] .ig-audit-overlay {
-    visibility: visible;
+  /* THE ORDER'S KEY IS ITS READINESS KEY, AT THE END OF THE LIST (issue 296).
+     Docked, the rail's legend stuck to the bottom of a phone's short view and,
+     wrapping its five relationships and four readiness keys onto many lines,
+     left room for about two rows of the order. The export's list ends with a
+     readiness key, and its rows print each relationship's words beside its
+     icon, so here the bar scrolls with the list and keeps the readiness key
+     alone. */
+  .ig-workspace .ig-zone[data-zone='rail'] .ig-viewer[data-legend='docked'] > .ig-legend {
+    position: static;
+  }
+
+  .ig-workspace .ig-zone[data-zone='rail'] .ig-legend > .ig-legend-item {
+    display: none;
   }
 
   /* NO STRIP: the tabs are the way to the canvas here. */
@@ -2145,6 +2154,41 @@ ${heldRailDeclarations}
 
   .ig-workspace[data-tab='related'][data-canvas] .ig-zone[data-zone='canvas'] > .ig-related {
     display: block;
+  }
+
+  /* THE PROBLEMS PANEL ON THE ORDER TAB IS IN FLOW, ABOVE THE ORDER (issue
+     296). The export's rules put the panel over the graph and never over the
+     order, at every width; here the order IS the view, so the overlay drawn
+     over it covered the rows a reader came to see, and hiding it left the
+     header's problems button opening nothing. So while the panel is open the
+     grid gains a row above the view, the canvas zone takes that row holding the
+     panel alone, and the panel is an ordinary box at full width: the order is
+     pushed down, never covered. The overlay is drawn only while open, so its
+     presence is the open state. Last in this block, so it wins the strip
+     layout's positioning of the same overlay on order. */
+  .ig-workspace[data-tab='order']:has(.ig-zone[data-zone='canvas'] > .ig-audit-overlay) {
+    grid-template-areas:
+      'header'
+      'audit'
+      'view';
+    grid-template-rows: auto auto 1fr;
+  }
+
+  .ig-workspace[data-tab='order'] .ig-zone[data-zone='canvas']:has(> .ig-audit-overlay) {
+    grid-area: audit;
+    overflow: visible;
+    visibility: visible;
+  }
+
+  .ig-workspace[data-tab='order'] .ig-zone[data-zone='canvas'] > :not(.ig-audit-overlay) {
+    display: none;
+  }
+
+  .ig-workspace[data-tab='order'] .ig-zone[data-zone='canvas'] > .ig-audit-overlay {
+    box-shadow: none;
+    max-height: none;
+    position: static;
+    width: auto;
   }
 }
 `;

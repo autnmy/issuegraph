@@ -180,6 +180,9 @@ export {
   glyphAndLabel,
   hiddenGlyph,
   identity,
+  // The `#` a bare issue number carries wherever a reader sees it (#296), so
+  // layer 2 draws a ref the way the rail does.
+  issueNumber,
   provenanceClause,
 } from './parts.ts';
 

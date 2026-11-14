@@ -128,10 +128,12 @@ export const scaleLadderStylesheet = `
   width: 100%;
   height: 100%;
   text-align: left;
+  /* THE EXPORT'S GROUP CARD (issue 296): the second fill at the card corner,
+     with no border. */
   background: var(--ig-surface-2);
   color: var(--ig-text-body);
-  border: var(--ig-stroke) solid var(--ig-line);
-  border-radius: var(--ig-radius);
+  border: 0;
+  border-radius: var(--ig-radius-large);
   padding: var(--ig-space);
   font-family: var(--ig-font-ui);
   font-size: var(--ig-font-size);
@@ -143,21 +145,15 @@ export const scaleLadderStylesheet = `
   outline-offset: var(--ig-space-tight);
 }
 
+/* With no border to colour, a hovered card takes the stronger fill. */
 .ig-capsule-enter:hover {
-  border-color: var(--ig-accent);
+  background: var(--ig-surface);
 }
 
-/* THE WHOLE STUCK CARD IS TINTED, as frame 17f draws it — the tag alone puts
-   the one finding that stops work outright at the size of every other chip on
-   the board. The border takes blocked-by's hue, because that is the edge the
-   cycle is made of; the tag inside it states the error, in the error state. */
-.ig-capsule-enter[data-reach='cyclic'] {
-  border-color: var(--ig-edge-blocked-by);
-}
-
-.ig-capsule-enter[data-reach='cyclic'] .ig-capsule-reach {
-  color: var(--ig-edge-blocked-by);
-}
+/* A STUCK CARD SAYS SO ON ITS TAG ALONE (issue 296). It drew blocked-by's hue
+   on its border and on its reach line as well, and the export's stuck group is
+   the same card as any other with an error Loop tag in it: one state, one mark.
+   data-reach stays on the markup for a host that wants to style the stuck card. */
 
 /* THE COUNT LEADS BY ITS PLACE AND ITS INK, NOT ITS FACE. It is a count, and
    every count both packages draw is the body sans at the body size with

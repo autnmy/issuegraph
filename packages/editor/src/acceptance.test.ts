@@ -884,19 +884,12 @@ const WORKSPACE_WORDS: surface.WorkspaceWords = {
   },
   audit: {
     heading: 'problems in the encoding',
-    classes: {
-      cycle: 'a loop',
-      'stale-blocker': 'closed blocker',
-      'dead-duplicate-ref': 'dead canonical',
-      'encoding-refused': 'unreadable',
-    },
     titles: {
       cycle: 'these issues wait on each other for ever',
       'stale-blocker': 'this waits on something already finished',
       'dead-duplicate-ref': 'this is filed against an issue that is gone',
       'encoding-refused': 'this declaration could not be read',
     },
-    show: 'go to it',
     filter: 'narrow the list',
     refusedHeading: 'could not be read',
     refusedOpen: 'see it upstream',

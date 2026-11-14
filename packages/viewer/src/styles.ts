@@ -943,22 +943,15 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   background: color-mix(in srgb, var(--ig-accent) var(--ig-tint-unit), transparent);
 }
 
-/* A HELD ROW IS HATCHED, NOT DASHED. It keeps its position in the sequence —
-   "why isn't my P1 running" is answerable in place — so it must read as
-   unavailable without leaving the grid the rows above and below hang off. A
-   dashed border around one row breaks that alignment; a ground does not. */
-.ig-slot[data-held='true'] {
-  background-image: repeating-linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--ig-text) var(--ig-tint-unit), transparent) 0 var(--ig-space-tight),
-    transparent var(--ig-space-tight) calc(var(--ig-space-tight) * 2)
-  );
-}
+/* A HELD ROW IS MARKED BY ITS DOT ALONE (issue 296). It keeps its position in
+   the sequence, so "why isn't my P1 running" is answerable in place, and the
+   export says it is held with the held station and nothing else: no hatched
+   ground, no dashed border. The station's held fill is the whole mark. */
 
 /* A SELECTED ROW IS FILLED WITH --ig-surface, the stronger of the two
    surfaces. --ig-surface-2 is what a receded row takes, so a selected row never
-   reads as receded. background-color, not the shorthand, so a held row keeps
-   its hatch when it is selected. */
+   reads as receded. background-color, not the shorthand, so no background-image
+   a host gives a row is cleared when it is selected. */
 .ig-slot[aria-current='true'] {
   background-color: var(--ig-surface);
   box-shadow: inset var(--ig-band-rail) 0 0 var(--ig-accent);
@@ -1389,13 +1382,6 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   margin: 0;
 }
 
-.ig-footer-note {
-  color: var(--ig-text-muted);
-  font-size: var(--ig-font-size-compact);
-  line-height: var(--ig-row-meta-line);
-  margin: 0;
-}
-
 .ig-footer .ig-list {
   display: flex;
   flex-direction: column;
@@ -1437,13 +1423,6 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 
 .ig-footer-row[aria-current='true'] .ig-title {
   color: var(--ig-text);
-}
-
-.ig-footer-why {
-  color: var(--ig-text-muted);
-  font-size: var(--ig-font-size-compact);
-  line-height: var(--ig-row-meta-line);
-  margin: 0;
 }
 
 /* ── the graph canvas ──────────────────────────────────────────────────── */
@@ -1765,8 +1744,8 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   background: var(--ig-surface-2);
 }
 
-/* A LIST ROW TAKES THE CARD'S GROUND through background-color alone, so a held
-   row keeps its hatch, which is a background-image, on the second surface. The
+/* A LIST ROW TAKES THE CARD'S GROUND through background-color alone, so any
+   background-image on the row survives on the second surface. The
    panel class lifts each rule to the card rule's specificity. The footer rule
    is scoped to the list, whose root and detached footer both carry ig-linear,
    because the graph draws its footer rows without a ground. */

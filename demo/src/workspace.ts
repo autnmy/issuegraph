@@ -379,7 +379,7 @@ export const WORKSPACE_WORDS: MountWords = {
     diffEmpty: 'Nothing on this issue is different. Their change was somewhere else.',
     retryFailed: 'Could not read the latest version:',
   },
-  // §17d's FINDINGS LIST. The chips are the frame's own four words; the titles
+  // §17d's FINDINGS LIST. The titles
   // say the CONSEQUENCE rather than restating the finding, because the sentence
   // under each one already names the issues and what is declared between them.
   //
@@ -390,19 +390,12 @@ export const WORKSPACE_WORDS: MountWords = {
   // class and the detail beneath it says which issues.
   audit: {
     heading: 'problems to fix',
-    classes: {
-      cycle: 'loop',
-      'stale-blocker': 'closed blocker',
-      'dead-duplicate-ref': 'closed original',
-      'encoding-refused': 'unreadable',
-    },
     titles: {
       cycle: 'These issues block each other in a loop.',
       'stale-blocker': 'This waits on an issue that is already closed.',
       'dead-duplicate-ref': 'This is a duplicate of a closed issue, so nothing tracks its work.',
       'encoding-refused': 'Some of this issue\u2019s relationships could not be read.',
     },
-    show: 'Show',
     // §17d's own entry point, drawn in the panel head: `filter the rail to
     // these`. It used to ride the header count; §3 gave that count one job.
     filter: 'Show only these in the list',
@@ -474,6 +467,8 @@ export const PAPER_THEME: Theme = extendTheme(defaultTheme, {
     '--ig-state-conflict': '#5C4300',
     // The light ground a failed tag's word sits on.
     '--ig-state-failed-fill': '#F6E3DC',
+    // The light ground an attention note's title sits on.
+    '--ig-state-conflict-fill': '#F7EDD3',
     // The export's light fill-strong: its dark ink at 8% over the ground.
     '--ig-fill-strong': 'rgb(25 28 34 / 0.08)',
     // The two state hues again, for the dot that marks each state.

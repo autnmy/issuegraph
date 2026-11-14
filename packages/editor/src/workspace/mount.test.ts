@@ -254,7 +254,9 @@ describe("the audit region's scroll offset survives a redraw", () => {
       // THE INERT CASE ITSELF: the ref names nothing the page carries, so the
       // block draws its card and neither control.
       assert.equal(before.querySelector('button'), null, 'the fixture drew a control, so this is not the inert case');
-      assert.equal(page.element.querySelector('.ig-audit-panel'), null, 'the fixture drew a panel too');
+      // THE PANEL KEEPS ITS TITLE at one unreadable finding (#296), with no list
+      // under it, so the block is not the only audit stop on the page.
+      assert.equal(page.element.querySelector('.ig-audit-panel .ig-audit-list'), null, 'the panel listed the refusal too');
 
       before.focus();
       assert.equal(page.dom.window.document.activeElement, before, 'the fixture cannot hold focus');

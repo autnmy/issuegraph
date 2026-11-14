@@ -122,9 +122,8 @@ export const auditStylesheet = `
 
 /* §17d'S PANEL. Note what it does NOT select on: ${AUDIT_SEVERITY_ATTRIBUTE},
    whose rule immediately above is deliberately unqualified because it lands on a
-   row the VIEWER rendered. A chip wearing that attribute would draw the rail's
-   gold bar whatever hue the class table gave it, which is the four-hue mapping
-   below defeated by one attribute. Chips carry ${AUDIT_KIND_ATTRIBUTE}. */
+   row the VIEWER rendered. A card wearing that attribute would draw the rail's
+   gold bar whatever state it was drawn in. Cards carry ${AUDIT_KIND_ATTRIBUTE}. */
 /* IT IS THE SELECTION'S PEER, NOT ITS HEADING, so it carries its own padding:
    it is a sibling of .ig-inspector inside the zone rather than a child, and
    that column's padding does not reach it.
@@ -221,79 +220,59 @@ export const auditStylesheet = `
   gap: var(--ig-space-micro);
 }
 
-.ig-audit-chip {
-  align-self: flex-start;
-  border: var(--ig-stroke) solid var(--ig-line);
-  border-radius: var(--ig-radius-small);
-  font-family: var(--ig-font-mono);
-  font-size: var(--ig-font-size-pill);
-  padding: 0 var(--ig-space-tight);
+/* EACH FINDING IS THE EXPORT'S NOTE (issue 296): a fill in its state at the
+   control corner, padded, with no border. The neutral state, a closed blocker,
+   sits on the second fill; a loop on the error fill and an unreadable block or
+   a duplicate of a closed issue on the attention fill, each title in its
+   state's hue and the sentence under it in text ink. The refused block's card
+   is one of these notes too. */
+.ig-audit-card,
+.ig-audit-refused-card {
+  background: var(--ig-surface-2);
+  border-radius: var(--ig-radius);
+  padding: var(--ig-space);
+}
+
+.ig-audit-card[data-s='error'] {
+  background: var(--ig-state-failed-fill);
+}
+
+.ig-audit-card[data-s='error'] .ig-audit-title {
+  color: var(--ig-state-failed);
+}
+
+.ig-audit-card[data-s='attention'],
+.ig-audit-refused-card[data-s='attention'] {
+  background: var(--ig-state-conflict-fill);
+}
+
+.ig-audit-card[data-s='attention'] .ig-audit-title,
+.ig-audit-refused-card[data-s='attention'] .ig-audit-title {
+  color: var(--ig-state-conflict);
 }
 
 .ig-audit-title {
   color: var(--ig-text);
   font-size: var(--ig-font-size);
+  font-weight: var(--ig-weight-medium);
   margin: 0;
 }
 
-/* SENTENCE-LENGTH COPY TAKES --ig-text-body, NEVER --ig-text-muted. SPEC's
-   closing note measures muted at 4.65:1 on a plain surface and about 0.4 less
-   inside a tint, which drops it under AA — so muted is reserved there for short
-   mono labels, and a finding's detail is a sentence. */
+/* THE NOTE'S SENTENCE IS TEXT INK at the body size, as the export's note body
+   is. It took --ig-text-body at a smaller step; muted stays out of it either
+   way, because a finding's detail is a sentence. */
 .ig-audit-detail {
-  color: var(--ig-text-body);
-  font-size: var(--ig-font-size-compact);
-  line-height: var(--ig-line-height);
-  margin: 0;
-}
-
-/* MUTED IS CORRECT HERE, ON THE SAME RULE .ig-audit-refused-source ends this
-   file with: the note above reserves muted for SHORT MONO LABELS, and a cycle's
-   walk is one — refs and separators, no prose. Length is not the test and could
-   not be: a large ring draws a long line, which is what the wrap below is for.
-   What muted is reserved AGAINST is sentence-length COPY. The detail rule one block up takes --ig-text-body because it IS a
-   sentence, so it is the wrong neighbour to copy.
-
-   break-word, NOT anywhere. A ref is a token worth keeping whole; the refused
-   block accepts mid-token breaks because it quotes arbitrary body text, and a
-   walk is a list of identifiers a reader has to be able to match against the
-   rail. */
-.ig-audit-walk {
-  color: var(--ig-text-muted);
-  font-family: var(--ig-font-mono);
-  font-size: var(--ig-font-size-compact);
-  line-height: var(--ig-line-height);
-  margin: 0;
-  overflow-wrap: break-word;
-}
-
-.ig-audit-show {
-  align-self: flex-start;
-  background: none;
-  border: var(--ig-stroke) solid var(--ig-line);
-  border-radius: var(--ig-radius-small);
   color: var(--ig-text);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--ig-font-size-meta);
-  padding: var(--ig-space-micro) var(--ig-space-tight);
-}
-
-.ig-audit-show:hover {
-  border-color: var(--ig-accent);
-}
-
-.ig-audit-show:focus-visible {
-  outline: var(--ig-focus-ring) solid var(--ig-focus);
-  outline-offset: var(--ig-space-micro);
+  font-size: var(--ig-font-size);
+  line-height: var(--ig-line-height);
+  margin: 0;
 }
 
 /* 17d'S REMEDIES. A row of them under the card's sentence.
 
-   THEY TAKE THE SAME CHROME AS .ig-audit-show DELIBERATELY. A remedy and the
-   navigation control beside it do the same KIND of thing — both publish a
-   selection and neither writes — so drawing the remedies louder would promise
-   an action they do not perform. 3's whole point is that the judgment stays
+   THEY ARE QUIET CONTROLS DELIBERATELY. A remedy publishes a selection and
+   never writes, so drawing it louder would promise an action it does not
+   perform. 3's whole point is that the judgment stays
    with the owner, and a button styled like a commit invites a click that is
    not one.
 
@@ -367,42 +346,6 @@ export const auditStylesheet = `
   outline-offset: var(--ig-space-micro);
 }
 
-/* ONE RULE PER CLASS, WRITTEN OUT, never through an intermediate property: the
-   viewer's own badge sheet records why — a \--ig-audit-hue\ set here and read
-   here names something no theme and no layout declares, and the token scan
-   exists to refuse exactly that.
-
-   THE TINTS ARE THE VIEWER'S RECIPE, not new numbers. \--ig-tint-fill\ and
-   \--ig-tint-border\ are what \.ig-badge[data-edge]\ already mixes an edge hue
-   with, and they are the frame's own chip wash to within a point.
-
-   THE TEXT IS THE BASE HUE. The frame lightens each chip's label a step off the
-   hue it tints with; those derivatives have no token, and a literal here is
-   refused by the scan two files over, so the label takes the hue itself. */
-.ig-audit-chip[${AUDIT_KIND_ATTRIBUTE}='cycle'] {
-  background: color-mix(in srgb, var(--ig-edge-blocked-by) var(--ig-tint-fill), transparent);
-  border-color: color-mix(in srgb, var(--ig-edge-blocked-by) var(--ig-tint-border), transparent);
-  color: var(--ig-edge-blocked-by);
-}
-
-.ig-audit-chip[${AUDIT_KIND_ATTRIBUTE}='stale-blocker'] {
-  background: color-mix(in srgb, var(--ig-edge-serialize-with) var(--ig-tint-fill), transparent);
-  border-color: color-mix(in srgb, var(--ig-edge-serialize-with) var(--ig-tint-border), transparent);
-  color: var(--ig-edge-serialize-with);
-}
-
-.ig-audit-chip[${AUDIT_KIND_ATTRIBUTE}='dead-duplicate-ref'] {
-  background: color-mix(in srgb, var(--ig-edge-duplicate-of) var(--ig-tint-fill), transparent);
-  border-color: color-mix(in srgb, var(--ig-edge-duplicate-of) var(--ig-tint-border), transparent);
-  color: var(--ig-edge-duplicate-of);
-}
-
-.ig-audit-chip[${AUDIT_KIND_ATTRIBUTE}='encoding-refused'] {
-  background: color-mix(in srgb, var(--ig-edge-blocked-by) var(--ig-tint-fill), transparent);
-  border-color: color-mix(in srgb, var(--ig-edge-blocked-by) var(--ig-tint-border), transparent);
-  color: var(--ig-edge-blocked-by);
-}
-
 /* ---- §17d's fourth class, drawn outside the panel (./refused.ts) ---- */
 
 /* NO SIZE OF ITS OWN, THE SAME ANSWER .ig-audit-panel GIVES ABOVE. This block
@@ -458,13 +401,9 @@ export const auditStylesheet = `
    the one finding that is about an ISSUE rather than a relationship, and the
    box is what says so. */
 .ig-audit-refused-card {
-  background: var(--ig-surface-2);
-  border: var(--ig-stroke) solid var(--ig-card-line);
-  border-radius: var(--ig-radius);
   display: flex;
   flex-direction: column;
   gap: var(--ig-space-tight);
-  padding: var(--ig-space-tight);
 }
 
 .ig-audit-refused-head {

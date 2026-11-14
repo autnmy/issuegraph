@@ -19,19 +19,12 @@ import { AUDIT_SEVERITY_ATTRIBUTE } from './surface.ts';
  */
 const WORDS: AuditWords = {
   heading: 'things wrong with the encoding',
-  classes: {
-    cycle: 'a loop',
-    'stale-blocker': 'closed blocker',
-    'dead-duplicate-ref': 'dead canonical',
-    'encoding-refused': 'unreadable',
-  },
   titles: {
     cycle: 'these wait on each other for ever',
     'stale-blocker': 'this waits on something finished',
     'dead-duplicate-ref': 'this is filed against something gone',
     'encoding-refused': 'this declaration could not be read',
   },
-  show: 'go and look',
   filter: 'narrow the list',
   refusedHeading: 'could not be read',
   refusedOpen: 'see it upstream',
@@ -80,10 +73,11 @@ describe('the encoding-refused block', () => {
     assert.match(markup, new RegExp(`<span class="ig-audit-refused-ref">${REFUSAL.ref}</span>`));
     assert.match(markup, /<span class="ig-audit-refused-diagnostic">unparseable YAML at line 3</);
     assert.match(markup, /<span class="ig-audit-refused-source">blocked-by: \[231, 234</);
-    // THE CHIP IS THE CLASS'S, so the hue rule in `styles.ts` keyed on
-    // `encoding-refused` still lands on something now the panel stopped drawing
-    // this class.
-    assert.match(markup, /<span class="ig-audit-chip" data-ig-audit-kind="encoding-refused">unreadable</);
+    // THE EXPORT'S NOTE (#296): the attention state and the host's title where a
+    // mono class chip used to be.
+    assert.match(markup, /<li class="ig-audit-refused-card" data-ig-audit-kind="encoding-refused" data-s="attention">/);
+    assert.match(markup, new RegExp(`<p class="ig-audit-title">${WORDS.titles['encoding-refused']}</p>`));
+    assert.equal(markup.includes('ig-audit-chip'), false, 'the card still draws a class chip');
   });
 
   it('omits a reason the host did not record', () => {

@@ -333,6 +333,13 @@ describe('the header count', () => {
     assert.match(clean, /<span class="ig-audit-count">0<\/span>/);
   });
 
+  it('counts every finding, unreadable relationships included, the number the panel title shows (#296)', () => {
+    const one = overlayOf([issue('a'), issue('gone', 'closed')], [['blocked-by', 'a', 'gone']]);
+    assert.match(renderAuditHeader(one), /<span class="ig-audit-count">1<\/span><span class="ig-audit-label">problem<\/span>/);
+    const refusedToo = overlayOf([issue('a'), issue('gone', 'closed')], [['blocked-by', 'a', 'gone']], [{ ref: 'a' }]);
+    assert.match(renderAuditHeader(refusedToo), /<span class="ig-audit-count">2<\/span><span class="ig-audit-label">problems<\/span>/);
+  });
+
   it('renders no host-supplied text at all', () => {
     // The boundary that means this module needs no escaper: the only value that
     // reaches the markup is a number. A finding's `detail` is prose about

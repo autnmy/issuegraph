@@ -410,7 +410,10 @@ function reasonFor(tier: ScaleTier, nodeCount: number, focused: boolean): string
   if (tier === 'clusters') {
     return `${String(nodeCount)} related issues are far too many to draw, so they are listed as groups. Search to find one.`;
   }
-  return `${String(nodeCount)} related issues are too many to draw here. The limit is ${String(GRAPH_NODE_BUDGET)}.`;
+  // THE EXPORT'S HEAD, AS DRAWN (#296): "141 related issues are too many to
+  // draw here. Pick a group." It said what the limit was; the board says what
+  // to do, and every card below is the control that does it.
+  return `${String(nodeCount)} related issues are too many to draw here. Pick a group.`;
 }
 
 function refusalFor(

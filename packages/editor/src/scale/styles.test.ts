@@ -169,3 +169,31 @@ describe('a stuck capsule’s loop tag sits on the theme’s error fill, and the
     assert.match(markup, /<span class="ig-capsule-reach">Longest chain \d+<\/span>/);
   });
 });
+
+describe('the capsule board, as the export draws its groups (#296)', () => {
+  const css = `${viewerStylesheet}\n${scaleLadderStylesheet}`;
+  const inside = ['.ig-ladder', '.ig-refusal', '.ig-list', '.ig-capsule-cell'];
+
+  it('draws a group card on the second fill at the card corner, with no border', () => {
+    assert.equal(declaredOn(css, '.ig-capsule-enter', 'background', inside)?.value, 'var(--ig-surface-2)');
+    assert.equal(declaredOn(css, '.ig-capsule-enter', 'border', inside)?.value, '0');
+    assert.equal(declaredOn(css, '.ig-capsule-enter', 'border-radius', inside)?.value, 'var(--ig-radius-large)');
+  });
+
+  it('marks a stuck group on its tag alone: no hued border and no hued reach line', () => {
+    const stuck = ".ig-capsule-enter[data-reach='cyclic']";
+    assert.equal(declaredOn(css, stuck, 'border-color', inside), undefined, 'the stuck card still draws a hued border');
+    assert.equal(
+      declaredOn(css, '.ig-capsule-reach', 'color', [...inside, stuck]),
+      declaredOn(css, '.ig-capsule-reach', 'color', [...inside, '.ig-capsule-enter']),
+      'the stuck card’s reach line takes a colour of its own',
+    );
+  });
+
+  it('heads the board with the export’s words and counts each group with its noun', () => {
+    const result = renderScaleLadder(documentOf({ components: componentsSumming(70, 5) }));
+    assert.match(result.markup, /<p>\d+ related issues are too many to draw here\. Pick a group\.<\/p>/);
+    assert.equal(/The limit is/.test(result.markup), false);
+    assert.match(result.markup, /<span class="ig-capsule-size">\d+ issues<\/span>/);
+  });
+});

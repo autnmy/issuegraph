@@ -263,7 +263,11 @@ function reasonSpec(refusal: EncodingRefusal): ElementSpec | null {
   return element('div', { class: 'ig-audit-refused-reason' }, lines);
 }
 
-/** One refusal's card: the chip and ref, the reason, and what can be done. */
+/**
+ * One refusal's card, as the export's note for relationships that could not be
+ * read (#296): the attention state, the host's title, the ref and the reason,
+ * and what can be done. It drew a mono class chip where the title now is.
+ */
 function refusalSpec(
   refusal: EncodingRefusal,
   options: EncodingRefusedBlockOptions,
@@ -283,12 +287,13 @@ function refusalSpec(
       // `class` — so an element out here carrying it picks up the rail's gold
       // left-bar whatever hue it was given. `./panel.ts` records the same trap.
       [AUDIT_KIND_ATTRIBUTE]: REFUSED_KIND,
+      // The export's rules: relationships that could not be read are the
+      // attention state.
+      'data-s': 'attention',
     },
     [
+      element('p', { class: 'ig-audit-title' }, [words.titles[REFUSED_KIND]]),
       element('div', { class: 'ig-audit-refused-head' }, [
-        element('span', { class: 'ig-audit-chip', [AUDIT_KIND_ATTRIBUTE]: REFUSED_KIND }, [
-          words.classes[REFUSED_KIND],
-        ]),
         element('span', { class: 'ig-audit-refused-ref' }, [refusal.ref]),
       ]),
       reasonSpec(refusal),

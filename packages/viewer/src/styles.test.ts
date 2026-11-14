@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import { type ElementSpec, type SpecChild } from './element.ts';
 import { LAYOUT_PROPERTIES } from './layout.ts';
+import { issueNumber } from './parts.ts';
 import { renderViewer } from './render.ts';
 import { RECEDE_ALPHA } from './recede.ts';
 import { fixtureDocument, hostedFixtureDocument } from './testing/fixtures.ts';
@@ -1420,5 +1421,48 @@ describe('the tag, the rank, the unit count and the legend, as the export draws 
     // DOCKED, IT IS STICKY OVER ROWS THAT SCROLL BENEATH IT, so it takes the
     // root's ground rather than letting them show through.
     assert.equal(declaredOn(viewerStylesheet, '.ig-legend', 'background', [".ig-viewer[data-legend='docked']"])?.value, 'var(--ig-bg)');
+  });
+});
+
+describe('the legend, the held row, the footer group and issue numbers, as the export draws them (#296)', () => {
+  it('prints the legend in the export’s words and order, with the four readiness keys', () => {
+    const markup = renderViewer(fixtureDocument, { projection: 'graph' }).markup;
+    const legend = /<fieldset class="ig-legend"[^>]*>([\s\S]*?)<\/fieldset>/.exec(markup)?.[1] ?? '';
+    const words = [...legend.matchAll(/<span>([^<]+)<\/span>/g)].map((match) => match[1]);
+    assert.deepEqual(words, [
+      'is blocked by',
+      'serializes with',
+      'goes together with',
+      'is a duplicate of',
+      'was decomposed from',
+      'Ready now',
+      'Ready after its blockers',
+      'Held',
+      'Being worked',
+    ]);
+  });
+
+  it('marks a held row with its dot alone: no hatched ground', () => {
+    const inside = ['.ig-viewer', '.ig-list'];
+    assert.equal(declaredOn(viewerStylesheet, ".ig-slot[data-held='true']", 'background-image', inside), undefined, 'a held row is still hatched');
+    assert.equal(/repeating-linear-gradient/.test(withoutComments(viewerStylesheet)), false);
+  });
+
+  it('heads the group "Not in the order" with a bare count, draws no lede, and no second line of reasons', () => {
+    const css = withoutComments(viewerStylesheet);
+    assert.equal(/\.ig-footer-(note|why)\b/.test(css), false, 'a rule still styles the lede or the reasons line');
+    const markup = renderViewer(fixtureDocument).markup;
+    assert.match(markup, /<p class="ig-header-label ig-footer-title">Not in the order<\/p><span class="ig-count-chip" data-count="footer">\d+<\/span>/);
+    assert.equal(/ig-footer-(note|why)/.test(markup), false);
+    assert.match(markup, /<span class="ig-badge" data-hold="duplicate">Duplicate<\/span>/);
+  });
+
+  it('draws a bare issue number with its "#", and a host’s other spelling as written', () => {
+    const markup = renderViewer(fixtureDocument).markup;
+    assert.match(markup, /<span class="ig-id">#\d+<\/span>/);
+    assert.equal(/<span class="ig-id">\d+<\/span>/.test(markup), false, 'an issue number lost its "#"');
+    assert.equal(issueNumber('101'), '#101');
+    assert.equal(issueNumber('acme/app#7'), 'acme/app#7');
+    assert.equal(issueNumber('c0-1'), 'c0-1');
   });
 });

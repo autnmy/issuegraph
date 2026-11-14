@@ -51,6 +51,17 @@ export interface EdgeTreatment {
    * here is what says so, rather than a duplicate of {@link label}.
    */
   readonly reverseLabel?: string;
+  /**
+   * The words the legend prints beside the line, as the export's legend draws
+   * them (#296): "is blocked by", "serializes with", "goes together with", "is
+   * a duplicate of", "was decomposed from". A legend names a kind rather than
+   * one edge, so it reads as the verb a phrase about one issue would take.
+   *
+   * ITS OWN FIELD FOR NOW, and that is a stated gap: the export's rules give
+   * the badges and the Inspector these words too, and moving {@link label} to
+   * them is a wider change than the legend.
+   */
+  readonly legendLabel: string;
   readonly ordering: OrderingEffect;
   /**
    * Whether the edge reads the same both ways. A symmetric edge is drawn once
@@ -73,6 +84,7 @@ export const EDGE_TREATMENTS = Object.freeze({
     hueToken: '--ig-edge-blocked-by',
     label: 'blocked by',
     reverseLabel: 'blocks',
+    legendLabel: 'is blocked by',
     ordering: 'strict-directed',
     symmetric: false,
   },
@@ -82,6 +94,7 @@ export const EDGE_TREATMENTS = Object.freeze({
     glyph: '⇄',
     hueToken: '--ig-edge-serialize-with',
     label: 'serialized with',
+    legendLabel: 'serializes with',
     ordering: 'exclusive-unordered',
     symmetric: true,
   },
@@ -91,6 +104,7 @@ export const EDGE_TREATMENTS = Object.freeze({
     glyph: '⧉',
     hueToken: '--ig-edge-together-with',
     label: 'together with',
+    legendLabel: 'goes together with',
     ordering: 'shares-rank',
     symmetric: true,
   },
@@ -101,6 +115,7 @@ export const EDGE_TREATMENTS = Object.freeze({
     hueToken: '--ig-edge-duplicate-of',
     label: 'duplicate of',
     reverseLabel: 'duplicated by',
+    legendLabel: 'is a duplicate of',
     ordering: 'never-worked',
     symmetric: false,
   },
@@ -111,6 +126,7 @@ export const EDGE_TREATMENTS = Object.freeze({
     hueToken: '--ig-edge-decomposed-from',
     label: 'decomposed from',
     reverseLabel: 'decomposed into',
+    legendLabel: 'was decomposed from',
     ordering: 'provenance-only',
     symmetric: false,
   },

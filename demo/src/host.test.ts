@@ -152,15 +152,16 @@ describe('the demo supplies every host fact the port carries', () => {
     assert.match(markup, /<span class="ig-badge" data-hold="parked">parked<\/span>/);
     assert.match(markup, /data-ig-key="487"[^]*?data-caveat="preview-only"/);
     assert.match(markup, /data-ig-key="501"[^]*?data-caveat="disagree"[^]*?Using the P1 label · the issue body says <s class="ig-strike">priority: 3<\/s>/);
-    // EACH ROW SAYS ITS OWN REASON, in this host's words, on screen. The
-    // legend of labels that used to float beside the count is gone: it restated
-    // the chips and explained nothing.
+    // EACH ROW SAYS ITS OWN REASON, in this host's words: its tag on screen and
+    // its sentence in the row's accessible name, as the export draws a footer
+    // row with no second line of reasons. The legend of labels that used to
+    // float beside the count is gone: it restated the chips and explained nothing.
     for (const [label, why] of [
       ['claimed', 'Another worker already has it.'],
       ['parked', 'Waiting on a decision from a person.'],
       ['not eligible', 'No priority search matches it, so it never comes up.'],
     ] as const) {
-      assert.match(markup, new RegExp(`data-hold="${label}">${label}</span>.*?<p class="ig-footer-why">${why.replace('.', '\\.')}</p>`));
+      assert.match(markup, new RegExp(`aria-label="[^"]*${why.replace('.', '\\.')}"[^]*?data-hold="${label}">${label}</span>`));
     }
     assert.equal(markup.includes('ig-footer-labels'), false);
   });

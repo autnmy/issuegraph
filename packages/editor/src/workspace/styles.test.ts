@@ -2138,3 +2138,44 @@ describe('the counts this sheet draws are body text with tabular figures (#254)'
     assert.equal(/class="ig-id">(?:312|64)</.test(header), false, 'a header count is drawn as an issue key');
   });
 });
+
+describe('on a phone the order stays the view (#296)', () => {
+  /** The rule bodies inside the under-640 container block, comments removed. */
+  const narrow = ((): string => {
+    const css = workspaceStylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
+    const at = css.indexOf('@container ig-workspace (width < 640px)');
+    assert.ok(at >= 0, 'the stylesheet has no under-640 block');
+    return css.slice(at);
+  })();
+
+  it('draws the problems panel on the Order tab in flow above the order, never over it', () => {
+    // The export's rules put the panel over the graph and never over the order,
+    // at every width. On the Order tab the order is the view, so the open panel
+    // takes a grid row of its own above it and is an ordinary box: the list is
+    // pushed down, and the header's problems button still opens something.
+    const order = "\\.ig-workspace\\[data-tab='order'\\]";
+    const canvas = "\\.ig-zone\\[data-zone='canvas'\\]";
+    assert.match(
+      narrow,
+      new RegExp(`${order}:has\\(${canvas} > \\.ig-audit-overlay\\) \\{\\s*grid-template-areas:\\s*'header'\\s*'audit'\\s*'view';\\s*grid-template-rows: auto auto 1fr;`),
+    );
+    assert.match(narrow, new RegExp(`${order} ${canvas}:has\\(> \\.ig-audit-overlay\\) \\{\\s*grid-area: audit;[^}]*visibility: visible;`));
+    const panel = new RegExp(`${order} ${canvas} > \\.ig-audit-overlay \\{([^}]*)\\}`).exec(narrow)?.[1] ?? '';
+    assert.match(panel, /position: static;/, 'the panel is still positioned over the order');
+    assert.match(panel, /width: auto;/);
+    assert.match(panel, /max-height: none;/);
+    // NOTHING ELSE OF THE CANVAS COMES ALONG.
+    assert.match(narrow, new RegExp(`${order} ${canvas} > :not\\(\\.ig-audit-overlay\\) \\{\\s*display: none;`));
+    // AND THESE ARE THE LAST RULES ON IT: nothing after them positions it again.
+    const after = narrow.slice(narrow.indexOf("[data-tab='order'] .ig-zone[data-zone='canvas'] > .ig-audit-overlay"));
+    assert.equal(/position: absolute/.test(after), false);
+  });
+
+  it('lets the rail’s legend scroll with the list and keeps only its readiness key', () => {
+    assert.match(
+      narrow,
+      /\.ig-zone\[data-zone='rail'\] \.ig-viewer\[data-legend='docked'\] > \.ig-legend \{\s*position: static;/,
+    );
+    assert.match(narrow, /\.ig-zone\[data-zone='rail'\] \.ig-legend > \.ig-legend-item \{\s*display: none;/);
+  });
+});

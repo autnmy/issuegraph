@@ -37,6 +37,7 @@ import {
   type ViewerDocument,
   clusterReachLabel,
   element,
+  issueNumber,
   normalizeDocument,
   renderMarkup,
   renderViewer,
@@ -282,7 +283,11 @@ function capsuleSpec(capsule: ScaleCapsule): ElementSpec {
         'aria-label': capsuleLabel(capsule),
       },
       [
-        element('span', { class: 'ig-capsule-size' }, [String(capsule.size)]),
+        // A COUNT WITH ITS NOUN, as the export's group card reads "24 issues"
+        // (#296), not a bare figure a reader has to know the meaning of.
+        element('span', { class: 'ig-capsule-size' }, [
+          `${String(capsule.size)} ${capsule.size === 1 ? 'issue' : 'issues'}`,
+        ]),
         // THE CYCLE STANDS WHERE THE BLOCKING COUNT STANDS. On a stuck
         // component the number of blocking edges is not the fact that changes
         // what the reader does: none of the members is reachable however few
@@ -320,7 +325,7 @@ function capsuleSpec(capsule: ScaleCapsule): ElementSpec {
         // export's group card reads "Around #2201 · …".
         element('span', { class: 'ig-capsule-name' }, [
           element('span', { class: 'ig-capsule-anchor' }, ['Around ']),
-          element('span', { class: 'ig-id' }, [capsule.lead]),
+          element('span', { class: 'ig-id' }, [issueNumber(capsule.lead)]),
           ' \u00b7 ',
           capsule.name,
         ]),
@@ -474,7 +479,7 @@ function isolatedSpec(
           },
           isolated.issues.map((issue) =>
             element('li', {}, [
-              element('span', { class: 'ig-id' }, [issue.key]),
+              element('span', { class: 'ig-id' }, [issueNumber(issue.key)]),
               element('span', { class: 'ig-title' }, [issue.title]),
             ]),
           ),

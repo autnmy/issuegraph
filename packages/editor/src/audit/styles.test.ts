@@ -319,3 +319,33 @@ describe('the header count leads with the dot of the worst problem (#293)', () =
     assert.equal(declaredOn(css, dot('cycle'), 'box-shadow', inside), undefined);
   });
 });
+
+describe('each finding is drawn as the export’s note (#296)', () => {
+  const css = `${viewerStylesheet}\n${auditStylesheet}`;
+  const inside = ['.ig-audit-panel', '.ig-audit-list'];
+
+  it('sets each note on its state’s fill, its title in the state’s hue and its sentence in text ink', () => {
+    const NOTES: readonly (readonly [string, string, string])[] = [
+      ["error", 'var(--ig-state-failed-fill)', 'var(--ig-state-failed)'],
+      ["attention", 'var(--ig-state-conflict-fill)', 'var(--ig-state-conflict)'],
+      ["neutral", 'var(--ig-surface-2)', 'var(--ig-text)'],
+    ];
+    for (const [state, fill, hue] of NOTES) {
+      const card = `.ig-audit-card[data-s='${state}']`;
+      assert.equal(declaredOn(css, card, 'background', inside)?.value, fill, `${state} note fill`);
+      assert.equal(declaredOn(css, '.ig-audit-title', 'color', [...inside, card])?.value, hue, `${state} note title`);
+      assert.equal(declaredOn(css, '.ig-audit-detail', 'color', [...inside, card])?.value, 'var(--ig-text)', `${state} note sentence`);
+      assert.equal(declaredOn(css, card, 'border', inside), undefined, `${state} note draws a border`);
+    }
+    // The refused block's card is the same attention note.
+    const refused = ".ig-audit-refused-card[data-s='attention']";
+    assert.equal(declaredOn(css, refused, 'background', ['.ig-audit-refused', '.ig-audit-refused-list'])?.value, 'var(--ig-state-conflict-fill)');
+  });
+
+  it('styles no class chip, walk line or show button any more', () => {
+    const bare = auditStylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const gone of ['.ig-audit-chip', '.ig-audit-walk', '.ig-audit-show']) {
+      assert.equal(bare.includes(gone), false, `${gone} still has a rule`);
+    }
+  });
+});
