@@ -363,3 +363,16 @@ describe('each finding is drawn as the export’s note (#296)', () => {
     }
   });
 });
+
+describe('the panel head\u2019s filter is a ghost button, as the export draws it (#296 design read)', () => {
+  const css = `${viewerStylesheet}\n${auditStylesheet}`;
+
+  it('draws no edge and no fill at rest, the second fill on hover, and accent words with no edge when on', () => {
+    assert.match(css, /\.ig-audit-filter \{[^}]*background: none;[^}]*border: 0;/);
+    assert.match(css, /\.ig-audit-filter:hover \{[^}]*background: var\(--ig-surface-2\);/);
+    const on = /\.ig-audit-filter\[aria-pressed='true'\] \{([^}]*)\}/.exec(css);
+    assert.ok(on !== null, 'the pressed rule is gone');
+    assert.match(on[1] ?? '', /color: var\(--ig-accent\);/);
+    assert.equal(/border/.test(on[1] ?? ''), false, 'the pressed filter draws an edge');
+  });
+});

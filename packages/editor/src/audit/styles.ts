@@ -351,9 +351,9 @@ export const auditStylesheet = `
    refusal - so 'visibly on' is a requirement here rather than a nicety. */
 .ig-audit-filter {
   background: none;
-  border: var(--ig-stroke) solid var(--ig-line);
+  border: 0;
   border-radius: var(--ig-radius-small);
-  color: var(--ig-text-muted);
+  color: var(--ig-text);
   cursor: pointer;
   font: inherit;
   font-size: var(--ig-font-size-meta);
@@ -361,8 +361,14 @@ export const auditStylesheet = `
   padding: var(--ig-space-micro) var(--ig-space-tight);
 }
 
+/* A GHOST BUTTON, AS THE EXPORT DRAWS IT: no edge and no fill at rest, the
+   second fill under the pointer, and when on, its words in the accent with
+   still no edge. */
+.ig-audit-filter:hover {
+  background: var(--ig-surface-2);
+}
+
 .ig-audit-filter[aria-pressed='true'] {
-  border-color: var(--ig-accent);
   color: var(--ig-accent);
 }
 
