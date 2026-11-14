@@ -183,8 +183,8 @@ function metric(theme: Theme, token: MetricToken): number {
  *
  * THE WIDE CLASS IS DELIBERATELY OVER-STATED. Truncating slightly early costs
  * a character; under-stating runs the label across the routing channel and
- * hides the edges the graph exists to show. `1.7` puts a capital near 10px at
- * the default 6px average, which is about what a UI sans draws at 11px.
+ * hides the edges the graph exists to show. `1.7` puts a capital near 11px at
+ * the default 6.6px average, which is about what a UI sans draws at 12px.
  */
 const WIDE_GLYPH = /[ABCDEFGHKLNOPQRSTUVXYZmw@%&MW]/u;
 const NARROW_GLYPH = /[iIjl|!.,;:'`()[\]{} \t-]/u;
@@ -258,7 +258,7 @@ export function measureLabel(theme: Theme, label: string): number {
  *
  * `--ig-label-char-width` IS THE WRONG CEILING HERE. It is the label face's
  * average at `--ig-font-size-small`, so a body-size chip measured with it is
- * charged about 11/13 of what it draws, and the card under-reserves exactly
+ * charged about 12/13 of what it draws, and the card under-reserves exactly
  * the row that chip wraps onto.
  *
  * `--ig-char-width` IS THE BODY-SIZE CEILING THE THEME ALREADY CARRIES. It is
@@ -436,14 +436,15 @@ function cardHeight(
   blocks.forEach((block, index) => {
     if (index > 0) height += gap;
     if (block.kind === 'badges') {
-      // A CHIP IS TALLER THAN ITS TEXT, and the rows are spaced. `.ig-badge`
-      // adds its own vertical padding and border, and `.ig-badges` puts a gap
-      // between wrapped rows — so `rows * line` under-reserved a wrapping badge
-      // row by more than the gap between cards, and the card beneath was drawn
-      // over it.
+      // A TAG IS TALLER THAN ITS TEXT, and the rows are spaced. `.ig-badge`
+      // draws the one tag a row holds at `--ig-space-wide` tall (#293), and
+      // `.ig-badges` puts a gap between wrapped rows — so `rows * line`
+      // under-reserved a wrapping badge row by more than the gap between cards,
+      // and the card beneath was drawn over it. Every row is charged the taller
+      // of the tag and a line: a row of muted text alone reserves a little
+      // more than it draws, which is the harmless direction.
       const rows = packedRows(theme, block.texts, block.overflow, inner);
-      const chipHeight =
-        line + metric(theme, '--ig-space-micro') * 2 + metric(theme, '--ig-stroke') * 2;
+      const chipHeight = Math.max(metric(theme, '--ig-space-wide'), line);
       height += rows * chipHeight + Math.max(0, rows - 1) * gap;
       return;
     }
@@ -499,7 +500,13 @@ function packedRows(theme: Theme, texts: readonly string[], overflow: string | n
   // every one of them. Near a row boundary the browser then wrapped a chip this
   // packer had kept on the previous row, the height omitted that whole row, and
   // the cards beneath were drawn over it.
-  const chipPadding = gap * 3 + metric(theme, '--ig-stroke') * 2;
+  //
+  // EVERY CHIP IS CHARGED THE TAG'S PADDING (#293): the one tag a row holds is
+  // padded `--ig-space-snug` either side with no border, and the muted text
+  // after it is not padded at all. Charging the text the tag's room is the
+  // over-reservation, which is the harmless direction, and it keeps this
+  // packer from needing to know which chip is which.
+  const chipPadding = metric(theme, '--ig-space-snug') * 2 + gap;
   let used = 0;
   let rows = 1;
   for (const width of widths) {

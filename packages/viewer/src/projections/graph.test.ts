@@ -157,7 +157,9 @@ describe('the graph projection', () => {
     // one.
     const markup = render();
     assert.match(markup, /<div class="ig-card"[^>]*data-unit="true"/);
-    assert.match(markup, /<span class="ig-unit-pill">⧉ One unit · 2 issues<\/span>/);
+    // NO GLYPH, AND THE COUNT IN A SPAN OF ITS OWN (#293), as the export sets it.
+    assert.match(markup, /<span class="ig-unit-pill">One unit · <span class="ig-unit-num">2<\/span> issues<\/span>/);
+    assert.equal(markup.includes('Worked together'), false, 'the card still draws the unit note');
     assert.match(markup, /aria-label="one unit of 2 issues"/);
     assert.equal(markup.includes('class="ig-connector"'), false, 'the canvas still draws a connector');
     // The enclosure survives in ONE place: the legend's sample, which is where a
@@ -543,9 +545,9 @@ describe('the graph projection', () => {
     // the per-character-class width model is still what gives a card its
     // height, and under-charging wide glyphs reserves too few lines and puts
     // the next rank on top of this one. Bounded by a number stated HERE: a
-    // capital renders at about 0.72 of the font size, 8px at
-    // `--ig-font-size-small`, against an average of 6.
-    const WIDEST_GLYPH_PX = 8;
+    // capital renders at about 0.72 of the font size, 9px at
+    // `--ig-font-size-small` (12 since #293), against an average of 6.6.
+    const WIDEST_GLYPH_PX = 9;
     const capitals = 'W'.repeat(40);
     assert.ok(
       measureLabel(defaultTheme, capitals) >= capitals.length * WIDEST_GLYPH_PX,
@@ -557,8 +559,8 @@ describe('the graph projection', () => {
     // charged the plain average while it draws near the full font size.
     // Measured before the fix: 31 emoji "fitted" 187.2px of room and drew about
     // 341px. A card sized from that under-measure is a card the next rank sits
-    // on top of.
-    const FULL_WIDTH_PX = 11;
+    // on top of. 12, the small size since #293.
+    const FULL_WIDTH_PX = 12;
     for (const [label, title] of [
       ['emoji', '\u{1F600}'.repeat(40)],
       ['CJK', '\u8AB2\u984C'.repeat(30)],
@@ -1244,7 +1246,7 @@ describe('the graph projection', () => {
     const markup = render(crowdedDocument(GRAPH_NODE_BUDGET + 1));
     assert.match(markup, /61 issues/);
     assert.match(markup, /60 blocking/);
-    assert.match(markup, /longest chain 60/);
+    assert.match(markup, /Longest chain 60/);
   });
 
   it('flags the host’s cycle in a capsule rather than deriving one, and does not hang on the loop', () => {
@@ -1271,10 +1273,12 @@ describe('the graph projection', () => {
       cycles: [['1', '2', '3']],
     };
 
-    assert.match(render(cyclic), /<span class="ig-badge" data-edge="blocked-by">cycle<\/span>/);
+    // A LOOP TAG, NOT A RELATIONSHIP CHIP (#293), with the export's word.
+    assert.match(render(cyclic), /<span class="ig-loop-tag">Loop<\/span>/);
+    assert.doesNotMatch(render(cyclic), />cycle</, 'the capsule still draws the old word');
     assert.doesNotMatch(
       render({ ...cyclic, cycles: [] }),
-      /<span class="ig-badge" data-edge="blocked-by">cycle<\/span>/,
+      /<span class="ig-loop-tag">Loop<\/span>/,
       'badged a loop the host did not report',
     );
 
@@ -1290,8 +1294,8 @@ describe('the graph projection', () => {
     // a cycle are not ready", the issues; "nothing can start" here would be a
     // claim about 58 issues nobody made.
     assert.match(stuck, />3 of 61 stuck in a loop</);
-    assert.doesNotMatch(stuck, />nothing can start</);
-    assert.doesNotMatch(stuck, /longest chain/);
+    assert.doesNotMatch(stuck, />Nothing can start</i);
+    assert.doesNotMatch(stuck, /longest chain/i);
     // THE BLOCKING COUNT STAYS — this capsule is a flex row with room for both,
     // unlike §17f's two-column card, and the number is true. Only the depth was
     // not, so only the depth goes.
@@ -1299,9 +1303,9 @@ describe('the graph projection', () => {
     // The acyclic control still says a depth, so the assertion above is about
     // the cycle and not about the fixture.
     const acyclic = render({ ...cyclic, cycles: [] });
-    assert.match(acyclic, /longest chain \d+/);
+    assert.match(acyclic, /Longest chain \d+/);
     assert.match(acyclic, /\d+ blocking/);
-    assert.doesNotMatch(acyclic, />nothing can start</);
+    assert.doesNotMatch(acyclic, />Nothing can start</i);
   });
 
   it('counts isolated issues instead of drawing them', () => {
@@ -1317,7 +1321,7 @@ describe('the graph projection', () => {
 
     assert.match(markup, /shown as groups/);
     assert.match(markup, /20000 issues/);
-    assert.match(markup, /longest chain 19999/);
+    assert.match(markup, /Longest chain 19999/);
   });
 
   it('is deterministic — two renders of one document agree byte for byte', () => {

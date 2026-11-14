@@ -251,7 +251,7 @@ describe('a theme built against an earlier version', () => {
     const css = themeCss(withoutNewestMetric());
 
     assert.equal(/undefined/.test(css), false, css);
-    assert.match(css, /--ig-label-char-width: 6px;/);
+    assert.match(css, /--ig-label-char-width: 6\.6px;/);
   });
 
   it('fills colours and type the same way, not just metrics', () => {
@@ -328,6 +328,9 @@ const EXPANSION: readonly string[] = Object.freeze([
   // `--ig-audit-bar` and reversing it: a host installing only this theme got a
   // `var()` resolving to nothing and the bar silently stopped drawing.
   '--ig-stroke-audit',
+  // The export's panel-title step and its line (#293), so a host maps both.
+  '--ig-font-size-panel-title',
+  '--ig-panel-title-line',
 ]);
 
 /**
@@ -354,6 +357,10 @@ const EXPANSION: readonly string[] = Object.freeze([
  */
 const STILL_UNREAD: readonly string[] = Object.freeze([
   '--ig-tracking-badge',
+  // UNREAD SINCE #293: the export draws the rank figure muted and regular at
+  // the body size, so the rank takes `--ig-font-size`. It stays in the
+  // contract, because a host theme built against it must keep resolving.
+  '--ig-font-size-rank',
   '--ig-elevation-raised',
   '--ig-elevation-overlay',
   '--ig-card-line',
@@ -371,6 +378,11 @@ const STILL_UNREAD: readonly string[] = Object.freeze([
   // So the guard's property still holds — the value is read before it can
   // matter — and what this entry records is WHERE, one layer out.
   '--ig-stroke-audit',
+  // The same reason, for the panel title's step and its line (#293): the
+  // panel this projection draws has no title, and the editor's findings
+  // panel heading reads both (`editor/src/audit/styles.ts`).
+  '--ig-font-size-panel-title',
+  '--ig-panel-title-line',
 ]);
 
 describe('the vocabulary the §16 design needs', () => {
@@ -483,7 +495,10 @@ describe('a host that sets none of the new tokens renders as it did before', () 
     '--ig-font-ui': 'Geist, ui-sans-serif, system-ui, sans-serif',
     '--ig-font-mono': "'JetBrains Mono', ui-monospace, SFMono-Regular, monospace",
     '--ig-font-size': '13px',
-    '--ig-font-size-small': '11px',
+    // MOVED BY #293, deliberately, like the two column widths below: the
+    // export's small role is 12 and a host had no 11 to map. The label metric
+    // moved with it, because it is the average advance AT this size.
+    '--ig-font-size-small': '12px',
     '--ig-line-height': '1.45',
     '--ig-space': 12,
     '--ig-space-tight': 6,
@@ -506,7 +521,7 @@ describe('a host that sets none of the new tokens renders as it did before', () 
     '--ig-gutter-width': 260,
     '--ig-spine-width': 330,
     '--ig-char-width': 7.8,
-    '--ig-label-char-width': 6,
+    '--ig-label-char-width': 6.6,
     '--ig-focus-ring': 2,
   });
 
@@ -632,6 +647,17 @@ describe('a selected row and an inverted node measured against the text bar', ()
       const inverted = contrastRatio(theme.colors['--ig-bg'], theme.colors['--ig-text']);
       assert.ok(inverted >= 4.5, `${name}: the inverted label measures ${inverted.toFixed(2)}:1`);
       assert.equal(inverted.toFixed(2), expected[name].inverted, `${name}: the inverted label`);
+    }
+  });
+});
+
+describe('the failed state on its own fill (#293)', () => {
+  it('keeps the failed hue at 4.5:1 or more on --ig-state-failed-fill, in the default and paper themes', () => {
+    // A tag in the failed state draws its word in --ig-state-failed on this
+    // fill, so the pair is held to the text bar, not the non-text one.
+    for (const [name, theme] of [['default', defaultTheme], ['paper', paperTheme]] as const) {
+      const ratio = contrastRatio(theme.colors['--ig-state-failed'], theme.colors['--ig-state-failed-fill']);
+      assert.ok(ratio >= 4.5, `${name}: the failed hue on its fill measures ${ratio.toFixed(2)}:1`);
     }
   });
 });

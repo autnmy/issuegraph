@@ -147,6 +147,11 @@ export function clusterReach(cluster: Cluster): ClusterReach {
 /**
  * The reach as the capsule prints it — frame `17f`'s own words.
  *
+ * IN SENTENCE CASE (#293), because it is a line of its own on both capsules,
+ * and the export's group card reads "Longest chain 4". Every arm takes the
+ * same case so the four read as one line in four states; the words are
+ * unchanged.
+ *
  * THE WORDING LIVES BESIDE THE FACT, for the reason `why-rank` already
  * establishes on this surface: two renderers drawing one fact must not each
  * hold their own sentence for it, or the §16 capsule and the §17f capsule
@@ -179,17 +184,17 @@ export function clusterReachLabel(reach: ClusterReach): string {
     // changes how it runs", and a loop outranks how deep the rest goes.
     case 'cyclic':
       return reach.held === reach.of
-        ? 'nothing can start'
+        ? 'Nothing can start'
         : `${String(reach.held)} of ${String(reach.of)} stuck in a loop`;
     case 'chain':
-      return `longest chain ${String(reach.depth)}`;
+      return `Longest chain ${String(reach.depth)}`;
     // NAMES THE EDGES, so the sentence cannot contradict the count drawn beside
     // it: something blocks, and none of it puts the work in an order. It does
     // not name a loop either, for the reason the arm's own note gives.
     case 'no-chain':
       return `${String(reach.edges)} blocking ${reach.edges === 1 ? 'relationship' : 'relationships'}, none that set an order`;
     case 'unblocked':
-      return 'nothing blocks anything';
+      return 'Nothing blocks anything';
   }
 }
 

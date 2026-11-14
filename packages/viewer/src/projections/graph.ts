@@ -57,6 +57,7 @@ import {
   stationFill,
   stationsOf,
   unitBlock,
+  unitPill,
   withRecede,
 } from '../parts.ts';
 import { type Receding, recedingOf } from '../recede.ts';
@@ -387,12 +388,13 @@ function cardMark(
 ): ElementSpec {
   switch (block.kind) {
     case 'banner':
+      // A UNIT'S PILL IS `unitPill`, the row's own spelling, so its count is
+      // the same span the list sets regular and muted; the mark's text is what
+      // the layout measured, and it is that pill's words.
       return element('div', { class: 'ig-unit-mark' }, [
-        element(
-          'span',
-          { class: block.mark === 'now' ? 'ig-now-mark' : 'ig-unit-pill' },
-          [block.mark],
-        ),
+        block.mark === 'now'
+          ? element('span', { class: 'ig-now-mark' }, [block.mark])
+          : unitPill(members.length),
         block.note === '' ? null : element('span', { class: 'ig-unit-note' }, [block.note]),
       ]);
     case 'head': {
@@ -587,9 +589,11 @@ function capsuleSpec(cluster: Cluster): ElementSpec {
     // from a two-hundred-edge one. "§16 ships unchanged" is the standing rule;
     // the only thing that changes here is the depth, which was untrue.
     element('span', { class: 'ig-count' }, [`${String(cluster.blockedByEdges)} blocking`]),
-    reach.kind === 'cyclic'
-      ? element('span', { class: 'ig-badge', 'data-edge': 'blocked-by' }, ['cycle'])
-      : null,
+    // A LOOP IS A TAG IN THE ERROR STATE (#293), as the editor's capsule draws
+    // it: its own class and the word "Loop". As a relationship chip it took
+    // the muted text every relationship takes now, and lost its state. The
+    // capsule is inert and unnamed, so the visible word is what a reader hears.
+    reach.kind === 'cyclic' ? element('span', { class: 'ig-loop-tag' }, ['Loop']) : null,
     element('span', { class: 'ig-count' }, [clusterReachLabel(reach)]),
     element('span', { class: 'ig-id' }, [cluster.members.slice(0, 3).join(', ')]),
   ]);

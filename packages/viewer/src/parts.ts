@@ -810,23 +810,34 @@ export function unitBlock(document: NormalizedDocument, slot: ViewerSlot): Eleme
  * IN SENTENCE CASE IN THE WORDS, because the stylesheet no longer capitalises
  * them (#288): the export draws "One unit · 2 issues" as a plain label, and an
  * uppercase transform was the only thing that made the lower-case words read
- * as a heading. The card's banner reads the same two strings.
+ * as a heading. The card's banner draws the same label.
+ *
+ * NO GLYPH AND NO NOTE (#293). The export's label is those words alone, with
+ * no `⧉` before them and no "Worked together" beside them: the enclosure
+ * already says the issues go together, and the note said it twice.
  */
 export function unitMark(slot: ViewerSlot): ElementSpec | null {
   if (slot.members.length < 2) return null;
-  return element('div', { class: 'ig-unit-mark' }, [
-    element('span', { class: 'ig-unit-pill' }, [unitLabel(slot.members.length)]),
-    element('span', { class: 'ig-unit-note' }, [UNIT_NOTE]),
+  return element('div', { class: 'ig-unit-mark' }, [unitPill(slot.members.length)]);
+}
+
+/**
+ * The unit label as drawn, one spelling for the row and the card: the count in
+ * a span of its own, because the export sets it regular and muted inside the
+ * medium label.
+ */
+export function unitPill(members: number): ElementSpec {
+  return element('span', { class: 'ig-unit-pill' }, [
+    'One unit · ',
+    element('span', { class: 'ig-unit-num' }, [String(members)]),
+    ' issues',
   ]);
 }
 
-/** The unit label's words, one spelling for the row and the card. */
+/** The unit label's text, which the layout measures: read off {@link unitPill}, so the two cannot drift. */
 function unitLabel(members: number): string {
-  return `⧉ One unit · ${String(members)} issues`;
+  return textOf(unitPill(members));
 }
-
-/** The note beside the unit label. */
-const UNIT_NOTE = 'Worked together';
 
 /**
  * The two caveats a host can put on a row, each ONE row child so the slot grid
@@ -1250,7 +1261,7 @@ export function cardBlocks(
     blocks.push({
       kind: 'banner',
       mark: unitLabel(members.length),
-      note: UNIT_NOTE,
+      note: '',
     });
     blocks.push({ kind: 'unit', members });
   } else {
@@ -1297,7 +1308,7 @@ export function noteText(document: NormalizedDocument, key: string): readonly st
 export function cardText(document: NormalizedDocument, block: CardBlock): readonly string[] {
   switch (block.kind) {
     case 'banner':
-      return [`${block.mark} ${block.note}`];
+      return [block.note === '' ? block.mark : `${block.mark} ${block.note}`];
     case 'head': {
       const issue = document.byKey.get(block.key);
       return [issue?.title ?? block.key, block.key];

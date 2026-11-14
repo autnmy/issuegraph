@@ -311,8 +311,11 @@ function capsuleSpec(capsule: ScaleCapsule): ElementSpec {
         // module, not a decision: the rest of this package hands every sentence
         // to the host, and a scale surface that cannot be translated is worth
         // fixing when the port is added.
+        //
+        // IN SENTENCE CASE (#293): the anchor opens its own line, and the
+        // export's group card reads "Around #2201 · …".
         element('span', { class: 'ig-capsule-name' }, [
-          element('span', { class: 'ig-capsule-anchor' }, ['around ']),
+          element('span', { class: 'ig-capsule-anchor' }, ['Around ']),
           element('span', { class: 'ig-id' }, [capsule.lead]),
           ' \u00b7 ',
           capsule.name,

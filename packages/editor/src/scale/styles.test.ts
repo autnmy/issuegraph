@@ -149,3 +149,23 @@ describe('a stuck capsule\u2019s cycle is a tag in the error state, not a count 
     }
   });
 });
+
+describe('a stuck capsule’s loop tag sits on the theme’s error fill, and the card reads as the export’s (#293)', () => {
+  const css = `${viewerStylesheet}\n${scaleLadderStylesheet}`;
+  // READ WHERE THE TAG SITS, as the block above reads its colour.
+  const inside = ['.ig-ladder', '.ig-refusal', '.ig-list', '.ig-capsule-cell', '.ig-capsule-enter'];
+
+  it('fills the tag with the error fill token, at the tag’s height, not a tint mixed from its text hue', () => {
+    assert.equal(declaredOn(css, '.ig-capsule-loop', 'background', inside)?.value, 'var(--ig-state-failed-fill)');
+    assert.equal(declaredOn(css, '.ig-capsule-loop', 'block-size', inside)?.value, 'var(--ig-space-wide)');
+    assert.ok(THEME_TOKENS.includes('--ig-state-failed-fill'), 'the theme carries no error fill for a host to map');
+    const later = `${css}\n.ig-capsule-loop {\n  background: color-mix(in srgb, var(--ig-state-failed) var(--ig-tint-fill), transparent);\n}\n`;
+    assert.notEqual(declaredOn(later, '.ig-capsule-loop', 'background', inside)?.value, 'var(--ig-state-failed-fill)', 'the reading missed the old tint put back');
+  });
+
+  it('opens the anchor and the reach line in sentence case, as the export’s group card does', () => {
+    const markup = renderScaleLadder(documentOf({ components: [40, 30] })).markup;
+    assert.match(markup, /<span class="ig-capsule-anchor">Around <\/span>/);
+    assert.match(markup, /<span class="ig-capsule-reach">Longest chain \d+<\/span>/);
+  });
+});

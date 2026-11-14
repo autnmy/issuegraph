@@ -197,17 +197,20 @@ export const scaleLadderStylesheet = `
 }
 
 /* THE CYCLE IS A TAG IN THE ERROR STATE, as the export draws its loop tag: the
-   small role in the sans at medium weight, the failed state's colour on a fill
-   tinted from it, in the slot the blocked count holds on any other card. The
-   theme carries no pill radius and no error fill of its own, so the corner is
-   the large radius, which rounds a tag this tall fully, and the fill is the
-   state colour mixed at the tint every chip already uses. */
+   small role in the sans at medium weight, the failed state's colour on the
+   failed state's own fill, in the slot the blocked count holds on any other
+   card. The theme carries no pill radius, so the corner is the large radius,
+   which rounds a tag this tall fully. The fill is the theme's error fill since
+   issue 293, so a host maps it to its own; it was the state colour mixed at
+   the chip tint, which no host role could name. The tag is the wide space
+   step tall, as layer 1's tag is. */
 .ig-capsule-loop {
   grid-column: 2;
   justify-self: end;
   align-items: center;
   display: inline-flex;
-  background: color-mix(in srgb, var(--ig-state-failed) var(--ig-tint-fill), transparent);
+  background: var(--ig-state-failed-fill);
+  block-size: var(--ig-space-wide);
   border-radius: var(--ig-radius-large);
   padding: 0 var(--ig-space-snug);
   color: var(--ig-state-failed);

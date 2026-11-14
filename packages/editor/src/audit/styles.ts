@@ -35,7 +35,7 @@
  */
 
 import { AUDIT_KIND_ATTRIBUTE } from './panel.ts';
-import { AUDIT_SEVERITY_ATTRIBUTE } from './surface.ts';
+import { AUDIT_SEVERITY_ATTRIBUTE, AUDIT_WORST_ATTRIBUTE } from './surface.ts';
 
 export const auditStylesheet = `
 .ig-audit {
@@ -72,6 +72,34 @@ export const auditStylesheet = `
   font-family: var(--ig-font-ui);
   font-size: var(--ig-font-size);
   font-variant-numeric: tabular-nums;
+}
+
+/* THE DOT OF THE WORST PROBLEM, before the count, as the export's head draws
+   its problems button (issue 293). The export's state dot is eight across; the
+   snug step is eight. Its colour is the worst class's state, as the export's
+   rules give each one: a loop is the error state, a duplicate of a closed issue
+   and relationships that could not be read are the attention state, and a
+   closed blocker is the neutral state, drawn as a ring because nothing is
+   happening. The theme's failed and conflict hues are those two states, and
+   the pending station colour is the neutral one. */
+.ig-audit-dot {
+  block-size: var(--ig-space-snug);
+  border-radius: 50%;
+  flex: none;
+  inline-size: var(--ig-space-snug);
+}
+
+.ig-audit-dot[${AUDIT_WORST_ATTRIBUTE}='cycle'] {
+  background: var(--ig-state-failed);
+}
+
+.ig-audit-dot[${AUDIT_WORST_ATTRIBUTE}='dead-duplicate-ref'],
+.ig-audit-dot[${AUDIT_WORST_ATTRIBUTE}='encoding-refused'] {
+  background: var(--ig-state-conflict);
+}
+
+.ig-audit-dot[${AUDIT_WORST_ATTRIBUTE}='stale-blocker'] {
+  box-shadow: inset 0 0 0 var(--ig-stroke) var(--ig-station-pending);
 }
 
 [${AUDIT_SEVERITY_ATTRIBUTE}] {
@@ -134,22 +162,25 @@ export const auditStylesheet = `
    the host's words, in the sans at medium weight in text colour. It was an
    uppercase mono label in gold with the count beside it; content.md rules out
    that small uppercase label, and the count reads as part of the sentence it
-   starts. The export's panel title is a step above the body, and the theme has
-   no token for that step, so the title takes the body size. */
+   starts. The export's panel title is a step above the body, and since issue
+   293 the theme carries that step and its line, so the title takes both. */
 .ig-audit-panel-heading {
   color: var(--ig-text);
   font-family: var(--ig-font-ui);
-  font-size: var(--ig-font-size);
+  font-size: var(--ig-font-size-panel-title);
   font-weight: var(--ig-weight-medium);
+  line-height: var(--ig-panel-title-line);
   margin: 0;
 }
 
-/* The count inside the title is a count like the header's: body sans, body
-   size, tabular figures, in the title's own ink. */
+/* The count inside the title is a count, so it keeps the sans and tabular
+   figures, in the title's own ink and at the title's own size: the export sets
+   the count and the words as one run, and a count a step smaller than the
+   words it leads would put two sizes in one heading. */
 .ig-audit-panel-count {
   color: inherit;
   font-family: var(--ig-font-ui);
-  font-size: var(--ig-font-size);
+  font-size: inherit;
   font-variant-numeric: tabular-nums;
 }
 
@@ -393,8 +424,9 @@ export const auditStylesheet = `
 .ig-audit-refused-heading {
   color: var(--ig-edge-blocked-by);
   font-family: var(--ig-font-ui);
-  font-size: var(--ig-font-size);
+  font-size: var(--ig-font-size-panel-title);
   font-weight: var(--ig-weight-medium);
+  line-height: var(--ig-panel-title-line);
   margin: 0;
 }
 

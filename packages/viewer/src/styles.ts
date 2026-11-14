@@ -122,12 +122,14 @@ ${scope} .ig-slot .ig-row-meta .ig-id {
    line-height is set — the flex row grows to its tallest item and the row
    followed it to 74px. Removing the chrome removes the reason.
 
-   THE FOUR REDUNDANT CHANNELS SURVIVE THIS, which is the thing worth
-   checking before doing it: dash, terminal and glyph are untouched, and hue
-   moves from the border to the text it was outlining. '17j' names the hold
-   GLYPH among the five things never dropped, and it is still drawn. */
+   THE CHANNELS THAT MATTER SURVIVE THIS, which is the thing worth checking
+   before doing it: dash, terminal and glyph are untouched. Since issue 293 no
+   chip carries a relationship hue at any density, so there is none to move.
+   '17j' names the hold GLYPH among the five things never dropped, and it is
+   still drawn. */
 ${scope} .ig-slot .ig-row-meta .ig-badge {
   background: none;
+  block-size: auto;
   border: 0;
   border-radius: 0;
   padding: 0;
@@ -370,7 +372,12 @@ export const viewerStylesheet = `
    grooming workspace's rail footer — sets this element's bottom to clear it,
    from a height it measures rather than from a number either package wrote
    down and both would have to keep true. */
+/* A DOCKED LEGEND TAKES THE ROOT'S OWN GROUND (issue 293). The bar draws no
+   ground of its own, as the export draws it, which is right where it sits
+   below the drawing; docked, it is sticky over rows that scroll beneath it,
+   and with no ground those rows would show through its words. */
 .ig-viewer[data-legend='docked'] > .ig-legend {
+  background: var(--ig-bg);
   position: sticky;
   bottom: 0;
 }
@@ -985,19 +992,21 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 }
 
 .ig-rank {
-  color: var(--ig-text);
-  /* A RANK IS A FIGURE A READER READS, NOT A KEY THEY COPY, so it is the sans
-     with tabular figures, which keep a column of ranks aligned. */
-  font-family: var(--ig-font-ui);
-  font-size: var(--ig-font-size-rank);
-  font-variant-numeric: tabular-nums;
-  font-weight: var(--ig-weight-strong);
-  line-height: 1;
-}
+  /* MUTED AND REGULAR AT THE BODY SIZE, as the export draws the rank (issue
+     293). It was strong in text colour a step above the body, and the export's
+     rules forbid a weight of 600 or more; the row's title is what a reader
+     reads first, and the figure beside it only places it. A held row's rank
+     reads the same, so it needs no rule of its own: its station says it is
+     held.
 
-.ig-rank[data-held='true'] {
+     A RANK IS A FIGURE A READER READS, NOT A KEY THEY COPY, so it is the sans
+     with tabular figures, which keep a column of ranks aligned. */
   color: var(--ig-text-muted);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
+  font-variant-numeric: tabular-nums;
   font-weight: var(--ig-weight-regular);
+  line-height: 1;
 }
 
 .ig-row-body {
@@ -1203,28 +1212,31 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   gap: var(--ig-space-tight);
 }
 
-/* A TINTED CHIP, NOT A BARE OUTLINE. The frame fills every relationship chip
-   with its own hue at a low alpha inside a heavier border of the same hue;
-   drawn as an outline alone the badge row reads as a row of empty boxes, and
-   the hue channel carries a third of the weight the design gives it. The two
-   alphas are the theme's, so a host retinting a relationship retints its chip. */
+/* ONE TAG PER CELL, AS THE EXPORT DRAWS IT (issue 293): a pill 20 tall, padded 0 8
+   on the second fill, with no border. The large radius rounds a tag this tall
+   fully; the theme carries no pill radius, and the loop tag on a capsule card
+   takes the same corner. The height is the wide space step because the theme
+   has no tag height of its own and the export's tag is exactly that tall.
+
+   A TAG, AS THE EXPORT DRAWS ONE: the small role in the sans at medium
+   weight. "P3" and a hold label are words a reader reads, not keys they copy,
+   so neither is mono. The graph's chip packer measures every chip with
+   --ig-label-char-width, the label face's average at this same small size,
+   and pads each by this rule's inline padding, so the card it reserves still
+   fits the chip. */
 .ig-badge {
   align-items: center;
   background: var(--ig-surface-2);
-  border: var(--ig-stroke) solid var(--ig-line);
-  border-radius: var(--ig-radius-small);
+  block-size: var(--ig-space-wide);
+  border: 0;
+  border-radius: var(--ig-radius-large);
   color: var(--ig-text);
   display: inline-flex;
-  /* A TAG, AS THE EXPORT DRAWS ONE: the small role in the sans at medium
-     weight. "P3", "blocks 512" and "not ready" are words a reader reads, not
-     keys they copy, so none of them is mono. The graph's chip packer measures
-     every chip with --ig-label-char-width, the label face's average at this
-     same small size, so the card it reserves still fits the chip. */
   font-family: var(--ig-font-ui);
   font-size: var(--ig-font-size-small);
   font-weight: var(--ig-weight-medium);
   gap: var(--ig-space-tight);
-  padding: var(--ig-space-micro) var(--ig-space-tight);
+  padding: 0 var(--ig-space-snug);
 }
 
 /* A MATCHED QUERY IS SAID ONCE ON A LIST ROW, BY ITS LINE (#131). The row's
@@ -1241,81 +1253,30 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   display: none;
 }
 
-/* THE HUE IS A BORDER AND A FILL HERE, NOT A TEXT COLOUR — the theme holds the
-   edge hues to the 3:1 NON-TEXT bar, and says so where it defines them, so
-   painting badge LABELS with them contradicts the palette's own claim. It was
-   not merely theoretical: at this size duplicate-of measured 3.98:1 on
-   --ig-surface and decomposed-from 4.37:1, both under the 4.5:1 the text test
-   asserts for every text colour. The label takes --ig-text, which that test
-   already proves on all three surfaces, and the hue keeps the non-text use it
-   was measured for. This is a DELIBERATE DEPARTURE from the frame, which tints
-   its chip labels; the frame's own colour-blind-safety clause says hue is one
-   of four redundant channels, and here it is carried by two of them.
-   NO CHANNEL IS LOST. The dash pattern and the glyph are untouched, and the
-   vocabulary test independently proves all five stay distinguishable with hue
-   removed ENTIRELY, which is the stronger claim. */
-/* WRITTEN OUT PER EDGE RATHER THAN THROUGH ONE INTERMEDIATE PROPERTY. A
-   an intermediate --ig-badge-hue set here and read here would be a property no
-   theme and no layout declares, and styles.test.ts refuses those on purpose:
-   the whole point of that guard is that every var() in this file names
-   something a host or the layout actually sets. */
-.ig-badge[data-edge='blocked-by'] {
-  background: color-mix(in srgb, var(--ig-edge-blocked-by) var(--ig-tint-fill), transparent);
-  border-color: color-mix(in srgb, var(--ig-edge-blocked-by) var(--ig-tint-border), transparent);
-  border-style: solid;
-}
+/* A SECOND CONDITION IS MUTED TEXT AFTER THE TAG, NOT A SECOND TAG (issue
+   293). The export's rules allow one tag per cell, and its board draws a row's
+   relationships ("is blocked by …", "blocks …") and its caveats
+   ("Priorities disagree", "Estimated") as plain muted words after the one
+   priority tag, with the count of what is left as a muted number. So every
+   chip that is not the priority tag drops the pill: no fill, no corner, no
+   padding, no fixed height, regular weight in muted ink. The glyph stays: with
+   the words it is what tells the five relationships apart, and the canvas's
+   dash and terminal carry the rest.
 
-.ig-badge[data-edge='serialize-with'] {
-  background: color-mix(in srgb, var(--ig-edge-serialize-with) var(--ig-tint-fill), transparent);
-  border-color: color-mix(in srgb, var(--ig-edge-serialize-with) var(--ig-tint-border), transparent);
-  border-style: double;
-}
-
-.ig-badge[data-edge='together-with'] {
-  background: color-mix(in srgb, var(--ig-edge-together-with) var(--ig-tint-fill), transparent);
-  border-color: color-mix(in srgb, var(--ig-edge-together-with) var(--ig-tint-border), transparent);
-  border-style: solid;
-}
-
-.ig-badge[data-edge='duplicate-of'] {
-  background: color-mix(in srgb, var(--ig-edge-duplicate-of) var(--ig-tint-fill), transparent);
-  border-color: color-mix(in srgb, var(--ig-edge-duplicate-of) var(--ig-tint-border), transparent);
-  border-style: dotted;
-}
-
-.ig-badge[data-edge='decomposed-from'] {
-  background: color-mix(in srgb, var(--ig-edge-decomposed-from) var(--ig-tint-fill), transparent);
-  border-color: color-mix(in srgb, var(--ig-edge-decomposed-from) var(--ig-tint-border), transparent);
-  border-style: dashed;
-}
-
-/* A PROMOTION IS THE ONE CHIP THE FRAME ACCENTS. It is the most interesting
-   event the panel can show — a low tier pulled to the top because it blocks a
-   high one — and the design spends its accent on exactly that. */
-.ig-badge[data-priority='promoted'] {
-  background: color-mix(in srgb, var(--ig-accent) var(--ig-tint-fill), transparent);
-  border-color: color-mix(in srgb, var(--ig-accent) var(--ig-tint-border), transparent);
-}
-
-.ig-badge[data-evidence='verified'] {
-  background: color-mix(in srgb, var(--ig-station-ready) var(--ig-tint-fill), transparent);
-  border-color: color-mix(in srgb, var(--ig-station-ready) var(--ig-tint-border), transparent);
-}
-
-/* A caveat or hold-label chip carries no relationship hue: it is a word, not
-   an edge, so it keeps the line colour the plain badge has. */
+   THE HUE THAT USED TO TINT EACH RELATIONSHIP CHIP WENT WITH ITS PILL. The
+   export colours no relationship text, and the theme holds the edge hues to
+   the 3:1 non-text bar, so the words could never take the hue anyway. */
+.ig-badge[data-edge],
 .ig-badge[data-caveat],
-.ig-badge[data-hold] {
-  color: var(--ig-text-body);
-}
-
-.ig-badge[data-caveat='preview-only'] {
-  border-color: color-mix(in srgb, var(--ig-state-conflict) var(--ig-tint-border), transparent);
-}
-
-.ig-badge[data-not-ready='true'] {
-  background: color-mix(in srgb, var(--ig-edge-blocked-by) var(--ig-tint-fill), transparent);
-  border-color: color-mix(in srgb, var(--ig-edge-blocked-by) var(--ig-tint-border), transparent);
+.ig-badge[data-evidence],
+.ig-badge[data-not-ready],
+.ig-badge[data-omitted] {
+  background: none;
+  block-size: auto;
+  border-radius: 0;
+  color: var(--ig-text-muted);
+  font-weight: var(--ig-weight-regular);
+  padding: 0;
 }
 
 /* THE OVERFLOW CHIP IS A COUNT, NOT A RELATIONSHIP. '+12 more relationships'
@@ -1345,13 +1306,22 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 /* THE UNIT'S LABEL IS A SENTENCE-CASE LABEL, NOT AN EYEBROW. The export
    draws "One unit · 2 issues" in the small role at medium weight in text
    colour, with no fill and no capitals, and content.md rules out the small
-   uppercase mono label; the note beside it is the same size in muted ink. */
+   uppercase mono label. The unit draws no note since issue 293; the note
+   class is the NOW banner's, the same size in muted ink. */
 .ig-unit-pill {
   color: var(--ig-text);
   font-family: var(--ig-font-ui);
   font-size: var(--ig-font-size-small);
   font-variant-numeric: tabular-nums;
   font-weight: var(--ig-weight-medium);
+}
+
+/* THE COUNT INSIDE THE LABEL IS REGULAR AND MUTED, as the export sets the
+   number in "One unit · 2 issues" (issue 293): the words name the unit, and
+   the figure is the quieter part of it. */
+.ig-unit-num {
+  color: var(--ig-text-muted);
+  font-weight: var(--ig-weight-regular);
 }
 
 .ig-unit-note {
@@ -1818,8 +1788,9 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 }
 
 /* The priority tag keeps its words and loses its chip, so a receded card
-   carries no filled shape that competes with the kept ones. The border turns
-   transparent rather than going, so the tag keeps its size and nothing moves. */
+   carries no filled shape that competes with the kept ones. The tag draws no
+   border since issue 293; the border colour stays transparent here so a host
+   rule that gives it one cannot bring the chip back. */
 .ig-rail-row[data-recede='true'] .ig-badge[data-priority],
 .ig-slot[data-recede='true'] .ig-badge[data-priority] {
   background: transparent;
@@ -1888,6 +1859,25 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   gap: var(--ig-space);
   margin-top: var(--ig-space-tight);
   padding: var(--ig-space-tight) var(--ig-space);
+}
+
+/* A CAPSULE'S LOOP IS A TAG IN THE ERROR STATE (issue 293), the same tag the
+   editor's capsule board draws: the small role at medium weight in the failed
+   hue on the error fill, a pill the wide space step tall, padded 0 8. It sits
+   in an HTML list the graph's packer never measures. */
+.ig-loop-tag {
+  align-items: center;
+  align-self: center;
+  background: var(--ig-state-failed-fill);
+  block-size: var(--ig-space-wide);
+  border-radius: var(--ig-radius-large);
+  color: var(--ig-state-failed);
+  display: inline-flex;
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+  font-weight: var(--ig-weight-medium);
+  padding: 0 var(--ig-space-snug);
+  white-space: nowrap;
 }
 
 .ig-refusal-omitted {
@@ -2018,9 +2008,10 @@ ${railDensity(".ig-viewer[data-density='dense']")}
    under the drawing it explains, carries a drawn sample of each line so the
    dash and terminal channels are legible cold, and ends with the readiness key
    the station fills need. */
+/* NO GROUND OF ITS OWN (issue 293): the export's legend sits on the drawing's
+   own surface under its hairline, with no band of a second fill. */
 .ig-legend {
   align-items: center;
-  background: var(--ig-surface-2);
   border: 0;
   border-top: var(--ig-stroke) solid var(--ig-line);
   display: flex;

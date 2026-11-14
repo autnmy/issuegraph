@@ -110,6 +110,20 @@ describe('the overlay stylesheet carries structure, never a value', () => {
     }
   });
 
+  it('states a chip\u2019s state with an outline, because layer 1 draws the chip with no border (#293)', () => {
+    // A border colour on a chip with no border paints nothing, so the state
+    // would reach a screen reader and no one else.
+    const css = edgeOverlayStylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
+    const body = (state: string): string =>
+      new RegExp(`\\.ig-badge\\[data-ig-state~='${state}'\\]\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? '';
+    for (const state of ['invalid', 'failed', 'conflict']) {
+      assert.match(body(state), new RegExp(`outline:\\s*var\\(--ig-stroke\\) solid var\\(--ig-state-${state}\\)`), `${state} draws no outline`);
+      assert.equal(/border/.test(body(state)), false, `${state} paints a border the chip does not have`);
+    }
+    assert.match(body('pending-write'), /outline-style:\s*dashed/);
+    assert.equal(/border/.test(body('pending-write')), false, 'pending paints a border the chip does not have');
+  });
+
   it('outranks the hue layer 1 paints an edge with, rather than tying it', () => {
     // THE ONE CLAIM IN THIS FILE THAT IS ABOUT THE CASCADE, so it is the one
     // claim `node:test` cannot check by rendering — there is no cascade here to
@@ -144,7 +158,7 @@ describe('the overlay stylesheet carries structure, never a value', () => {
     //
     // Written against the declaration rather than the selector alone, because
     // `.ig-badge[data-ig-state~=…]` is a legitimate bare-attribute rule and
-    // paints border and ink, which a badge does use.
+    // paints an outline and ink, which a badge does use.
     const bareStroke = /(^|[\s,{}])\[data-ig-state~='[a-z-]+'\]\s*\{[^}]*stroke\s*:/;
     assert.equal(bareStroke.test(css), false, 'a bare state rule cannot paint a stroke');
   });

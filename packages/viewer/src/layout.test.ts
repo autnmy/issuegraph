@@ -313,9 +313,10 @@ describe('layoutGraph', () => {
 
     const metrics = defaultTheme.metrics;
     const gap = metrics['--ig-space-tight'];
-    // What the sheet draws around a chip's text: its inline padding, its
-    // border, and the gap between a glyph and its label.
-    const chrome = gap * 3 + metrics['--ig-stroke'] * 2;
+    // What the packer charges around a chip's text: the tag's inline padding,
+    // which it charges every chip (#293), and the gap between a glyph and its
+    // label.
+    const chrome = metrics['--ig-space-snug'] * 2 + gap;
     const bodyScale =
       Number.parseFloat(defaultTheme.type['--ig-font-size']) / Number.parseFloat(defaultTheme.type['--ig-font-size-small']);
     const chips = texts.map((text) => measureLabel(defaultTheme, text) + chrome);
@@ -345,7 +346,8 @@ describe('layoutGraph', () => {
     const theme = extendTheme(defaultTheme, { metrics: { '--ig-spine-width': spineWidth } });
     const heightOf = (document: ReturnType<typeof normalizeDocument>['document']): number =>
       layoutGraph(document, theme).nodes.get('hub')?.height ?? Number.NaN;
-    const row = metrics['--ig-card-line'] + metrics['--ig-space-micro'] * 2 + metrics['--ig-stroke'] * 2 + gap;
+    // A row is the taller of the tag's height and a line, plus the gap above it.
+    const row = Math.max(metrics['--ig-space-wide'], metrics['--ig-card-line']) + gap;
     assert.ok(
       heightOf(past) - heightOf(within) >= row,
       `the card reserved ${String(heightOf(past) - heightOf(within))}px for the row its overflow chip wraps onto, under ${String(row)}px`,

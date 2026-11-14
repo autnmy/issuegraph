@@ -472,6 +472,8 @@ export const PAPER_THEME: Theme = extendTheme(defaultTheme, {
     '--ig-state-invalid': '#5A0000',
     '--ig-state-failed': '#3D0F00',
     '--ig-state-conflict': '#5C4300',
+    // The light ground a failed tag's word sits on.
+    '--ig-state-failed-fill': '#F6E3DC',
   },
 });
 

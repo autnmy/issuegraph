@@ -134,29 +134,37 @@ export const edgeOverlayStylesheet = `
    refused together-edge therefore read exactly like a settled one, with the
    state visible only to a screen reader.
 
-   So a chip states the state with what a chip HAS: its border and its ink.
+   So a chip states the state with what a chip HAS: an outline and its ink.
    Every state the drawn edge distinguishes, distinguished here too — including
    the two that have no hue of their own, where a stroke uses a ghost or a halo
-   and a chip uses a dash and the focus ring. */
+   and a chip uses a dash and the focus ring.
+
+   AN OUTLINE, NOT A BORDER, since layer 1 drew a relationship as muted words
+   with no border at all (issue 293). A border colour on a chip with no border
+   paints nothing, so a pending write read exactly like a settled one; an
+   outline takes no room, so the words do not move when a state arrives. */
 .ig-badge[data-ig-state~='invalid'] {
-  border-color: var(--ig-state-invalid);
   color: var(--ig-state-invalid);
+  outline: var(--ig-stroke) solid var(--ig-state-invalid);
 }
 
 .ig-badge[data-ig-state~='failed'] {
-  border-color: var(--ig-state-failed);
   color: var(--ig-state-failed);
+  outline: var(--ig-stroke) solid var(--ig-state-failed);
 }
 
 .ig-badge[data-ig-state~='conflict'] {
-  border-color: var(--ig-state-conflict);
   color: var(--ig-state-conflict);
+  outline: var(--ig-stroke) solid var(--ig-state-conflict);
 }
 
 /* Pending is the state with no hue: the drawn edge says it with a dashed ghost,
-   and a chip says it with a dashed border of its own. */
+   and a chip says it with a dashed outline of its own. Style and width only,
+   so the outline takes the chip's own ink, or the hue of a state above that
+   it shares, the way the border it replaced did. */
 .ig-badge[data-ig-state~='pending-write'] {
-  border-style: dashed;
+  outline-style: dashed;
+  outline-width: var(--ig-stroke);
 }
 
 /* Selected is the focus ring's meaning, and the theme says so where it declares
