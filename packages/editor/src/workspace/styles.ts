@@ -1669,6 +1669,49 @@ ${heldRailDeclarations}
   outline-offset: var(--ig-space-tight);
 }
 
+/* THE MIDDLE ZONE'S SWITCH, THE DESIGN'S SEGMENTED CONTROL. A filled track
+   (--ig-surface-2) 32 tall with 2 of padding and 2 between its options; an idle
+   option is muted text on no fill, the pressed one takes --ig-surface with full
+   text at the medium weight. The option's radius is the track's less its
+   padding, so the two corners stay concentric. The 32 is 2 x --ig-space-loose,
+   as for the tabs above. Drawn at 640 and wider; the narrow block hides it. */
+.ig-workspace .ig-canvas-switch {
+  display: inline-flex;
+  flex: none;
+  align-items: stretch;
+  gap: var(--ig-space-micro);
+  block-size: calc(var(--ig-space-loose) * 2);
+  box-sizing: border-box;
+  padding: var(--ig-space-micro);
+  border-radius: var(--ig-radius);
+  background: var(--ig-surface-2);
+}
+
+.ig-workspace .ig-canvas-switch-option {
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  border-radius: calc(var(--ig-radius) - var(--ig-space-micro));
+  background: none;
+  color: var(--ig-text-muted);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+  padding: 0 var(--ig-space);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ig-workspace .ig-canvas-switch-option[aria-pressed='true'] {
+  background: var(--ig-surface);
+  color: var(--ig-text);
+  font-weight: var(--ig-weight-medium);
+}
+
+.ig-workspace .ig-canvas-switch-option:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-micro);
+}
+
 .ig-workspace .ig-related {
   display: none;
   padding: var(--ig-space);
@@ -1978,6 +2021,11 @@ ${heldRailDeclarations}
     display: flex;
   }
 
+  /* THE NARROW TABS CARRY THE SWITCH'S CHOICE HERE, so the switch is not drawn. */
+  .ig-workspace .ig-canvas-switch {
+    display: none;
+  }
+
   /* Every value of data-inspector, so the narrow block's 'dismissed' restore
      and the middle block's lifted panel are both answered. */
   .ig-workspace[data-inspector] .ig-zone[data-zone='inspector'] {
@@ -2024,6 +2072,16 @@ ${heldRailDeclarations}
     .ig-zone[data-zone='canvas']
     > .ig-canvas-toolbar:not(.ig-audit-overlay) {
     display: flex;
+  }
+
+  /* A TOOLBAR HOLDING NOTHING BUT THE HIDDEN SWITCH would be an empty bordered
+     band. The second selector matches the Sub-issues rule above, which shows
+     the toolbar on a collapsed canvas, and wins by coming after it. */
+  .ig-workspace .ig-zone[data-zone='canvas'] > .ig-canvas-toolbar:not(:has(> :not(.ig-canvas-switch))),
+  .ig-workspace[data-tab='sub-issues'][data-canvas='strip']
+    .ig-zone[data-zone='canvas']
+    > .ig-canvas-toolbar:not(:has(> :not(.ig-canvas-switch))) {
+    display: none;
   }
 
   .ig-workspace[data-canvas='strip'] .ig-zone[data-zone='canvas'] {

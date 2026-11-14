@@ -125,7 +125,7 @@ import {
   type InspectorWhyRank,
   inspectorView,
 } from './inspector.ts';
-import { type CanvasMode, type NarrowTab, type NarrowView, NARROW_TABS, narrowTabOf } from './narrow.ts';
+import { CANVAS_MODES, type CanvasMode, type NarrowTab, type NarrowView, NARROW_TABS, canvasTabOf, narrowTabOf } from './narrow.ts';
 import { type RailWindow, type RailWindowOptions, railWindow } from './rail.ts';
 import { type RelatedListView, relatedListView } from './related.ts';
 import { type ConflictDiff, diffIsEmpty, diffWithin } from './recovery.ts';
@@ -1222,6 +1222,44 @@ function narrowTabsSpec(
 }
 
 /**
+ * The middle zone's switch between Related groups and Sub-issues.
+ *
+ * THE DESIGN'S SEGMENTED CONTROL, as the Graphs board's middle-zone head draws
+ * it: a group of two buttons, the pressed one filled. Not tabs: it picks how one
+ * zone draws, it does not choose which zone shows, so it names no panel and
+ * carries no `aria-controls`.
+ *
+ * THE NARROW TABS' OWN COMMAND. A press sends `narrow-tab` with the value the
+ * narrow tab sends, so it sets the same `HostState.canvas` and the two can never
+ * disagree; a host's `update({ canvas })` moves both. Pressed follows the canvas
+ * mode alone, because at 640 and wider the order is always beside it.
+ *
+ * ALWAYS DRAWN, AND HIDDEN BY THE SHEET UNDER 640, where the narrow tabs carry
+ * the same choice. It sits in the canvas toolbar because that row is the zone's
+ * head and the mount keeps it when it swaps the canvas for the tree.
+ */
+function canvasSwitchSpec(canvas: CanvasMode, words: NarrowWords): ElementSpec {
+  const pressed = canvasTabOf(canvas);
+  return element(
+    'div',
+    { class: 'ig-canvas-switch', role: 'group' },
+    CANVAS_MODES.map(canvasTabOf).map((tab) =>
+      element(
+        'button',
+        {
+          type: 'button',
+          class: 'ig-canvas-switch-option',
+          'data-ig-command': 'narrow-tab',
+          'data-ig-value': tab,
+          'aria-pressed': tab === pressed ? 'true' : 'false',
+        },
+        [words[NARROW_TAB_PARTS[tab].word]],
+      ),
+    ),
+  );
+}
+
+/**
  * §17f's canvas caption — what this canvas is drawing, and out of how much.
  *
  * THE GAP IS THE `direct` TIER, AND ONLY IT. The zone is not silent in general:
@@ -1268,11 +1306,11 @@ function canvasToolbar(
   ladder: ScaleLadder,
   document: ViewerDocument,
   words: CanvasWords | undefined,
-): ElementSpec | null {
-  if (words === undefined) return null;
+  canvasSwitch: ElementSpec,
+): ElementSpec {
   const focused = ladder.focus;
   const statement =
-    ladder.tier !== 'direct'
+    words === undefined || ladder.tier !== 'direct'
       ? null
       : element('p', { class: 'ig-canvas-caption' }, [
           // NO CLAUSE AT ALL WHEN NOTHING IS FOCUSED, rather than the label with
@@ -1319,13 +1357,12 @@ function canvasToolbar(
   // would replace the host's word with a copy of itself. A `button` would be
   // the dead control `headerControls` refuses to draw.
   const pill =
-    words.editMode === undefined
+    words?.editMode === undefined
       ? null
       : element('span', { class: 'ig-edit-mode' }, [words.editMode]);
-  // NOTHING TO SAY, NO ROW. Both halves are conditional and independently so,
-  // and an empty bordered band above the canvas is chrome that carries no fact.
-  if (statement === null && pill === null) return null;
-  return element('div', { class: 'ig-canvas-toolbar' }, [statement, pill]);
+  // THE SWITCH LEADS, so the row is never empty at 640 and wider. Under 640 the
+  // sheet hides the switch, and a row left with nothing else in it with it.
+  return element('div', { class: 'ig-canvas-toolbar' }, [canvasSwitch, statement, pill]);
 }
 
 /**
@@ -3608,7 +3645,12 @@ export function renderWorkspace(
     projected: options.projected,
   });
 
-  const toolbar = canvasToolbar(canvas.ladder, document, options.words.canvas);
+  const toolbar = canvasToolbar(
+    canvas.ladder,
+    document,
+    options.words.canvas,
+    canvasSwitchSpec(options.canvas ?? 'neighbourhood', options.words.narrow),
+  );
 
   // §17k'S STRIP CONTROL — the way out of the collapsed canvas below `1120`.
   //

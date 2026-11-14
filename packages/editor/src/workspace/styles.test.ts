@@ -1616,6 +1616,35 @@ describe('the layout under 640', () => {
     assert.equal(declaredOf(toolbar, rules, 'display'), 'flex', 'sub-issues: the toolbar is not drawn as its row');
   });
 
+  it('R1 R3 the middle zone switch is drawn at 640 and wider and hidden under 640, with no empty row left behind', () => {
+    const backlog = backlogOf(6);
+    const { canvas: _canvas, ...wordsWithoutCanvas } = WORKSPACE_WORDS;
+    // AT 640 AND WIDER, on an open canvas so the collapsed one below 1120 does not hide the zone
+    // for its own reason.
+    for (const width of [640, 1120, 1440]) {
+      const page = pageOf(renderWorkspace(backlog, { words: WORKSPACE_WORDS, canvasOpen: true }).markup);
+      const canvasSwitch = page.querySelector('[data-zone="canvas"] .ig-canvas-switch') ?? assert.fail('no switch');
+      assert.equal(hidden(canvasSwitch, rulesAt(sheet, width)), false, `the switch is hidden at ${String(width)}`);
+    }
+    // UNDER 640, ON THE SUB-ISSUES TAB AS THE MOUNT LEAVES IT, which is where the sheet draws the
+    // toolbar: the tree in the zone and the toolbar put back first. A worded toolbar stays a row
+    // with its caption and pill; one holding the switch alone would be an empty band, so it goes.
+    const rules = rulesAt(sheet, 600);
+    for (const [words, drawn] of [
+      [WORKSPACE_WORDS, true],
+      [wordsWithoutCanvas, false],
+    ] as const) {
+      const page = pageOf(renderWorkspace(backlog, { words, narrowView: 'canvas', canvas: 'tree' }).markup);
+      const canvas = zone(page, 'canvas');
+      const toolbar = canvas.querySelector(':scope > .ig-canvas-toolbar') ?? assert.fail('no canvas toolbar');
+      canvas.innerHTML = renderViewer(backlog, { projection: 'tree', chrome: false, frame: false }).markup;
+      canvas.prepend(toolbar);
+      const canvasSwitch = toolbar.querySelector('.ig-canvas-switch') ?? assert.fail('no switch');
+      assert.equal(hidden(canvasSwitch, rules), true, 'the switch is drawn under 640');
+      assert.equal(hidden(toolbar, rules), !drawn, drawn ? 'the worded toolbar is hidden' : 'an empty toolbar band is drawn');
+    }
+  });
+
   it('R1 under 640px the Order tab shows findings opened from the header, over the order', () => {
     const rules = rulesAt(sheet, 600);
     const page = pageOf(
@@ -1928,6 +1957,36 @@ describe("the narrow tabs are the design's Tabs part: filled, not bordered", () 
     const selected = rule(".ig-workspace .ig-narrow-tab[aria-selected='true']");
     assert.match(selected, /background:\s*var\(--ig-surface\);/);
     assert.match(selected, /color:\s*var\(--ig-text\);/);
+  });
+});
+
+describe("the middle zone switch is the design's segmented control", () => {
+  const css = withoutComments(workspaceStylesheet);
+  const rule = (selector: string): string => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const body = new RegExp(`(?:^|\\n)${escaped}\\s*\\{([^}]*)\\}`).exec(css)?.[1];
+    assert.ok(body !== undefined, `no rule for ${selector}`);
+    return body;
+  };
+
+  it('draws a filled track 32 tall with 2 of padding and 2 between options, at the control radius', () => {
+    const track = rule('.ig-workspace .ig-canvas-switch');
+    assert.match(track, /background:\s*var\(--ig-surface-2\);/);
+    assert.match(track, /block-size:\s*calc\(var\(--ig-space-loose\) \* 2\);/);
+    assert.match(track, /padding:\s*var\(--ig-space-micro\);/);
+    assert.match(track, /gap:\s*var\(--ig-space-micro\);/);
+    assert.match(track, /border-radius:\s*var\(--ig-radius\);/);
+  });
+
+  it('draws an idle option as muted text on no fill, and the pressed one on the strong fill with full text', () => {
+    const idle = rule('.ig-workspace .ig-canvas-switch-option');
+    assert.match(idle, /background:\s*none;/);
+    assert.match(idle, /color:\s*var\(--ig-text-muted\);/);
+    assert.match(idle, /padding:\s*0 var\(--ig-space\);/);
+    const pressed = rule(".ig-workspace .ig-canvas-switch-option[aria-pressed='true']");
+    assert.match(pressed, /background:\s*var\(--ig-surface\);/);
+    assert.match(pressed, /color:\s*var\(--ig-text\);/);
+    assert.match(pressed, /font-weight:\s*var\(--ig-weight-medium\);/);
   });
 });
 

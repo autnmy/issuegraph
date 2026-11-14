@@ -1105,14 +1105,13 @@ describe('mountWorkspace', () => {
     });
 
     /**
-     * THE ROW'S OWN RULE, ON THE PATH THAT CAN BREAK IT. `canvasToolbar` refuses
-     * to draw a row with neither half in it; the tree branch removes the caption
-     * after the fact, so a host that worded the caption and not the pill had its
-     * row emptied and then re-inserted — a sticky padded band with a border and
-     * nothing inside. The rule lives in one place and this is the other path to
-     * it.
+     * THE PATH THAT USED TO EMPTY THE ROW. The tree branch removes the caption
+     * after the fact, so a host that worded the caption and not the pill once had
+     * its row emptied and re-inserted as a bordered band with nothing inside. The
+     * middle zone's switch now leads every row, so the row the tree keeps still
+     * holds it, and the caption stays gone.
      */
-    it('drops the row entirely when the caption was its only content', async () => {
+    it('keeps the row for the switch alone when the caption was its other content', async () => {
       const { editMode: _editMode, ...captionOnly } = WORKSPACE_WORDS.canvas ?? {
         focus: '',
         of: '',
@@ -1126,7 +1125,9 @@ describe('mountWorkspace', () => {
 
       page.handle.update({ canvas: 'tree' });
       await flush();
-      assert.equal(row(), null, 'an empty bordered band was left over the tree');
+      // The middle zone's switch keeps the row from ever being an empty band over the tree.
+      assert.ok(row()?.querySelector('.ig-canvas-switch') !== null, 'the tree lost the middle zone switch');
+      assert.equal(row()?.querySelector('.ig-canvas-caption') ?? null, null, 'the caption came back over the tree');
     });
 
     it('marks a pending edge and the selected edge on their badges', async () => {
@@ -5220,6 +5221,37 @@ describe('the narrow tabs and the Related groups list, mounted', () => {
       edges: relatedHubEdges(count).map(([field, from, to]) => makeEdge(field, from, to)),
     };
   }
+
+  it('R1 R2 mountWorkspace: the middle zone switch draws the tree, keeps itself over it, and moves the narrow tab with it', async () => {
+    const page = await mounted(SEED, {});
+    try {
+      const option = (value: string): HTMLElement =>
+        page.element.querySelector<HTMLElement>(`[data-zone="canvas"] .ig-canvas-switch [data-ig-value="${value}"]`) ??
+        assert.fail(`the middle zone switch has no ${value} option`);
+      assert.equal(option('related').getAttribute('aria-pressed'), 'true');
+
+      page.click(option('sub-issues'));
+      await flush();
+      assert.equal(page.handle.state.canvas, 'tree');
+      assert.ok(treeOf(page) !== null, 'the switch did not draw the tree');
+      // THE SWITCH SURVIVES THE TREE SWAP, or there would be no way back from it.
+      assert.equal(option('sub-issues').getAttribute('aria-pressed'), 'true');
+      assert.equal(option('related').getAttribute('aria-pressed'), 'false');
+      // ONE STATE, TWO CONTROLS: the narrow tab reads the same canvas mode.
+      assert.equal(narrowTab(page, 'sub-issues').getAttribute('aria-selected'), 'true');
+
+      page.click(option('related'));
+      await flush();
+      assert.equal(page.handle.state.canvas, 'neighbourhood');
+      assert.equal(treeOf(page), null, 'the switch did not take the tree back down');
+
+      page.handle.update({ canvas: 'tree' });
+      await flush();
+      assert.equal(option('sub-issues').getAttribute('aria-pressed'), 'true', "a host's update({ canvas }) did not move the switch");
+    } finally {
+      page.handle.destroy();
+    }
+  });
 
   it('R7 mountWorkspace: a Sub-issues press stays in handle.state.canvas through update() calls that do not name canvas', async () => {
     // "The mount's `canvas` option seeds the field, and an `update()` that names `canvas` sets it."

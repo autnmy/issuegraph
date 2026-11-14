@@ -262,11 +262,14 @@ describe('§17f’s row is drawn from what the host said, and nothing else', () 
    * AE4 and R5. Absence draws nothing rather than drawing a default, so every
    * host built against the current version renders exactly as it did.
    */
-  it('draws no row at all when the host worded none, and changes nothing else', () => {
+  it('draws no caption and no pill when the host worded none, and changes nothing else', () => {
     const { canvas: _canvas, ...wordsWithoutCanvas } = WORKSPACE_WORDS;
     const without = canvasZone(renderWorkspace(FRAME, { words: wordsWithoutCanvas }).markup);
 
-    assert.equal(/class="ig-canvas-toolbar"/.test(without), false, 'a row nobody worded');
+    // THE ROW STAYS FOR THE MIDDLE ZONE'S SWITCH, whose words are the narrow tabs' and always
+    // present. What the host did not word is still absent.
+    assert.match(without, /<div class="ig-canvas-toolbar"><div class="ig-canvas-switch" role="group">/, 'the row lost the switch');
+    assert.equal(/class="ig-canvas-caption"/.test(without), false, 'a caption nobody worded');
     assert.equal(/class="ig-edit-mode"/.test(without), false, 'a pill nobody worded');
 
     // AND NOTHING WAS INSERTED BETWEEN THE ZONE'S CONTROL AND ITS CANVAS.
@@ -283,10 +286,11 @@ describe('§17f’s row is drawn from what the host said, and nothing else', () 
       /^<section class="ig-zone" data-zone="canvas"[^>]*><button type="button" class="ig-canvas-strip"/.test(without),
       'something other than §17k’s strip now leads the zone',
     );
+    // THE ROW BETWEEN THEM HOLDS THE MIDDLE ZONE'S SWITCH AND NOTHING ELSE.
     assert.match(
       without,
-      /<\/button><section class="ig-viewer/,
-      'something was inserted between the strip and the canvas',
+      /<\/button><div class="ig-canvas-toolbar"><div class="ig-canvas-switch" role="group">(?:<button [^>]*>[^<]*<\/button>){2}<\/div><\/div><section class="ig-viewer/,
+      'something other than the switch was inserted between the strip and the canvas',
     );
   });
 

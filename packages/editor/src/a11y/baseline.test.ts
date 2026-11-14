@@ -554,7 +554,8 @@ describe('the narrow tabs on every surface', () => {
     assert.ok(drawn.length > 0, 'no surface was recorded');
     // "The a11y baseline covers the tabs with no dangling ARIA reference"
     for (const [surface, entries] of drawn) {
-      const tabs = entries.filter((entry) => nameOf(entry) === 'data-ig-command:narrow-tab');
+      // THE HEADER'S, because the middle zone's switch sends the same command from the canvas zone.
+      const tabs = entries.filter((entry) => nameOf(entry) === 'data-ig-command:narrow-tab' && entry.zone === 'header');
       assert.equal(tabs.length, 3, `${surface} records ${String(tabs.length)} narrow tabs`);
       assert.equal(
         tabs.filter((tab) => tab.aria['aria-selected'] === 'true').length,
@@ -577,11 +578,29 @@ describe('the narrow tabs on every surface', () => {
     // "The a11y baseline covers the tabs with no dangling ARIA reference"
     // "Regenerate packages/editor/src/a11y/baseline.json by hand."
     for (const [surface, entries] of surfaces) {
-      const tabs = entries.filter((entry) => nameOf(entry) === 'data-ig-command:narrow-tab');
+      // THE HEADER'S, because the middle zone's switch sends the same command from the canvas zone.
+      const tabs = entries.filter((entry) => nameOf(entry) === 'data-ig-command:narrow-tab' && entry.zone === 'header');
       assert.equal(tabs.length, 3, `${surface} records ${String(tabs.length)} narrow tabs`);
       for (const tab of tabs) {
         assert.equal(tab.aria['aria-controls'], 'resolves', `${surface}: a narrow tab names no rendered zone`);
         assert.ok(tab.aria['aria-selected'] !== undefined, `${surface}: a narrow tab records no aria-selected`);
+      }
+    }
+  });
+});
+
+describe('the middle zone switch on every surface', () => {
+  it('R4 every recorded surface draws its two options in the canvas zone as pressed buttons, one pressed, naming no panel', async () => {
+    const drawn = Object.entries(await allSurfaces());
+    assert.ok(drawn.length > 0, 'no surface was recorded');
+    for (const [surface, entries] of drawn) {
+      const options = entries.filter((entry) => nameOf(entry) === 'data-ig-command:narrow-tab' && entry.zone === 'canvas');
+      assert.deepEqual(options.map((option) => option.value), ['related', 'sub-issues'], `${surface}: the switch's options`);
+      assert.equal(options.filter((option) => option.aria['aria-pressed'] === 'true').length, 1, `${surface}: not exactly one option is pressed`);
+      for (const option of options) {
+        assert.equal(option.role, 'button', `${surface}: a switch option has another role`);
+        assert.equal(option.aria['aria-controls'], undefined, `${surface}: a switch option names a panel`);
+        if (!option.inert) assert.equal(option.tabStop, 'tab', `${surface}: a switch option is not a tab stop`);
       }
     }
   });

@@ -1770,15 +1770,8 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         }).markup;
         // Re-inserted rather than re-rendered: the row is already assembled,
         // and rebuilding it here would be a second place that decides what it
-        // says.
-        //
-        // ONLY IF IT STILL HAS CONTENT, which is `canvasToolbar`'s own rule —
-        // "nothing to say, no row" — and removing the caption above is exactly
-        // what can empty it. A host that words the caption and not the pill
-        // gets a caption-only row on the direct tier, and prepending its
-        // emptied husk here left a sticky padded band with a border and no
-        // content over the tree. Reading the element rather than re-deriving
-        // the condition keeps the rule in one place.
+        // says. Removing the caption cannot empty it, because the middle zone's
+        // switch leads every row and is the way back to the neighbourhood.
         // THE TREE ALWAYS DRAWS A KEY, WHATEVER THE GRAPH'S TIER SAID. render.ts
         // set `data-canvas-legend` from the scale ladder, which is a fact about
         // the GRAPH — and this branch has just replaced the graph with a
@@ -1788,7 +1781,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         surface.firstElementChild?.setAttribute('data-canvas-legend', 'drawn');
         if (isolated !== null) canvas.append(isolated);
         if (findings !== null) canvas.append(findings);
-        if (toolbar !== null && toolbar.childElementCount > 0) canvas.prepend(toolbar);
+        if (toolbar !== null) canvas.prepend(toolbar);
         const states = new Map(
           overlaysFor(viewer.edges, writeStates, selectedEdgeId(state.selection)).map((edge) => [edge.id, overlayFor(edge).attribute]),
         );
