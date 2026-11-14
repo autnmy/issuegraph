@@ -483,7 +483,11 @@ export function themeFor(name: ThemeName): Theme {
   return name === 'paper' ? PAPER_THEME : defaultTheme;
 }
 
-const UNSETTLED: ReadonlySet<WriteRecord['state']> = new Set(['pending', 'invalid', 'failed', 'conflict']);
+// ONLY A REFUSED-BEFORE-SENDING WRITE IS THE SANDBOX'S TO LIST. The editor's
+// workspace log owns saving, failed and conflicted writes and draws their one
+// recovery card (the redesign lead's ruling on #296), so listing them here too
+// put a second Retry and Discard on the page for one write.
+const UNSETTLED: ReadonlySet<WriteRecord['state']> = new Set(['invalid']);
 
 const STATE_LABEL: Readonly<Record<WriteRecord['state'], string>> = {
   pending: 'saving',
@@ -803,8 +807,8 @@ export function mountSandbox(
     // `aria-live="polite"`, so a screen reader heard the result twice.
     //
     // #135's rule, one zone over: each host fact is stated in exactly one
-    // place. This log keeps what the workspace does NOT draw — the unsettled
-    // records with their §17b recovery controls — and nothing else.
+    // place. This log keeps what the workspace does NOT draw — a write refused
+    // before it was sent, with its Discard — and nothing else.
     if (unsettled.length === 0) return;
     const list = el('ul', { class: 'writes-list' });
     for (const record of unsettled) {
