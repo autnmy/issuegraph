@@ -64,7 +64,7 @@
  * only thing the line adds is direction, and the glyph does not carry it: `→`
  * announces as "right arrow", not "waits on". Announcing the line anyway would
  * repeat three refs `detail` has just named, in a form that has lost the reason
- * it was drawn — the same trade `renderAuditPanel`'s `◆` makes below. The
+ * it was drawn — the same trade `./refused.ts`'s `↗` makes. The
  * remaining options were a visually-hidden utility this package does not have,
  * or an `aria-label` on a `p` with no role, which is not reliably announced. So
  * a screen reader hears exactly what it heard before this line existed, and the
@@ -581,11 +581,6 @@ export function renderAuditPanel(
     },
     [
     element('div', { class: 'ig-audit-panel-head' }, [
-      // THE MARK IS THE FRAME'S, AND IT IS NOT A WORD. `◆` is the same glyph
-      // §17a puts before the ambient count, so the panel and the chip that
-      // counts it read as one thing. `aria-hidden`, because it says nothing a
-      // reader needs said twice — the count and the heading beside it do.
-      element('span', { class: 'ig-audit-mark', 'aria-hidden': 'true' }, ['◆']),
       // THIS PANEL'S OWN CARDS, NOT `overlay.count`, AND THE TWO ARE NOW
       // DIFFERENT NUMBERS. `./surface.ts`'s header count is the persistent
       // control §17d gives one job — "always the same click" — and it counts
@@ -597,7 +592,12 @@ export function renderAuditPanel(
       // THE FRAME AGREES: §17d's panel head reads `3 encoding problems` over
       // exactly its own three cards, with the refusal a separate card outside.
       // A count enclosed by the thing it counts is a count OF that thing.
-      element('span', { class: 'ig-audit-panel-count' }, [String(listed.length)]),
+      //
+      // ONE TITLE, THE COUNT INSIDE IT (#288). The export draws the head as one
+      // panel title, "3 problems to fix", so the count and the host's words are
+      // one heading rather than a gold figure beside an uppercase label. The
+      // host's `heading` still reads after the count, as it always has.
+      //
       // A REAL HEADING, AT THE LEVEL ITS PLACE IN THE ZONE EARNS. A `span` left
       // the panel invisible to heading navigation and put a gap in the column's
       // outline; the caps are the stylesheet's, as they are for every other
@@ -609,7 +609,10 @@ export function renderAuditPanel(
       // concatenates the panel first — so an `h3` announced a level three
       // before the level two it claimed to sit under, describing a nesting the
       // markup does not have. Two peers, two `h2`s.
-      element('h2', { class: 'ig-audit-panel-heading' }, [words.heading]),
+      element('h2', { class: 'ig-audit-panel-heading' }, [
+        element('span', { class: 'ig-audit-panel-count' }, [String(listed.length)]),
+        ` ${words.heading}`,
+      ]),
       // §17d's OWN ENTRY POINT, drawn where the frame draws it. `RULINGS.md` §2
       // already settled what it does — *"The filter hides ROWS. It never
       // touches the ORDER"* — and §3 moved it here from the header count so

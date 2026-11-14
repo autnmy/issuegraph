@@ -351,7 +351,12 @@ describe('the findings panel', () => {
     // it, so once `encoding-refused` moved to `refused.ts` a whole count would
     // have printed `4` directly above three cards.
     const drawn = [...markup.matchAll(/<li class="ig-audit-card"/g)].length;
-    assert.match(markup, new RegExp(`<span class="ig-audit-panel-count">${drawn}</span>`));
+    // ONE TITLE WITH THE COUNT INSIDE IT (#288), as the export's "3 problems to
+    // fix": the count leads the host's words within the same heading.
+    assert.match(
+      markup,
+      new RegExp(`<h2 class="ig-audit-panel-heading"><span class="ig-audit-panel-count">${drawn}</span> ${WORDS.heading}</h2>`),
+    );
     // AND THE FIXTURE ACTUALLY SEPARATES THE TWO. Without a refusal in it the
     // two numbers agree and this pin is vacuous — which is exactly how the
     // defect it exists for reached a plan and two reviews unnoticed.
@@ -360,7 +365,6 @@ describe('the findings panel', () => {
     // the audit region above the selection detail, so an `h3` would announce a
     // level three ahead of the level two it claimed to sit under. The refused
     // block beside it is an `h2` for the same reason.
-    assert.match(markup, new RegExp(`<h2 class="ig-audit-panel-heading">${WORDS.heading}</h2>`));
     // AND THE SECTION IS NAMED. An unnamed `section` carries no landmark role at
     // all, so a reader navigating by landmark cannot reach the panel.
     assert.match(markup, new RegExp(`<section class="ig-audit-panel" aria-label="${WORDS.heading}"`));
@@ -373,10 +377,10 @@ describe('the findings panel', () => {
     // focusable descendant at all. Browsers disagree about putting a generic
     // scroll container in the tab order, so it is declared rather than assumed.
     assert.match(markup, /<section class="ig-audit-panel"[^>]*\stabindex="0"/);
-    // THE MARK IS DECORATION. The count and the heading beside it say the same
-    // thing in words, so a reader who cannot see the glyph loses nothing and a
-    // reader who hears it twice gains nothing.
-    assert.match(markup, /<span class="ig-audit-mark" aria-hidden="true">◆<\/span>/);
+    // THE HEAD DRAWS NO MARK. The export's head row holds only the title and
+    // the filter button; a glyph beside a title that names no state is
+    // decoration.
+    assert.doesNotMatch(markup, /ig-audit-mark|◆/);
   });
 
   it('invents no English of its own', () => {
@@ -399,7 +403,7 @@ describe('the findings panel', () => {
     ]);
     const drawn = [...markup.matchAll(/>([^<>]+)</g)]
       .map((match) => (match[1] as string).trim())
-      .filter((text) => text !== '' && text !== '◆' && !/^\d+$/.test(text));
+      .filter((text) => text !== '' && !/^\d+$/.test(text));
     const overlay = overlayOf(EVERY_CLASS.issues, EVERY_CLASS.edges, [{ ref: 'f' }]);
     // A `detail` is the DETECTOR's sentence, composed from package values, and
     // it is package-owned prose by decision — recorded in `panel.ts` rather than
@@ -408,8 +412,8 @@ describe('the findings panel', () => {
     // A WALK LINE IS ALLOWED ON A STRONGER FOOTING THAN `detail`, and it is
     // listed rather than pattern-matched away. `detail` is a real sentence and
     // is admitted above by decision; a walk contains NO WORD AT ALL — it is the
-    // host's own refs joined by a separator glyph, the same category as the `◆`
-    // and the digits this test already skips. The composition still belongs to
+    // host's own refs joined by a separator glyph, the same category as the
+    // digits this test already skips. The composition still belongs to
     // the package, so it is named here explicitly rather than falling through a
     // widened filter that would admit the next real sentence too.
     for (const finding of overlay.findings) {

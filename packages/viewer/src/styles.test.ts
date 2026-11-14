@@ -151,26 +151,15 @@ describe('the structural stylesheet', () => {
     }
   });
 
-  it('keeps the legend caption out of the rendered-legend slot', () => {
-    // A LOAD-BEARING DECLARATION THAT READS AS DECORATION. HTML lifts the first
-    // in-flow `legend` of a `fieldset` out of the content box, paints it across
-    // the top border with the rule notched either side, and starts the content
-    // below it. That drew the caption on the rule, a band of bare ground under
-    // it, and a broken top rule. `float` is the spec's own opt-out: a legend
-    // whose computed float is not `none` is an ordinary child, and in this flex
-    // bar the float itself is then ignored, so it lays out as the first item.
-    //
-    // ASSERTED HERE BECAUSE NOTHING ELSE WOULD FAIL. Removing the line changes
-    // no markup, no token and no other rule — the defect returns silently, and
-    // the next reader tidying an "unused float" has no signal at all.
+  it('draws the legend with no visible caption, and names it instead (#288)', () => {
+    // content.md rules out the small uppercase label above a group, and the
+    // export's legend bar carries only an aria-label. So no caption is drawn
+    // and no rule styles one, and the bar keeps the name the caption gave it.
     const css = withoutComments(viewerStylesheet);
-    const block = /\.ig-legend-caption \{([^}]*)\}/.exec(css);
-    assert.ok(block, 'the legend caption no longer has a rule of its own');
-    assert.match(
-      block[1] as string,
-      /float:\s*left/,
-      'the caption is back in the rendered-legend slot, so the top rule is notched again',
-    );
+    assert.equal(/\.ig-legend-caption\b/.test(css), false, 'a rule still styles a legend caption');
+    const markup = renderViewer(fixtureDocument, { projection: 'graph' }).markup;
+    assert.match(markup, /<fieldset class="ig-legend" aria-label="Relationships">/);
+    assert.equal(/<legend\b/.test(markup), false, 'the legend draws a caption');
   });
 
   it('contains no literal colour', () => {
@@ -884,6 +873,13 @@ const SMALL_TYPE: Readonly<Record<string, string>> = Object.freeze({
   'font-variant-numeric': 'tabular-nums',
 });
 
+/** A tag, as the export draws one (#288): the small role in the sans at medium weight. */
+const TAG_TYPE: Readonly<Record<string, string>> = Object.freeze({
+  'font-family': 'var(--ig-font-ui)',
+  'font-size': 'var(--ig-font-size-small)',
+  'font-weight': 'var(--ig-weight-medium)',
+});
+
 /**
  * What an issue number keeps in EVERY context: the sans and tabular figures.
  * A context may size or colour it — a card's identity line is smaller — so only
@@ -1149,5 +1145,128 @@ describe('one face and one size per explanation line, and a copied key is mono a
       const inside = ['.ig-viewer', line];
       assert.equal(declaredOn(viewerStylesheet, '.ig-copy-key', 'font-family', inside)?.value, 'var(--ig-font-mono)', line);
     }
+  });
+});
+
+describe('the chrome the export draws differently, drawn as the export draws it (#288)', () => {
+  /** Every later rule in `wrong` that the reading must catch, as one line per pass it let through. */
+  const blindTo = (target: string, type: Readonly<Record<string, string>>, wrong: readonly (readonly [string, string])[]): string[] =>
+    wrong.flatMap(([property, value]) =>
+      typeMisses(withLaterRule(viewerStylesheet, target, property, value), [target], type).length > 0
+        ? []
+        : [`${target} passed with ${property}: ${value}`],
+    );
+  const MONO_OR_MICRO: readonly (readonly [string, string])[] = [
+    ['font-family', 'var(--ig-font-mono)'],
+    ['font-size', 'var(--ig-font-size-micro)'],
+  ];
+
+  it('sets every row badge as a tag: the small role in the sans at medium weight', () => {
+    // "P3", "blocks 512", "decomposed from 470" and "not ready" are words a
+    // reader reads, not keys they copy, so none is mono.
+    const BADGES = [
+      '.ig-badge',
+      ".ig-badge[data-edge='blocked-by']",
+      ".ig-badge[data-edge='decomposed-from']",
+      ".ig-badge[data-priority='tier']",
+      ".ig-badge[data-not-ready='true']",
+    ];
+    assert.deepEqual(typeMisses(viewerStylesheet, BADGES, TAG_TYPE), []);
+    assert.deepEqual(blindTo('.ig-badge', TAG_TYPE, MONO_OR_MICRO), []);
+  });
+
+  it('draws the unit label and its note in sentence case in the sans, with no fill and no tracking', () => {
+    const LABEL = { 'font-family': 'var(--ig-font-ui)', 'font-size': 'var(--ig-font-size-small)', 'font-weight': 'var(--ig-weight-medium)' };
+    const NOTE = { 'font-family': 'var(--ig-font-ui)', 'font-size': 'var(--ig-font-size-small)' };
+    assert.deepEqual(typeMisses(viewerStylesheet, ['.ig-unit-pill'], LABEL), []);
+    assert.deepEqual(typeMisses(viewerStylesheet, ['.ig-unit-note'], NOTE), []);
+    // READ WHERE THE LABEL SITS, inside a row's unit mark, so the rule that
+    // clears a selected graph card's children does not stand in for it.
+    const inside = ['.ig-viewer', '.ig-slot', '.ig-unit-mark'];
+    for (const target of ['.ig-unit-pill', '.ig-unit-note']) {
+      for (const property of ['text-transform', 'letter-spacing', 'background']) {
+        assert.equal(declaredOn(viewerStylesheet, target, property, inside), undefined, `${target} still sets ${property}`);
+      }
+    }
+    assert.deepEqual(blindTo('.ig-unit-pill', LABEL, MONO_OR_MICRO), []);
+  });
+
+  it('sets the rank figure in the sans with tabular figures', () => {
+    const RANK = { 'font-family': 'var(--ig-font-ui)', 'font-variant-numeric': 'tabular-nums' };
+    assert.deepEqual(typeMisses(viewerStylesheet, ['.ig-rank', ".ig-rank[data-held='true']"], RANK), []);
+    assert.deepEqual(blindTo('.ig-rank', RANK, [['font-family', 'var(--ig-font-mono)']]), []);
+  });
+
+  it('draws held as a solid dot in the held colour and ready-after as a solid ring, as the board does', () => {
+    const held = ".ig-station[data-fill='dashed']";
+    const after = ".ig-station[data-fill='hollow']";
+    // READ IN A ROW'S RANK TRACK, where the station is drawn.
+    const inside = ['.ig-viewer', '.ig-slot', '.ig-rank-cell'];
+    assert.equal(declaredOn(viewerStylesheet, held, 'background', inside)?.value, 'var(--ig-station-held)');
+    assert.equal(declaredOn(viewerStylesheet, held, 'border-style', inside)?.value, 'solid');
+    assert.equal(declaredOn(viewerStylesheet, after, 'background', inside)?.value, 'transparent');
+    assert.equal(declaredOn(viewerStylesheet, after, 'border-color', inside)?.value, 'var(--ig-station-pending)');
+    assert.equal(declaredOn(viewerStylesheet, after, 'border-style', inside), undefined, 'the ring takes a style of its own');
+    // NO ROW STATION IS DASHED ANY MORE. The graph's spine station keeps its
+    // dashed held ring, which is what the board draws on the spine.
+    assert.equal(/\.ig-station\b[^{]*\{[^}]*dashed/.test(withoutComments(viewerStylesheet)), false, 'a row station is still dashed');
+  });
+
+  it('draws no card of its own inside a host that declines the frame, and a sentence-case group heading', () => {
+    const embedded = [".ig-viewer[data-frame='none']"];
+    // NO GROUND, so the rows sit on the host's card rather than in a second one.
+    assert.equal(declaredOn(viewerStylesheet, ".ig-viewer[data-frame='none']", 'background')?.value, 'transparent');
+    // THE GROUP HEADING is the export's: small, medium, muted, sentence case.
+    const heading = '.ig-header-label.ig-footer-title';
+    const HEADING = {
+      color: 'var(--ig-text-muted)',
+      'font-family': 'var(--ig-font-ui)',
+      'font-size': 'var(--ig-font-size-small)',
+      'font-weight': 'var(--ig-weight-medium)',
+      'text-transform': 'none',
+    };
+    for (const [property, expected] of Object.entries(HEADING)) {
+      assert.equal(declaredOn(viewerStylesheet, heading, property, embedded)?.value, expected, `the embedded heading's ${property}`);
+    }
+    // ITS COUNT SITS AT THE ROW'S END, as the export's group row sets it.
+    assert.equal(declaredOn(viewerStylesheet, '.ig-footer-title-row', 'justify-content', embedded)?.value, 'space-between');
+    // AND ITS COUNT IS A NUMBER, NOT AN OUTLINED CHIP.
+    const count = ".ig-count-chip[data-count='footer']";
+    assert.equal(declaredOn(viewerStylesheet, count, 'border', embedded)?.value, '0');
+    assert.equal(declaredOn(viewerStylesheet, count, 'background', embedded)?.value, 'none');
+    assert.equal(declaredOn(viewerStylesheet, count, 'font-size', embedded)?.value, 'var(--ig-font-size-small)');
+    // STANDING ALONE IT IS STILL THE PANEL'S OWN KICKER, unchanged.
+    assert.equal(declaredOn(viewerStylesheet, heading, 'text-transform', ['.ig-viewer'])?.value, 'uppercase');
+    // The flag reaches the markup the rules key off.
+    assert.match(renderViewer(hostedFixtureDocument, { frame: false, chrome: false }).markup, /<section class="ig-viewer ig-linear"[^>]*data-frame="none"/);
+  });
+
+  it('draws the loading placeholder on one static fill, lines as short pills in their line height, blocks with the card corner', () => {
+    const css = viewerStylesheet;
+    // ONE FILL, the stronger surface, everywhere — no ground-specific override.
+    // Read in a row and on the header's own ground, where an override used to be.
+    assert.equal(declaredOn(css, '.ig-skeleton-block', 'background', ['.ig-viewer', '.ig-list', '.ig-slot'])?.value, 'var(--ig-surface)');
+    assert.equal(declaredOn(css, '.ig-skeleton-block', 'background', ['.ig-viewer', '.ig-header', '.ig-header-top'])?.value, 'var(--ig-surface)');
+    // A LINE IS A PILL ONE SNUG STEP TALL, whose margins make up its line.
+    const lines: readonly (readonly [string, string])[] = [
+      ['title', '--ig-row-title-line'],
+      ['meta', '--ig-row-meta-line'],
+    ];
+    for (const [shape, line] of lines) {
+      const target = `.ig-skeleton-block[data-shape='${shape}']`;
+      assert.equal(declaredOn(css, target, 'block-size')?.value, 'var(--ig-space-snug)', `${shape} is not a short pill`);
+      assert.equal(declaredOn(css, target, 'border-radius')?.value, 'var(--ig-space-snug)', `${shape} is not rounded to a pill`);
+      assert.equal(
+        declaredOn(css, target, 'margin-block')?.value,
+        `calc((var(${line}) - var(--ig-space-snug)) / 2)`,
+        `${shape} does not sit in its line's height`,
+      );
+    }
+    // A CONTROL IS A PILL ITS OWN SIZE: the chip's corner is half its height.
+    const chip = ".ig-skeleton-block[data-shape='chip']";
+    assert.equal(declaredOn(css, chip, 'block-size')?.value, 'calc(var(--ig-space) * 2)');
+    assert.equal(declaredOn(css, chip, 'border-radius')?.value, 'var(--ig-space)');
+    // A BLOCK TAKES THE CARD'S CORNER.
+    assert.equal(declaredOn(css, ".ig-skeleton-block[data-shape='card']", 'border-radius')?.value, 'var(--ig-radius-large)');
   });
 });

@@ -5,7 +5,7 @@ import { THEME_TOKENS, viewerStylesheet } from '@issuegraph/viewer';
 
 import { AUDIT_SEVERITY_ATTRIBUTE } from './surface.ts';
 import { auditStylesheet } from './styles.ts';
-import { countTypeMisses, regressionsOf } from '../testing/counts.ts';
+import { countTypeMisses, declaredOn, regressionsOf, typeMisses } from '../testing/counts.ts';
 
 describe('the structural stylesheet', () => {
   /** Every `var(--…)` name the stylesheet references. */
@@ -210,6 +210,45 @@ describe('the counts this sheet draws are body text with tabular figures (#254)'
       for (const later of regressionsOf(css, target)) {
         assert.notDeepEqual(countTypeMisses(later, [target]), [], `${target} passed with its old type put back`);
       }
+    }
+  });
+});
+
+describe('the problems panel head is one title with the count inside it (#288)', () => {
+  // The export draws one panel title, the count and then the host's words, in
+  // the sans at medium weight in text colour. It was an uppercase mono label in
+  // gold with a gold count beside it. The theme has no token for the export's
+  // panel-title step, so the title takes the body size.
+  const css = `${viewerStylesheet}\n${auditStylesheet}`;
+  const TITLE: Readonly<Record<string, string>> = {
+    'font-family': 'var(--ig-font-ui)',
+    'font-size': 'var(--ig-font-size)',
+    'font-weight': 'var(--ig-weight-medium)',
+  };
+
+  it('sets the title in the sans at medium weight in text colour, with no capitals or tracking', () => {
+    assert.deepEqual(typeMisses(css, ['.ig-audit-panel-heading'], TITLE), []);
+    // The colour is read where the title sits: inside the panel and its head,
+    // so a rule for a selected graph card's children does not stand in for it.
+    const inside = ['.ig-audit-panel', '.ig-audit-panel-head'];
+    assert.equal(declaredOn(css, '.ig-audit-panel-heading', 'color', inside)?.value, 'var(--ig-text)');
+    assert.equal(declaredOn(css, '.ig-audit-panel-heading', 'text-transform'), undefined, 'the title is still capitalised');
+    assert.equal(declaredOn(css, '.ig-audit-panel-heading', 'letter-spacing'), undefined, 'the title is still tracked');
+  });
+
+  it('gives the refused block’s heading, the panel’s peer, the same type', () => {
+    assert.deepEqual(typeMisses(css, ['.ig-audit-refused-heading'], TITLE), []);
+    assert.equal(declaredOn(css, '.ig-audit-refused-heading', 'text-transform'), undefined, 'the peer heading is still capitalised');
+  });
+
+  it('draws the count in the title’s own ink, not gold', () => {
+    const inside = ['.ig-audit-panel', '.ig-audit-panel-head', '.ig-audit-panel-heading'];
+    assert.equal(declaredOn(css, '.ig-audit-panel-count', 'color', inside)?.value, 'inherit');
+  });
+
+  it('fails a later rule that puts the mono face or the small size back on the title', () => {
+    for (const later of regressionsOf(css, '.ig-audit-panel-heading')) {
+      assert.notDeepEqual(typeMisses(later, ['.ig-audit-panel-heading'], TITLE), [], 'the title passed with its old type put back');
     }
   });
 });

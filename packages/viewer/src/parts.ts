@@ -75,6 +75,10 @@ export type StationFill = 'filled' | 'hollow' | 'dashed';
 /**
  * Filled = ready now. Hollow = ready once a named rank lands. Dashed = held.
  *
+ * THE NAMES ARE THE FILLS' CONTRACT, NOT THEIR DRAWING. Since #288 the
+ * stylesheet draws `dashed` as a solid dot in the held colour, as the board
+ * does; the value keeps its name because hosts and tests read it.
+ *
  * The hollow case needs the host to have told us the rank; without it a ready
  * slot is simply ready, and inventing a pending state would claim a dependency
  * nobody declared.
@@ -800,16 +804,29 @@ export function unitBlock(document: NormalizedDocument, slot: ViewerSlot): Eleme
   );
 }
 
-/** The unit's own pill, above the enclosure: what it is, and how many. */
+/**
+ * The unit's own label, above the enclosure: what it is, and how many.
+ *
+ * IN SENTENCE CASE IN THE WORDS, because the stylesheet no longer capitalises
+ * them (#288): the export draws "One unit · 2 issues" as a plain label, and an
+ * uppercase transform was the only thing that made the lower-case words read
+ * as a heading. The card's banner reads the same two strings.
+ */
 export function unitMark(slot: ViewerSlot): ElementSpec | null {
   if (slot.members.length < 2) return null;
   return element('div', { class: 'ig-unit-mark' }, [
-    element('span', { class: 'ig-unit-pill' }, [
-      `⧉ one unit · ${String(slot.members.length)} issues`,
-    ]),
-    element('span', { class: 'ig-unit-note' }, ['worked together']),
+    element('span', { class: 'ig-unit-pill' }, [unitLabel(slot.members.length)]),
+    element('span', { class: 'ig-unit-note' }, [UNIT_NOTE]),
   ]);
 }
+
+/** The unit label's words, one spelling for the row and the card. */
+function unitLabel(members: number): string {
+  return `⧉ One unit · ${String(members)} issues`;
+}
+
+/** The note beside the unit label. */
+const UNIT_NOTE = 'Worked together';
 
 /**
  * The two caveats a host can put on a row, each ONE row child so the slot grid
@@ -1232,8 +1249,8 @@ export function cardBlocks(
   if (members.length > 1 && slot !== undefined) {
     blocks.push({
       kind: 'banner',
-      mark: `⧉ one unit · ${String(members.length)} issues`,
-      note: 'worked together',
+      mark: unitLabel(members.length),
+      note: UNIT_NOTE,
     });
     blocks.push({ kind: 'unit', members });
   } else {
@@ -1313,8 +1330,10 @@ export function cardText(document: NormalizedDocument, block: CardBlock): readon
  * cannot explain, so §16b keys it at the far end of the same bar.
  */
 export function legend(): ElementSpec {
-  return element('fieldset', { class: 'ig-legend' }, [
-    element('legend', { class: 'ig-legend-caption' }, ['relationships']),
+  // NAMED, NOT CAPTIONED (#288). The export carries the bar's name as an
+  // aria-label and draws no caption: content.md rules out the small uppercase
+  // label above a group. The accessible name is the word the caption carried.
+  return element('fieldset', { class: 'ig-legend', 'aria-label': 'Relationships' }, [
     ...EDGE_ORDER.map((field) => {
       const treatment = treatmentFor(field);
       return element('span', { class: 'ig-legend-item' }, [

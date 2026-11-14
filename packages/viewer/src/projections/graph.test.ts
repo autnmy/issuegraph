@@ -157,7 +157,7 @@ describe('the graph projection', () => {
     // one.
     const markup = render();
     assert.match(markup, /<div class="ig-card"[^>]*data-unit="true"/);
-    assert.match(markup, /<span class="ig-unit-pill">⧉ one unit · 2 issues<\/span>/);
+    assert.match(markup, /<span class="ig-unit-pill">⧉ One unit · 2 issues<\/span>/);
     assert.match(markup, /aria-label="one unit of 2 issues"/);
     assert.equal(markup.includes('class="ig-connector"'), false, 'the canvas still draws a connector');
     // The enclosure survives in ONE place: the legend's sample, which is where a

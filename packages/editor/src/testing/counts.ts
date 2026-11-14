@@ -43,6 +43,16 @@ export const SMALL_TYPE: RoleType = Object.freeze({
 });
 
 /**
+ * A tag, as the export draws one (#288): the small role in the sans at medium
+ * weight. The row badges and the capsule's loop tag take it.
+ */
+export const TAG_TYPE: RoleType = Object.freeze({
+  'font-family': 'var(--ig-font-ui)',
+  'font-size': 'var(--ig-font-size-small)',
+  'font-weight': 'var(--ig-weight-medium)',
+});
+
+/**
  * What an issue number keeps in EVERY context: the sans and tabular figures.
  * Its size and colour are the base rule's, and a context may set its own — a
  * card's identity line is smaller — so only these two are read pessimistically.
@@ -90,6 +100,12 @@ export const MONO_BACK: readonly (readonly [string, string])[] = [['font-family'
 export const COUNT_BACK: readonly (readonly [string, string])[] = [
   ['font-family', 'var(--ig-font-mono)'],
   ['font-size', 'var(--ig-font-size-small)'],
+];
+
+/** Later rules that move a tag off its role: the mono face, and the micro size a badge used to take. */
+export const TAG_BACK: readonly (readonly [string, string])[] = [
+  ['font-family', 'var(--ig-font-mono)'],
+  ['font-size', 'var(--ig-font-size-micro)'],
 ];
 
 /** Later rules that move the small role off it: the mono face, and the smaller micro size. */

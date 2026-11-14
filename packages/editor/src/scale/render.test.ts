@@ -140,17 +140,17 @@ describe('the refusal, as a reader sees it', () => {
     }
   });
 
-  it('shows the cycle badge only for a component that has one', () => {
+  it('shows the Loop tag only for a component that has one', () => {
     const clean = renderScaleLadder(documentOf({ components: [40, 30] }));
-    assert.equal(/>cycle</.test(clean.markup), false);
+    assert.equal(/>Loop</.test(clean.markup), false);
     const cyclic = renderScaleLadder(documentOf({ components: [40, 30], cycleIn: 1 }));
-    assert.match(cyclic.markup, />cycle</);
+    assert.match(cyclic.markup, />Loop</);
   });
 
   it('never prints a chain depth on a component that holds a cycle', () => {
     // THE DEFECT THIS TILE'S PASS EXISTS TO REMOVE. `chainDepth` is the longest
     // ACYCLIC chain, so it is a real number on a stuck component — and printed
-    // beside a `cycle` badge it reads as a work estimate for work that can never
+    // beside a `Loop` tag it reads as a work estimate for work that can never
     // start. Frame 17f draws the consequence in that slot instead.
     const cyclic = renderScaleLadder(documentOf({ components: [40, 30], cycleIn: 1 }));
     const stuck = cyclic.ladder.capsules.find((capsule) => capsule.reach.kind === 'cyclic');
@@ -161,7 +161,7 @@ describe('the refusal, as a reader sees it', () => {
       new RegExp(`<li class="ig-capsule-cell"><button [^>]*data-ig-target="${stuck.lead}".*?</button></li>`),
     )?.[0];
     assert.ok(card !== undefined);
-    assert.match(card, />cycle</);
+    assert.match(card, />Loop</);
     assert.match(card, />nothing can start</);
     // The tint the frame puts on the whole stuck card is a rule on this hook.
     assert.match(card, /data-reach="cyclic"/);

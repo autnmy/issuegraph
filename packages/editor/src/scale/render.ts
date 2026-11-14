@@ -289,10 +289,13 @@ function capsuleSpec(capsule: ScaleCapsule): ElementSpec {
         // a card indents the text off the grid line the count above it sits on.
         // The `ig-capsule-*` classes are this card's own, so it can place its
         // four parts without editing a class §16's capsule also draws.
+        //
+        // THE CYCLE IS A TAG, NOT A COUNT (#288). It shared `.ig-capsule-load`
+        // and layer 1's `.ig-badge`, so it took the count's type and an edge
+        // chip's tint and read as a third tally. The export draws it as a tag
+        // in the error state, so it has a class of its own and neither of those.
         capsule.reach.kind === 'cyclic'
-          ? element('span', { class: 'ig-capsule-load ig-badge', 'data-edge': 'blocked-by' }, [
-              'cycle',
-            ])
+          ? element('span', { class: 'ig-capsule-loop' }, ['Loop'])
           : element('span', { class: 'ig-capsule-load' }, [
               `${EDGE_TREATMENTS['blocked-by'].glyph} ${String(capsule.blockedByEdges)}`,
             ]),
