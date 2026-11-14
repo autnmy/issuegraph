@@ -1591,28 +1591,39 @@ ${heldRailDeclarations}
    the markup and the list is in it whenever its tab is selected, and this is
    what keeps both off the three wider layouts. The block at the foot of the
    sheet draws them. */
+/* THE DESIGN'S TABS PART: FILLED, NOT BORDERED. An idle tab is muted text on
+   no fill; hover takes the secondary fill (--ig-surface-2); the selected tab
+   takes the strong fill (--ig-surface) with full text. 32 tall, 12 inline
+   padding, the control radius, 4 apart. The package has no 32 or 4 token, so
+   both are written from the spacing scale: 2 x --ig-space-loose and
+   2 x --ig-space-micro. */
 .ig-workspace .ig-narrow-tabs {
   display: none;
-  gap: var(--ig-space-tight);
+  gap: calc(var(--ig-space-micro) * 2);
   padding: var(--ig-space-tight) var(--ig-space);
   border-bottom: var(--ig-stroke) solid var(--ig-line);
 }
 
 .ig-workspace .ig-narrow-tab {
   flex: 1;
-  border: var(--ig-stroke) solid var(--ig-line);
+  min-block-size: calc(var(--ig-space-loose) * 2);
+  border: 0;
   border-radius: var(--ig-radius);
   background: none;
   color: var(--ig-text-muted);
   font-family: var(--ig-font-ui);
   font-size: var(--ig-font-size-small);
-  padding: var(--ig-space-tight);
+  padding: 0 var(--ig-space);
   cursor: pointer;
+}
+
+.ig-workspace .ig-narrow-tab:hover {
+  background: var(--ig-surface-2);
 }
 
 .ig-workspace .ig-narrow-tab[aria-selected='true'] {
   background: var(--ig-surface);
-  color: var(--ig-text-body);
+  color: var(--ig-text);
 }
 
 .ig-workspace .ig-narrow-tab:focus-visible,
