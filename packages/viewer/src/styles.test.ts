@@ -858,9 +858,10 @@ describe('the recede rules win over every card and station variant', () => {
 });
 
 /**
- * #254: THE KEYS LINE AND EVERY COUNT THIS PACKAGE DRAWS ARE BODY TEXT — the
- * body sans at the body size with tabular figures, not the small mono. The
- * issue key keeps the mono face.
+ * #254, AS THE REDESIGN LEAD RULED IT: every count this package draws, and
+ * every issue number, is the body sans at the body size with tabular figures,
+ * not the small mono; the keys line (the legend bar) takes the small role in
+ * the same sans. Mono is kept only for keys a reader copies, such as label:P0.
  *
  * jsdom is not a dependency here, so this reads the cascade off the sheet
  * itself, and PESSIMISTICALLY: a rule counts when its last compound can select
@@ -873,6 +874,23 @@ describe('the recede rules win over every card and station variant', () => {
 const COUNT_TYPE: Readonly<Record<string, string>> = Object.freeze({
   'font-family': 'var(--ig-font-ui)',
   'font-size': 'var(--ig-font-size)',
+  'font-variant-numeric': 'tabular-nums',
+});
+
+/** The small role the legend bar takes: the same sans, a step below the body. */
+const SMALL_TYPE: Readonly<Record<string, string>> = Object.freeze({
+  'font-family': 'var(--ig-font-ui)',
+  'font-size': 'var(--ig-font-size-small)',
+  'font-variant-numeric': 'tabular-nums',
+});
+
+/**
+ * What an issue number keeps in EVERY context: the sans and tabular figures.
+ * A context may size or colour it — a card's identity line is smaller — so only
+ * these two are read pessimistically; the base rule is read on its own below.
+ */
+const ISSUE_NUMBER_TYPE: Readonly<Record<string, string>> = Object.freeze({
+  'font-family': 'var(--ig-font-ui)',
   'font-variant-numeric': 'tabular-nums',
 });
 
@@ -957,10 +975,10 @@ function declaredOn(css: string, target: string, property: string): { value: str
   return winner === undefined ? undefined : { value: winner.value, selector: winner.selector };
 }
 
-/** Every one of `targets` the cascade does not give COUNT_TYPE, one line per property. */
-function countTypeMisses(css: string, targets: readonly string[]): string[] {
+/** Every one of `targets` the cascade does not give `type`, one line per property. */
+function typeMisses(css: string, targets: readonly string[], type: Readonly<Record<string, string>>): string[] {
   return targets.flatMap((target) =>
-    Object.entries(COUNT_TYPE).flatMap(([property, expected]) => {
+    Object.entries(type).flatMap(([property, expected]) => {
       const declared = declaredOn(css, target, property);
       return declared?.value === expected
         ? []
@@ -969,44 +987,77 @@ function countTypeMisses(css: string, targets: readonly string[]): string[] {
   );
 }
 
-describe('the keys line and every count are body text with tabular figures (#254)', () => {
-  // "The keys line" names no class, so both things it can mean are here: the
-  // legend bar's items and its readiness keys. The rest are every count the
-  // viewer draws, the overflow chip among them — it is a count, not an edge.
-  const COUNTS = [
-    '.ig-count-chip',
-    '.ig-count',
-    '.ig-notice-progress',
-    '.ig-unit-count',
-    '.ig-badge[data-omitted]',
-    '.ig-legend-item',
-    '.ig-legend-keys',
-  ];
+/**
+ * `css` with a later rule on the selector that gives `target` its `property`
+ * today, setting `value` — so it ties that rule on specificity and wins on
+ * order, the shape a careless later edit takes.
+ */
+function withLaterRule(css: string, target: string, property: string, value: string): string {
+  const winner = declaredOn(css, target, property);
+  assert.ok(winner !== undefined, `no rule sets ${property} on ${target}`);
+  return `${css}\n${winner.selector} {\n  ${property}: ${value};\n}\n`;
+}
 
-  it('sets the body sans, the body size and tabular figures on each of them, as the last rule that can style it', () => {
-    assert.deepEqual(countTypeMisses(viewerStylesheet, COUNTS), []);
+describe('every count and every issue number is body text, and the keys line is the small role (#254)', () => {
+  // Every count the viewer draws, the overflow chip among them — it is a
+  // count, not an edge.
+  const COUNTS = ['.ig-count-chip', '.ig-count', '.ig-notice-progress', '.ig-unit-count', '.ig-badge[data-omitted]'];
+  // "The keys line" names no class; in this package it is the legend bar's
+  // items and its readiness keys.
+  const SMALL = ['.ig-legend-item', '.ig-legend-keys'];
+
+  it('sets the body sans, the body size and tabular figures on each count, as the last rule that can style it', () => {
+    assert.deepEqual(typeMisses(viewerStylesheet, COUNTS, COUNT_TYPE), []);
   });
 
-  it('fails a later rule that puts the mono face or a smaller size back', () => {
-    // WRITTEN ON THE SELECTOR THAT WINS TODAY, so the added rule ties it on
-    // specificity and wins on order — the shape a careless later edit takes.
-    const regressions: readonly (readonly [string, string])[] = [
+  it('fails a later rule that puts the mono face or a smaller size back on a count', () => {
+    const wrong: readonly (readonly [string, string])[] = [
       ['font-family', 'var(--ig-font-mono)'],
       ['font-size', 'var(--ig-font-size-small)'],
     ];
     for (const target of COUNTS) {
-      for (const [property, value] of regressions) {
-        const winner = declaredOn(viewerStylesheet, target, property);
-        assert.ok(winner !== undefined, `no rule sets ${property} on ${target}`);
-        const later = `${viewerStylesheet}\n${winner.selector} {\n  ${property}: ${value};\n}\n`;
-        assert.notDeepEqual(countTypeMisses(later, [target]), [], `${target} passed with ${property}: ${value} put back`);
+      for (const [property, value] of wrong) {
+        const later = withLaterRule(viewerStylesheet, target, property, value);
+        assert.notDeepEqual(typeMisses(later, [target], COUNT_TYPE), [], `${target} passed with ${property}: ${value} put back`);
       }
     }
   });
 
-  it('keeps the issue key in the mono face', () => {
-    // The key and the count shared one rule, and splitting it is what lets the
-    // count move without the key: an issue key is copied as typed, as label:P0 is.
-    assert.equal(declaredOn(viewerStylesheet, '.ig-id', 'font-family')?.value, 'var(--ig-font-mono)');
+  it('sets the legend bar at the small role, in the sans with tabular figures, its items muted', () => {
+    assert.deepEqual(typeMisses(viewerStylesheet, SMALL, SMALL_TYPE), []);
+    assert.equal(declaredOn(viewerStylesheet, '.ig-legend-item', 'color')?.value, 'var(--ig-text-muted)');
+  });
+
+  it('fails a later rule that puts the mono face or a smaller size on the legend bar', () => {
+    const wrong: readonly (readonly [string, string])[] = [
+      ['font-family', 'var(--ig-font-mono)'],
+      ['font-size', 'var(--ig-font-size-micro)'],
+    ];
+    for (const target of SMALL) {
+      for (const [property, value] of wrong) {
+        const later = withLaterRule(viewerStylesheet, target, property, value);
+        assert.notDeepEqual(typeMisses(later, [target], SMALL_TYPE), [], `${target} passed with ${property}: ${value} put back`);
+      }
+    }
+  });
+
+  it('draws an issue number as the design’s muted number: the sans at the body size, tabular figures', () => {
+    // AN ISSUE NUMBER IS READ, NOT COPIED, so it is not mono. The base rule
+    // carries the whole treatment; a context may resize or recolour it (a
+    // card's identity line is smaller), but no context may put the mono face
+    // back or drop the tabular figures.
+    assert.deepEqual(typeMisses(viewerStylesheet, ['.ig-id'], ISSUE_NUMBER_TYPE), []);
+    const base = declaredRules(viewerStylesheet).filter((rule) => rule.selector === '.ig-id');
+    assert.deepEqual(
+      Object.fromEntries(base.flatMap((rule) => rule.declarations.map(({ name, value }) => [name, value]))),
+      {
+        color: 'var(--ig-text-muted)',
+        'font-family': 'var(--ig-font-ui)',
+        'font-size': 'var(--ig-font-size)',
+        'font-variant-numeric': 'tabular-nums',
+      },
+    );
+    const later = withLaterRule(viewerStylesheet, '.ig-id', 'font-family', 'var(--ig-font-mono)');
+    assert.notDeepEqual(typeMisses(later, ['.ig-id'], ISSUE_NUMBER_TYPE), [], 'an issue number passed in the mono face');
   });
 });

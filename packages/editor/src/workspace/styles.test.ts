@@ -24,7 +24,18 @@ import { reevaluateStylesheet } from '../reevaluate/styles.ts';
 import { renderScaleLadder } from '../scale/render.ts';
 import { scaleLadderStylesheet } from '../scale/styles.ts';
 import { workspaceStylesheet } from './styles.ts';
-import { VIEWER_COUNTS, countTypeMisses, declaredOn, regressionsOf } from '../testing/counts.ts';
+import {
+  ISSUE_NUMBER_BASE,
+  ISSUE_NUMBER_TYPE,
+  MONO_BACK,
+  SMALL_TYPE,
+  VIEWER_COUNTS,
+  VIEWER_SMALL,
+  baseRule,
+  countTypeMisses,
+  regressionsOf,
+  typeMisses,
+} from '../testing/counts.ts';
 import { WORKSPACE_WORDS, backlogOf, keysOf } from '../testing/workspace.ts';
 import {
   WORDS as CHANGE_WORDS,
@@ -2072,10 +2083,11 @@ describe('the counts this sheet draws are body text with tabular figures (#254)'
     assert.deepEqual(countTypeMisses(`${viewerStylesheet}\n${workspaceStylesheet}`, COUNTS), []);
   });
 
-  it('leaves the viewer’s own counts and keys line as the viewer set them, under every sheet the mount installs', () => {
+  it('leaves the viewer’s own counts and legend as the viewer set them, under every sheet the mount installs', () => {
     // THE OTHER DIRECTION. The viewer sheet is installed first, so a rule in
     // any editor sheet above it can carry one of its counts back to mono.
     assert.deepEqual(countTypeMisses(INSTALLED, [...VIEWER_COUNTS, ...COUNTS]), []);
+    assert.deepEqual(typeMisses(INSTALLED, VIEWER_SMALL, SMALL_TYPE), []);
   });
 
   it('fails a later rule that puts the mono face or a smaller size back', () => {
@@ -2087,8 +2099,19 @@ describe('the counts this sheet draws are body text with tabular figures (#254)'
     }
   });
 
-  it('keeps the issue key in the mono face, and draws the header numbers as counts rather than keys', () => {
-    assert.equal(declaredOn(INSTALLED, '.ig-id', 'font-family')?.value, 'var(--ig-font-mono)');
+  it('draws an issue number in the sans with tabular figures under every sheet the mount installs, and a later mono rule fails', () => {
+    // AN ISSUE NUMBER IS READ, NOT COPIED (the redesign lead's ruling on #254):
+    // the export's muted .num. Mono is kept only for keys such as label:P0. A
+    // context may size or colour a number — a card's identity line is smaller,
+    // an isolated list's column is small — but none may put the mono face back.
+    assert.deepEqual(typeMisses(INSTALLED, ['.ig-id'], ISSUE_NUMBER_TYPE), []);
+    assert.deepEqual(Object.fromEntries(baseRule(INSTALLED, '.ig-id')), ISSUE_NUMBER_BASE);
+    for (const later of regressionsOf(INSTALLED, '.ig-id', MONO_BACK)) {
+      assert.notDeepEqual(typeMisses(later, ['.ig-id'], ISSUE_NUMBER_TYPE), [], 'an issue number passed in the mono face');
+    }
+  });
+
+  it('draws the header numbers as counts rather than issue numbers', () => {
     const header = renderWorkspace(
       { ...DOCUMENT, host: { adoption: { counts: { declaring: 64, total: 312 } } } },
       { words: WORKSPACE_WORDS },

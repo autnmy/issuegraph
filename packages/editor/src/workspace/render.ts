@@ -2299,9 +2299,9 @@ function specMarkup(spec: ElementSpec | null): string {
  * left to encode" is the question, and that one is answered by the pair read in
  * this direction.
  *
- * THE NUMBERS ARE `.ig-workspace-count`, NOT LAYER 1's `.ig-id`. That class is
- * an issue key and keeps the mono face a key is copied in; these are counts,
- * which both packages set in the body sans with tabular figures.
+ * THE NUMBERS ARE `.ig-workspace-count`, NOT LAYER 1's `.ig-id`. That class
+ * names an issue; these are counts, and a context rule that styles issue
+ * numbers somewhere must not reach a tally of the backlog.
  */
 function adoptionCountsSpec(adoption: Adoption | undefined, words: WorkspaceWords): ElementSpec | null {
   const counts = adoption?.counts;

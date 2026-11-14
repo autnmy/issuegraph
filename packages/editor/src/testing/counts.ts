@@ -2,9 +2,11 @@
  * A reading of the cascade for one element, shared by the tests that pin the
  * type of every count the editor draws.
  *
- * THE RULE (#254): the keys line and the counts the packages render use the
- * body sans at the body size with tabular figures, not 11px mono. Each sheet's
- * test names its own count selectors and asks what the cascade gives each one,
+ * THE RULE (#254, as the redesign lead ruled it): the counts the packages
+ * render, and every issue number, use the body sans at the body size with
+ * tabular figures, not 11px mono; the keys line and the legend take the small
+ * role in the same sans. Mono is kept only for keys a reader copies, such as
+ * label:P0. Each sheet's test names its own selectors and asks what the cascade gives each one,
  * in that sheet alone and after the viewer sheet the editor installs first — so
  * a later or more specific rule that puts mono or a smaller size back fails in
  * the test of the sheet that wrote it.
@@ -20,17 +22,45 @@
  * seam `check:isolation` keeps.
  */
 
-/** The three declarations every count and the keys line carry. */
-export const COUNT_TYPE: Readonly<Record<string, string>> = Object.freeze({
+/** The type a role sets: each property and the value the cascade must give it. */
+export type RoleType = Readonly<Record<string, string>>;
+
+/** The three declarations every count carries. */
+export const COUNT_TYPE: RoleType = Object.freeze({
+  'font-family': 'var(--ig-font-ui)',
+  'font-size': 'var(--ig-font-size)',
+  'font-variant-numeric': 'tabular-nums',
+});
+
+/** The small role the keys line and the legend take: the same sans, a step below the body. */
+export const SMALL_TYPE: RoleType = Object.freeze({
+  'font-family': 'var(--ig-font-ui)',
+  'font-size': 'var(--ig-font-size-small)',
+  'font-variant-numeric': 'tabular-nums',
+});
+
+/**
+ * What an issue number keeps in EVERY context: the sans and tabular figures.
+ * Its size and colour are the base rule's, and a context may set its own — a
+ * card's identity line is smaller — so only these two are read pessimistically.
+ */
+export const ISSUE_NUMBER_TYPE: RoleType = Object.freeze({
+  'font-family': 'var(--ig-font-ui)',
+  'font-variant-numeric': 'tabular-nums',
+});
+
+/** The base `.ig-id` rule, as the design's muted number draws it. */
+export const ISSUE_NUMBER_BASE: RoleType = Object.freeze({
+  color: 'var(--ig-text-muted)',
   'font-family': 'var(--ig-font-ui)',
   'font-size': 'var(--ig-font-size)',
   'font-variant-numeric': 'tabular-nums',
 });
 
 /**
- * The counts and the keys line the VIEWER draws. The editor installs the
- * viewer's sheet beneath its own, so the workspace test asks that no editor
- * sheet puts mono or a smaller size back on any of them either.
+ * The counts the VIEWER draws. The editor installs the viewer's sheet beneath
+ * its own, so the workspace test asks that no editor sheet puts mono or a
+ * smaller size back on any of them either.
  */
 export const VIEWER_COUNTS: readonly string[] = Object.freeze([
   '.ig-count-chip',
@@ -38,9 +68,25 @@ export const VIEWER_COUNTS: readonly string[] = Object.freeze([
   '.ig-notice-progress',
   '.ig-unit-count',
   '.ig-badge[data-omitted]',
-  '.ig-legend-item',
-  '.ig-legend-keys',
 ]);
+
+/** The viewer's legend bar, at the small role, read the same way. */
+export const VIEWER_SMALL: readonly string[] = Object.freeze(['.ig-legend-item', '.ig-legend-keys']);
+
+/** A later rule that puts the mono face back. */
+export const MONO_BACK: readonly (readonly [string, string])[] = [['font-family', 'var(--ig-font-mono)']];
+
+/** Later rules that put the old type back on a count: the mono face, and the small size. */
+export const COUNT_BACK: readonly (readonly [string, string])[] = [
+  ['font-family', 'var(--ig-font-mono)'],
+  ['font-size', 'var(--ig-font-size-small)'],
+];
+
+/** Later rules that move the small role off it: the mono face, and the smaller micro size. */
+export const SMALL_BACK: readonly (readonly [string, string])[] = [
+  ['font-family', 'var(--ig-font-mono)'],
+  ['font-size', 'var(--ig-font-size-micro)'],
+];
 
 /** One attribute selector, or one attribute an element carries. */
 interface Attribute {
@@ -206,8 +252,13 @@ export function declaredOn(css: string, target: string, property: string): Decla
 
 /** Every one of `targets` the cascade does not give {@link COUNT_TYPE}, one line per property. */
 export function countTypeMisses(css: string, targets: readonly string[]): string[] {
+  return typeMisses(css, targets, COUNT_TYPE);
+}
+
+/** Every one of `targets` the cascade does not give `type`, one line per property. */
+export function typeMisses(css: string, targets: readonly string[], type: RoleType): string[] {
   return targets.flatMap((target) =>
-    Object.entries(COUNT_TYPE).flatMap(([property, expected]) => {
+    Object.entries(type).flatMap(([property, expected]) => {
       const declared = declaredOn(css, target, property);
       return declared?.value === expected
         ? []
@@ -217,18 +268,34 @@ export function countTypeMisses(css: string, targets: readonly string[]): string
 }
 
 /**
- * Two later rules that each put the old type back on `target` — the mono face,
- * and the small size — written on the selector that wins today, so each ties it
- * on specificity and wins on order. A reading that passes either is blind.
+ * Later rules that each put a wrong type back on `target` — by default the
+ * mono face and the small size a count used to take — written on the selector
+ * that wins today, so each ties it on specificity and wins on order. A reading
+ * that passes any of them is blind.
  */
-export function regressionsOf(css: string, target: string): string[] {
-  const oldType: readonly (readonly [string, string])[] = [
-    ['font-family', 'var(--ig-font-mono)'],
-    ['font-size', 'var(--ig-font-size-small)'],
-  ];
-  return oldType.map(([property, value]) => {
+export function regressionsOf(
+  css: string,
+  target: string,
+  wrong: readonly (readonly [string, string])[] = COUNT_BACK,
+): string[] {
+  return wrong.map(([property, value]) => {
     const winner = declaredOn(css, target, property);
     if (winner === undefined) throw new Error(`no rule sets ${property} on ${target}`);
     return `${css}\n${winner.selector} {\n  ${property}: ${value};\n}\n`;
   });
+}
+
+/**
+ * What the rules written on exactly `selector` declare, later declarations
+ * winning — the base rule, read apart from any context that narrows it.
+ */
+export function baseRule(css: string, selector: string): ReadonlyMap<string, string> {
+  const declared = new Map<string, string>();
+  for (const rule of rulesOf(css)) {
+    if (!rule.selectors.includes(selector)) continue;
+    for (const line of rule.body.split(';').filter((one) => one.includes(':'))) {
+      declared.set(line.slice(0, line.indexOf(':')).trim(), line.slice(line.indexOf(':') + 1).trim());
+    }
+  }
+  return declared;
 }

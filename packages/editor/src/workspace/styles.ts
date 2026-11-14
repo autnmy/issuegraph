@@ -239,8 +239,9 @@ export const workspaceStylesheet = `
 /* BUT THE PAIR IS A COUNT, AND A COUNT IS BODY TEXT. It takes the body size
    with tabular figures, as every count both packages draw does; quiet is the
    muted colour above, not a smaller size. Its two numbers are .ig-workspace-count
-   rather than layer 1's .ig-id, which is the mono an issue key keeps. The
-   stamp beside it is a time, not a count, so it stays small. */
+   rather than layer 1's .ig-id, which names an issue rather than counting
+   anything. The stamp beside it is a time, not a count, so it takes no
+   tabular figures and keeps a rule of its own. */
 .ig-workspace-counts,
 .ig-workspace-count {
   font-family: var(--ig-font-ui);

@@ -459,8 +459,8 @@ export const viewerStylesheet = `
 
    A COUNT IS BODY TEXT, NOT A KEY. It is set in the body sans at the body
    size, and tabular figures keep its digits from wandering, which was the one
-   thing the small mono gave it. Mono is kept for what a reader copies as typed:
-   the issue key, a label such as label:P0. */
+   thing the small mono gave it. Mono is kept for what a reader copies as typed,
+   such as a label:P0 key; an issue number is read, so it is sans too. */
 .ig-counts {
   align-items: center;
   display: flex;
@@ -1066,14 +1066,15 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   padding: var(--ig-space) var(--ig-space-wide);
 }
 
-/* THE KEY AND THE COUNT USED TO SHARE ONE RULE, AND THEY ARE NOT ONE THING.
-   The key is what a reader copies into a tracker as typed, so it keeps the
-   mono face, as label:P0 does. A count is read as a number: it takes the body
-   sans at the body size, with tabular figures to keep its digits aligned. */
+/* AN ISSUE NUMBER IS READ AS A NUMBER, NOT COPIED AS A KEY. The design draws
+   it as its muted .num: the body sans at the body size, with tabular figures so
+   a column of numbers lines up. Mono is kept for what a reader copies as typed,
+   such as a label:P0 key. The count beside it takes the same type; it keeps a
+   rule of its own because the tally's inset above is not the number's. */
 .ig-id {
   color: var(--ig-text-muted);
-  font-family: var(--ig-font-mono);
-  font-size: var(--ig-font-size-small);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1982,15 +1983,17 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   text-transform: uppercase;
 }
 
-/* THE KEYS LINE READS AS BODY TEXT. Its words are a legend, not keys a reader
-   types, so they take the body sans at the body size with tabular figures, as
-   the counts do; each item's glyph keeps the mono face .ig-glyph gives it. */
+/* THE KEYS LINE TAKES THE SMALL ROLE, IN THE SANS. Its words are a legend, not
+   keys a reader types, so they are not mono; and a legend explains the drawing
+   rather than competing with it, so it sits a step below the body in muted
+   ink. Tabular figures as everywhere a figure appears. Each item's glyph keeps
+   the mono face .ig-glyph gives it. */
 .ig-legend-item {
   align-items: center;
-  color: var(--ig-text-body);
+  color: var(--ig-text-muted);
   display: inline-flex;
   font-family: var(--ig-font-ui);
-  font-size: var(--ig-font-size);
+  font-size: var(--ig-font-size-small);
   font-variant-numeric: tabular-nums;
   gap: var(--ig-space-tight);
 }
@@ -1998,7 +2001,7 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 .ig-legend-keys {
   display: inline-flex;
   font-family: var(--ig-font-ui);
-  font-size: var(--ig-font-size);
+  font-size: var(--ig-font-size-small);
   font-variant-numeric: tabular-nums;
   gap: var(--ig-space-loose);
   margin-inline-start: auto;

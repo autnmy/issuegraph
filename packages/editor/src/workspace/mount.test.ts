@@ -22,7 +22,7 @@ import { JSDOM } from 'jsdom';
 
 import { KIND_KEYS, RELATE_KEY } from '../create/keys.ts';
 import type { Candidate } from '../firstpass/candidates.ts';
-import { countTypeMisses, regressionsOf } from '../testing/counts.ts';
+import { SMALL_BACK, SMALL_TYPE, regressionsOf, typeMisses } from '../testing/counts.ts';
 import { FIRST_PASS_WORDS } from '../testing/firstpass.ts';
 import { PICKER_WORDS } from '../testing/picker.ts';
 import { WORDS as CHANGE_WORDS } from '../testing/reevaluate.ts';
@@ -1633,13 +1633,16 @@ describe('the mount stylesheet carries structure, never a value', () => {
     assert.equal(/\banimation\b|\btransition\b|@keyframes/.test(css), false);
   });
 
-  it('sets the keys line under the Inspector in the body sans at the body size, with tabular figures (#254)', () => {
+  it('sets the keys line under the Inspector at the small role, in the sans with tabular figures (#254)', () => {
     // `MountWords.keys` is one of the two things "the keys line" can mean; the
     // viewer's legend bar is the other, pinned in the viewer's own sheet test.
-    assert.deepEqual(countTypeMisses(mountStylesheet, ['.ig-chrome-keys']), []);
-    assert.deepEqual(countTypeMisses(`${viewerStylesheet}\n${mountStylesheet}`, ['.ig-chrome-keys']), []);
-    for (const later of regressionsOf(`${viewerStylesheet}\n${mountStylesheet}`, '.ig-chrome-keys')) {
-      assert.notDeepEqual(countTypeMisses(later, ['.ig-chrome-keys']), [], 'the keys line passed with its old type put back');
+    // The redesign lead put both at the small role: a hint, not the panel's
+    // content, and never mono, because nothing in it is copied as typed.
+    const installed = `${viewerStylesheet}\n${mountStylesheet}`;
+    assert.deepEqual(typeMisses(mountStylesheet, ['.ig-chrome-keys'], SMALL_TYPE), []);
+    assert.deepEqual(typeMisses(installed, ['.ig-chrome-keys'], SMALL_TYPE), []);
+    for (const later of regressionsOf(installed, '.ig-chrome-keys', SMALL_BACK)) {
+      assert.notDeepEqual(typeMisses(later, ['.ig-chrome-keys'], SMALL_TYPE), [], 'the keys line passed with a mono or smaller type put back');
     }
   });
 });

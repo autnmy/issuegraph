@@ -275,9 +275,11 @@ export const scaleLadderStylesheet = `
 /* THE KEY IN ITS OWN COLUMN, so five titles start on one edge rather than
    wherever their number happened to end. tabular-nums and a measure in
    characters are what the capsule's own count line already uses for the same
-   reason: a ragged left edge on a column of ids reads as a mistake. */
+   reason: a ragged left edge on a column of ids reads as a mistake. An issue
+   number is read, not copied, so it is the sans layer 1 gives it, not mono;
+   the smaller size is this list's own, a column beside the titles. */
 .ig-isolated-list .ig-id {
-  font-family: var(--ig-font-mono);
+  font-family: var(--ig-font-ui);
   font-size: var(--ig-font-size-small);
   font-variant-numeric: tabular-nums;
   color: var(--ig-text-muted);
