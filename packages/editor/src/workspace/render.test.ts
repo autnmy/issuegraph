@@ -3373,7 +3373,7 @@ describe('the Inspector draws each kind\u2019s group with its count and five row
     const panel = panelWith([]);
     assert.match(
       panel,
-      /<div class="ig-relationship-group" data-ig-group-key="blocked-by:outgoing"><div class="ig-relationship-group-head"><span>Blocked by<\/span><span class="ig-relationship-count">9<\/span><\/div>/,
+      /<div class="ig-relationship-group" data-ig-group-key="blocked-by:outgoing"><div class="ig-relationship-group-head"><span>Is blocked by<\/span><span class="ig-relationship-count">9<\/span><\/div>/,
     );
     assert.equal(rows(panel), 5, 'the group did not fold past its first five');
     assert.match(

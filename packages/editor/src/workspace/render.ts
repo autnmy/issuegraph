@@ -3073,7 +3073,11 @@ function relationshipGroupSpec(
   refused: (relationship: InspectorRelationship) => boolean,
   words: WorkspaceWords,
 ): ElementSpec {
-  const phrase = labelFrom(treatmentFor(group.field), group.direction !== 'incoming');
+  // THE LEGEND'S WORDS, read from the subject's end: "Is blocked by" and
+  // "Was decomposed from" as the key says them, and the reverse verb ("Blocks")
+  // for a kind the subject receives (RULES, Graphs, Dense neighbourhoods).
+  const treatment = treatmentFor(group.field);
+  const phrase = group.direction === 'incoming' ? labelFrom(treatment, false) : treatment.legendLabel;
   const heading = `${phrase.charAt(0).toUpperCase()}${phrase.slice(1)}`;
   const drawn = shown
     ? group.relationships
