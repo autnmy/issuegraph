@@ -3,15 +3,16 @@
  *
  * It is deliberately thin. Everything that could be wrong about WHAT is drawn
  * lives in the projections, everything that could be wrong about WHERE
- * navigation goes lives in `navigate`, and what is left here is three
- * listeners, an index from key to element, and a teardown. A shell that grew
- * decisions would be a second implementation of the parts above it, testable
- * only through a DOM.
+ * navigation goes lives in `navigate`, and what is left here is a few
+ * listeners, a resize watch, an index from key to element, and a teardown. A
+ * shell that grew decisions would be a second implementation of the parts above
+ * it, testable only through a DOM.
  *
  * IT REACHES NO GLOBAL. The document comes from the container the caller
  * passed, which is what keeps this module importable on a runtime that has no
  * DOM — the property the workspace smoke test measures against the published
- * entry.
+ * entry. The resize observer comes from that document's own view, for the same
+ * reason.
  */
 
 import { edgeIdentity } from '@issuegraph/core';
@@ -31,6 +32,7 @@ import {
   type SelectionGesture,
   type StoredSelection,
   type ViewerSelection,
+  isNarrowBox,
   nextSelection,
   sameSelection,
   selectedKeysOf,
@@ -50,11 +52,24 @@ export interface MountElement extends SpecElement {
   getAttribute(name: string): string | null;
   readonly parentElement: MountElement | null;
   focus?(): void;
+  /**
+   * The container's laid-out box. Optional because a container that cannot be
+   * measured — a server render, a test double — simply never counts as narrow.
+   */
+  getBoundingClientRect?(): { width: number; height: number };
+  /**
+   * Whether `other` is this element or inside it. Optional: without it every
+   * `focusout` counts as focus leaving the viewer, which can only skip putting
+   * focus back after a resize, never pull it in from the host's page.
+   */
+  contains?(other: SpecNode | null): boolean;
 }
 
 /** The slice of an event `mount` reads. */
 export interface MountEvent {
   readonly target?: MountElement | null;
+  /** Present on a `focusout`: where focus went, or `null` when it left the page. */
+  readonly relatedTarget?: MountElement | null;
   /** Present on a keyboard event. */
   readonly key?: string;
   /** Shift-click ranges; Shift with an arrow extends. */
@@ -68,10 +83,11 @@ export interface MountEvent {
 
 export interface MountOptions extends RenderOptions {
   /**
-   * Called when a key is selected — by click, `Enter`, or `select()`. Reports
-   * `null` for none, the identity for a relationship, a single issue as the
-   * station it is drawn on, and for a set of two or more issues the most
-   * recently added key exactly as given.
+   * Called when a key is selected — by click, `Enter`, or `select()` — and when
+   * a narrow container reduces a set to one issue. Reports `null` for none, the
+   * identity for a relationship, a single issue as the station it is drawn on,
+   * and for a set of two or more issues the most recently added key exactly as
+   * given.
    */
   readonly onSelect?: ((key: string | null) => void) | undefined;
   /**
@@ -79,6 +95,12 @@ export interface MountOptions extends RenderOptions {
    * reader made it: never for a redraw, a projection switch, or a repeated
    * selection of what is already selected. Fires before `onSelect`. The keys
    * are a fresh frozen array each time.
+   *
+   * A container that measures under 640 wide holds one issue, so a set there
+   * is reduced to its most recently added issue, and that reduction is a
+   * change. A container already narrow at mount reports it during
+   * `mountViewer`, before the handle is returned; one that narrows later
+   * reports it from the resize that narrowed it.
    */
   readonly onSelectionChange?: ((selection: ViewerSelection) => void) | undefined;
   /** Called with the hovered key, and with `null` when nothing is hovered. */
@@ -364,6 +386,20 @@ export function mountViewer(
   // Seeded from the options, so mounting a selection is not a change.
   let announced: ViewerSelection = selectionAsGiven();
   let lastReported: string | null = reportedKey();
+  /**
+   * Whether the container measured narrow at its last measure: once before
+   * the first draw, then on every resize. Measured AFTER `announced` is seeded,
+   * so a set the first draw reduces is reported as a change, once, before
+   * `mountViewer` returns. A container that cannot be measured is never narrow.
+   */
+  const measuresNarrow = (): boolean => {
+    const box = container.getBoundingClientRect?.();
+    return box !== undefined && isNarrowBox(box);
+  };
+  let narrow = measuresNarrow();
+  /** A set as one issue, its most recently added; anything else unchanged. */
+  const limitedToOne = (selected: StoredSelection): StoredSelection =>
+    storedSelectionOf(nextSelection(viewerSelectionOf(normalized, selected), { kind: 'limit-to-one' }, []));
   // ONE QUEUE FOR EVERY NOTICE, so a host that changes the selection from
   // inside a callback is told about it after the notices already due, in
   // order, and none is skipped or reported out of turn.
@@ -421,8 +457,9 @@ export function mountViewer(
     currentOptions.onHover?.(null);
   };
 
-  // `announceSelection` is false ONLY for the redraw `emitSelect` runs, which
-  // reports the settled selection itself — see there. Every other caller wants
+  // `announceSelection` is false ONLY for the redraws `applyGesture` and
+  // `onResize` run, which restore focus and then report the settled selection
+  // themselves — see there. Every other caller wants
   // the notice, because a reconciliation that moves the selection has moved it
   // out from under whoever set it.
   const draw = (announceSelection = true): void => {
@@ -464,15 +501,28 @@ export function mountViewer(
     // The post-materialize check settles it a few lines down, against a scene
     // that exists; deferring costs one frame in which nothing renders an edge
     // selection anyway.
+    //
+    // A NARROW CONTAINER HOLDS ONE ISSUE, so a set is reduced here, where every
+    // writer — the mount seed, a gesture, `update` and a resize — draws next.
+    // Neither the handle nor a notice ever sees a set while narrow, and the
+    // stored value itself changes, so growing back restores nothing. It reduces
+    // the set `survivingSet` already pruned, so the issue kept is the last one
+    // this document carries.
     const surviving = survivingSet();
     if (surviving !== undefined) {
-      selectedAsGiven = surviving;
-      state = { ...state, selected: surviving };
+      const kept = narrow ? limitedToOne(surviving) : surviving;
+      selectedAsGiven = kept;
+      state = { ...state, selected: kept };
     } else if (currentScene !== null) {
       state = { ...state, selected: keepDrawn(state.selected) };
     }
     selectedAsGiven = asGivenSelection();
     if (root !== null) container.removeChild(root);
+    // REMOVING THE SUBTREE TAKES FOCUS WITH IT, and not every engine fires a
+    // `focusout` when it does. A stale flag would let a later resize pull focus
+    // out of a host field, so every caller that puts focus back on a row after
+    // this draw sets it again beside that call.
+    focusInside = false;
     const scene = sceneFor(normalized, projection, {
       ...currentOptions,
       // THE GRAPH AND THE LIST ARE HANDED THE SELECTION AS GIVEN, because they
@@ -702,7 +752,10 @@ export function mountViewer(
     // selection itself could take no focus, sent focus to an unrelated first
     // row on the reader's very first click. A pointer on a mark that cannot
     // take focus moves the selection and nothing else.
-    if (focusable !== null && state.focused !== null) keyed.get(state.focused)?.focus?.();
+    if (focusable !== null && state.focused !== null) {
+      keyed.get(state.focused)?.focus?.();
+      focusInside = true;
+    }
     // WHAT THE STATE ACTUALLY HOLDS, not what was asked for. `draw()` reconciles
     // the selection against the scene, which canonicalizes a together unit's
     // partner to the station that represents it — so reporting `resolved` here
@@ -764,6 +817,27 @@ export function mountViewer(
     clearHover();
   };
 
+  // SYNC FOCUS FROM THE DOM. `state.focused` tracks the viewer's OWN moves —
+  // its arrow keys and its clicks — and native Tab is neither. A reader who
+  // tabs into the deep link inside the third row leaves `focused` pointing
+  // wherever it was, so ArrowDown moved relative to the OLD row and sent focus
+  // BACKWARDS past the row they were standing in, and a resize redraw put focus
+  // back on that old row instead of the one they were on.
+  // FOCUS IDENTITY ONLY, hence the explicit attribute list: `GROUP_ATTRIBUTE`
+  // marks decoration that is deliberately outside the focus index, so adopting
+  // one would set `focused` to a key `navigate` cannot find — which resolves
+  // to -1 and throws the reader back to the top of the order. That is the same
+  // bug this fixes, arriving through the fix.
+  // `navigable`, NOT `focusOrder`: a gutter node reachable only sideways is a
+  // legitimate place to be standing, and `focusOrder` does not contain it.
+  const adoptFocusFrom = (target: MountElement | null | undefined): void => {
+    if (currentScene === null) return;
+    const standingOn = keyAt(target, container, [KEY_ATTRIBUTE]);
+    if (standingOn !== null && standingOn !== state.focused && currentScene.navigable.includes(standingOn)) {
+      state = { ...state, focused: standingOn };
+    }
+  };
+
   const onKeyDown = (event: MountEvent): void => {
     if (event.key === undefined || currentScene === null) return;
     // An activation key on a control that activates itself is that control's.
@@ -775,22 +849,7 @@ export function mountViewer(
     ) {
       return;
     }
-    // SYNC FOCUS FROM THE DOM BEFORE MOVING. `state.focused` tracks the viewer's
-    // OWN moves — its arrow keys and its clicks — and native Tab is neither. A
-    // reader who tabs into the deep link inside the third row leaves `focused`
-    // pointing wherever it was, so ArrowDown moved relative to the OLD row and
-    // sent focus BACKWARDS past the row they were standing in.
-    // FOCUS IDENTITY ONLY, hence the explicit attribute list: `GROUP_ATTRIBUTE`
-    // marks decoration that is deliberately outside the focus index, so adopting
-    // one would set `focused` to a key `navigate` cannot find — which resolves
-    // to -1 and throws the reader back to the top of the order. That is the same
-    // bug this fixes, arriving through the fix.
-    // `navigable`, NOT `focusOrder`: a gutter node reachable only sideways is a
-    // legitimate place to be standing, and `focusOrder` does not contain it.
-    const standingOn = keyAt(event.target, container, [KEY_ATTRIBUTE]);
-    if (standingOn !== null && standingOn !== state.focused && currentScene.navigable.includes(standingOn)) {
-      state = { ...state, focused: standingOn };
-    }
+    adoptFocusFrom(event.target);
     const result = navigate(currentScene, state, event.key, { shift: event.shiftKey === true });
     if (result.command.kind === 'none') return;
     event.preventDefault?.();
@@ -809,7 +868,10 @@ export function mountViewer(
       // THE REDRAW DESTROYED THE ROW HOLDING FOCUS, and a clear names no subject
       // for `applyGesture` to refocus, so the tab stop the reader kept is
       // focused again — this is the viewer's own key press, not a host update.
-      if (state.focused !== null) keyed.get(state.focused)?.focus?.();
+      if (state.focused !== null) {
+        keyed.get(state.focused)?.focus?.();
+        focusInside = true;
+      }
       return;
     }
     // A COMMAND IS THE HOST'S TO COMPLETE, exactly like the header's own
@@ -823,14 +885,66 @@ export function mountViewer(
     state = result.state;
     draw();
     keyed.get(result.command.key)?.focus?.();
+    focusInside = true;
+  };
+
+  // WHETHER FOCUS IS INSIDE THE VIEWER, kept from the container's own focus
+  // events, and cleared by every `draw()` that removes the subtree, so the
+  // module never asks its host for `activeElement`. A resize redraw reads it to
+  // put focus back on the row it destroyed, and only then, so a resize while
+  // the reader is elsewhere on the page moves nothing. Each
+  // `focusin` also adopts the row it landed on, so that redraw focuses the row
+  // the reader stood on.
+  let focusInside = false;
+  const onFocusIn = (event: MountEvent): void => {
+    focusInside = true;
+    adoptFocusFrom(event.target);
+  };
+  const onFocusOut = (event: MountEvent): void => {
+    const to = event.relatedTarget ?? null;
+    focusInside = to !== null && container.contains?.(to) === true;
+  };
+
+  /**
+   * Re-measure, and reduce a set the container is now too narrow for.
+   *
+   * It redraws only when that reduction is due, so a resize that changes
+   * nothing tells the host nothing, and the notice reports the reduction once.
+   * `onSelect` is not forced, as a click forces it, because a resize is not a
+   * selection. The notice goes out AFTER focus is put back, as `applyGesture`
+   * orders it, so a host that moves focus from its callback keeps that move.
+   * Guarded by `destroyed`, because a browser can deliver a callback it queued
+   * before `disconnect()`.
+   */
+  const onResize = (): void => {
+    if (destroyed) return;
+    narrow = measuresNarrow();
+    if (!narrow || selectedKeysOf(selectedAsGiven).length < 2) return;
+    // READ BEFORE THE DRAW, which clears the flag when it removes the subtree.
+    const refocus = focusInside;
+    draw(false);
+    if (refocus && state.focused !== null) {
+      keyed.get(state.focused)?.focus?.();
+      focusInside = true;
+    }
+    announce(false);
   };
 
   container.addEventListener('click', onClick);
   container.addEventListener('pointerover', onPointerOver);
   container.addEventListener('pointerleave', onPointerLeave);
   container.addEventListener('keydown', onKeyDown);
+  container.addEventListener('focusin', onFocusIn);
+  container.addEventListener('focusout', onFocusOut);
 
   draw();
+
+  // ATTACHED ONLY WHEN THE DOCUMENT OFFERS ONE, and separate from measuring: a
+  // container without an observer was still measured and reduced above, and
+  // loses only the watch on later resizes.
+  const ResizeWatch = doc.defaultView?.ResizeObserver;
+  const resizeWatch = ResizeWatch === undefined ? null : new ResizeWatch(onResize);
+  resizeWatch?.observe(container);
 
   return {
     update(next: ViewerDocument, nextOptions?: MountOptions): void {
@@ -880,6 +994,9 @@ export function mountViewer(
       container.removeEventListener('pointerover', onPointerOver);
       container.removeEventListener('pointerleave', onPointerLeave);
       container.removeEventListener('keydown', onKeyDown);
+      container.removeEventListener('focusin', onFocusIn);
+      container.removeEventListener('focusout', onFocusOut);
+      resizeWatch?.disconnect();
       if (root !== null) container.removeChild(root);
       root = null;
       keyed = new Map<string, SpecElement>();

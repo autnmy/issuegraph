@@ -18,6 +18,8 @@
  * no DOM at all.
  */
 
+import type { MountElement } from './mount.ts';
+
 /** Attribute values a spec may carry. `false`, `null` and `undefined` omit it. */
 export type AttrValue = string | number | boolean | null | undefined;
 
@@ -150,6 +152,17 @@ export interface SpecDocument {
   createElement(tag: string): SpecElement;
   createElementNS(namespace: string, tag: string): SpecElement;
   createTextNode(text: string): SpecNode;
+  /**
+   * The window this document is shown in. Optional because building a tree
+   * never needs it: only the shell's resize watch does, and it reads nothing
+   * here but `ResizeObserver`. Taking the observer from the container's own
+   * document, rather than from a global, is what keeps the shell free of
+   * globals. A document with no view, or a view with no observer, loses only
+   * the resize watch.
+   */
+  defaultView?: {
+    ResizeObserver?: new (callback: () => void) => { observe(target: MountElement): void; disconnect(): void };
+  } | null;
 }
 
 export interface SpecNode {

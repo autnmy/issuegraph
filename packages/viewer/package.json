@@ -50,7 +50,9 @@
     "@issuegraph/core": "workspace:^"
   },
   "devDependencies": {
+    "@types/jsdom": "^30.0.0",
     "@types/node": "^22.18.0",
+    "jsdom": "^30.0.1",
     "typescript": "^6.0.3"
   }
 }
