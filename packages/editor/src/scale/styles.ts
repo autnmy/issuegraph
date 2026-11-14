@@ -35,17 +35,6 @@ export const scaleLadderStylesheet = `
   color: var(--ig-text-body);
 }
 
-.ig-ladder-routes {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--ig-space-tight);
-  color: var(--ig-text-muted);
-  font-size: var(--ig-font-size-small);
-}
-
 .ig-ladder-search {
   display: flex;
   flex-direction: column;

@@ -214,23 +214,50 @@ export const auditStylesheet = `
   padding: 0;
 }
 
+/* EACH FINDING IS THE EXPORT'S NOTE (issue 296): its state's icon beside its
+   text, on a fill in its state at the control corner, padded, with no border.
+   The neutral state, a closed blocker, sits on the second fill; a loop on the
+   error fill and an unreadable relationship or a duplicate of a closed issue on
+   the attention fill, each title and icon in its state's hue and the sentence
+   under it in text ink. */
 .ig-audit-card {
+  align-items: flex-start;
+  background: var(--ig-surface-2);
+  border-radius: var(--ig-radius);
+  display: flex;
+  gap: var(--ig-space-snug);
+  padding: var(--ig-space);
+}
+
+.ig-audit-note-text {
   display: flex;
   flex-direction: column;
   gap: var(--ig-space-micro);
+  min-width: 0;
 }
 
-/* EACH FINDING IS THE EXPORT'S NOTE (issue 296): a fill in its state at the
-   control corner, padded, with no border. The neutral state, a closed blocker,
-   sits on the second fill; a loop on the error fill and an unreadable block or
-   a duplicate of a closed issue on the attention fill, each title in its
-   state's hue and the sentence under it in text ink. The refused block's card
-   is one of these notes too. */
-.ig-audit-card,
-.ig-audit-refused-card {
-  background: var(--ig-surface-2);
-  border-radius: var(--ig-radius);
-  padding: var(--ig-space);
+/* THE STATE'S ICON, AS THE EXPORT DRAWS IT: sixteen across, its stroke the
+   theme's, in the note's own ink, set a step down so it sits on the title's
+   first line. */
+.ig-audit-icon {
+  block-size: var(--ig-space-loose);
+  color: var(--ig-text);
+  fill: none;
+  flex: none;
+  inline-size: var(--ig-space-loose);
+  margin-top: var(--ig-space-micro);
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: var(--ig-stroke);
+}
+
+.ig-audit-card[data-s='error'] .ig-audit-icon {
+  color: var(--ig-state-failed);
+}
+
+.ig-audit-card[data-s='attention'] .ig-audit-icon {
+  color: var(--ig-state-conflict);
 }
 
 .ig-audit-card[data-s='error'] {
@@ -241,13 +268,11 @@ export const auditStylesheet = `
   color: var(--ig-state-failed);
 }
 
-.ig-audit-card[data-s='attention'],
-.ig-audit-refused-card[data-s='attention'] {
+.ig-audit-card[data-s='attention'] {
   background: var(--ig-state-conflict-fill);
 }
 
-.ig-audit-card[data-s='attention'] .ig-audit-title,
-.ig-audit-refused-card[data-s='attention'] .ig-audit-title {
+.ig-audit-card[data-s='attention'] .ig-audit-title {
   color: var(--ig-state-conflict);
 }
 
@@ -346,65 +371,10 @@ export const auditStylesheet = `
   outline-offset: var(--ig-space-micro);
 }
 
-/* ---- §17d's fourth class, drawn outside the panel (./refused.ts) ---- */
+/* ---- §17d's fourth class: an unreadable relationship's note (./refused.ts) ----
 
-/* NO SIZE OF ITS OWN, THE SAME ANSWER .ig-audit-panel GIVES ABOVE. This block
-   and that panel are the two members of .ig-audit-overlay, which is what the
-   inspector zone actually holds, and how much of the zone's single track that
-   region may take is a fact about SHARING A COLUMN rather than a fact about
-   either leaf. So the share is declared once by the composition that owns the
-   zone — see workspace/styles.ts, which bounds the region alone. */
-.ig-audit-refused {
-  display: flex;
-  flex-direction: column;
-  font-family: var(--ig-font-ui);
-  gap: var(--ig-space-snug);
-  min-height: 0;
-  padding: var(--ig-space);
-}
-
-/* THE RING FOR THIS BLOCK'S TAB STOP, unscoped for the reason the panel's is:
-   the tabindex is in this leaf's MARKUP, so it is carried into every
-   composition, and a focusable element that shows nothing on focus is a stop a
-   keyboard reader lands on blind. Inset, the viewer's idiom, so a ring at the
-   zone's edge is not the first thing the column's scroll clips. */
-.ig-audit-refused:focus-visible {
-  outline: var(--ig-focus-ring) solid var(--ig-focus);
-  outline-offset: calc(var(--ig-focus-ring) * -1);
-}
-
-/* THE SAME HEADING TYPE AS THE PANEL'S TITLE, because they are peers in one
-   column and §17d draws them as one section. A second treatment would say they
-   were two unrelated things, so when the panel's title became the export's
-   sentence-case title this heading moved with it. Its hue stays blocked-by's:
-   it names a refusal, which the panel's title does not. */
-.ig-audit-refused-heading {
-  color: var(--ig-edge-blocked-by);
-  font-family: var(--ig-font-ui);
-  font-size: var(--ig-font-size-panel-title);
-  font-weight: var(--ig-weight-medium);
-  line-height: var(--ig-panel-title-line);
-  margin: 0;
-}
-
-.ig-audit-refused-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ig-space-snug);
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-/* THE CARD IS DRAWN, UNLIKE THE PANEL'S. The frame gives this one a surface and
-   a border because it sits alone rather than in a list of like items — it is
-   the one finding that is about an ISSUE rather than a relationship, and the
-   box is what says so. */
-.ig-audit-refused-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ig-space-tight);
-}
+   A NOTE IN THE PANEL SINCE ISSUE 296, styled as every note is above; these
+   rules draw only what is its own: the ref, the reason and its two controls. */
 
 .ig-audit-refused-head {
   align-items: center;
@@ -444,12 +414,6 @@ export const auditStylesheet = `
    back from the diagnostic it belongs to. */
 .ig-audit-refused-source {
   color: var(--ig-text-muted);
-}
-
-.ig-audit-refused-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ig-space-tight);
 }
 
 /* ONE TREATMENT FOR BOTH CONTROLS, THOUGH ONE IS AN ANCHOR AND ONE A BUTTON.

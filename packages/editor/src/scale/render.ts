@@ -345,13 +345,9 @@ function refusalSpec(refusal: ScaleRefusal, ladder: ScaleLadder): ElementSpec {
           ladder.capsules.map((capsule) => capsuleSpec(capsule)),
         ),
     omittedSpec(ladder.capsulesOmitted),
-    element(
-      'ul',
-      { class: 'ig-ladder-routes', 'aria-label': 'what to do next' },
-      refusal.routes.map((route) =>
-        element('li', { class: 'ig-refusal-next', 'data-route': route.kind }, [route.label]),
-      ),
-    ),
+    // NO ROUTE LINES (#296). The export's board says what to do in its head,
+    // "Pick a group.", and draws no list of routes under the cards. The routes
+    // stay on `ScaleRefusal` for a host that wants to say more.
   ]);
 }
 

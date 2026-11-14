@@ -162,7 +162,6 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
       keepAsHistory: 'leave it be',
       repoint: 'point it somewhere',
     },
-    refusedHeading: 'could not be read',
     refusedOpen: 'see it upstream',
     refusedRewrite: 'fix it here',
   },

@@ -54,14 +54,16 @@ describe('the ladder and the canvas agree about the count', () => {
 });
 
 describe('the refusal, as a reader sees it', () => {
-  it('states the reason and lists at least one labelled route', () => {
+  it('states the reason and draws no route lines, as the export\u2019s board draws none (#296)', () => {
     const result = renderScaleLadder(relatedDocument(GRAPH_NODE_BUDGET + 1));
     const refusal = result.ladder.refusal;
     assert.ok(refusal !== null);
     assert.ok(result.markup.includes(refusal.reason));
-    assert.match(result.markup, /class="ig-ladder-routes"/);
+    // The routes stay on the refusal for a host; the board draws none of them.
+    assert.ok(refusal.routes.length > 0, 'the refusal lost its routes');
+    assert.equal(/ig-ladder-routes|ig-refusal-next/.test(result.markup), false, 'the board draws route lines');
     for (const route of refusal.routes) {
-      assert.ok(result.markup.includes(route.label), `route ${route.kind} was not rendered`);
+      assert.equal(result.markup.includes(route.label), false, `route ${route.kind} was rendered`);
     }
   });
 

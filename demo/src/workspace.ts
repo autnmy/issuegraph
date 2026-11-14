@@ -410,9 +410,9 @@ export const WORKSPACE_WORDS: MountWords = {
       keepAsHistory: 'Keep as history',
       repoint: 'Change or remove',
     },
-    refusedHeading: 'Could not be read',
-    refusedOpen: 'Open in GitHub',
-    refusedRewrite: 'Rewrite here',
+    // The export's remedies for an unreadable note (#296).
+    refusedOpen: 'Open the issue',
+    refusedRewrite: 'Rewrite it here',
   },
   picker: PICKER_WORDS,
   deleteRelationship: 'Delete this relationship',

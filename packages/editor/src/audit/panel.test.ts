@@ -31,7 +31,6 @@ const WORDS: AuditWords = {
     'encoding-refused': 'this declaration could not be read',
   },
   filter: 'narrow the list',
-  refusedHeading: 'could not be read',
   refusedOpen: 'see it upstream',
   remedies: {
     pickEdge: 'choose an edge',
@@ -110,6 +109,8 @@ function markupOf(
     words: WORDS,
     known,
     edges: new Set(edges.map(([field, from, to]) => edgeIdentity(field, from, to))),
+    // The same refusals the audit counted, drawn as notes in the panel (#296).
+    refusals: encodingRefused,
   });
   assert.ok(spec !== null, 'the fixture produced no findings, so this proves nothing');
   return renderMarkup(spec);
@@ -152,14 +153,6 @@ const EVERY_EDGE_IDS: ReadonlySet<string> = new Set(
   EVERY_CLASS.edges.map(([field, from, to]) => edgeIdentity(field, from, to)),
 );
 
-/**
- * The classes this panel lists.
- *
- * DERIVED FROM `AUDIT_CLASSES`, NEVER TYPED OUT. A fifth class added to the
- * table must appear here by default and force a decision about it; a hand-written
- * list would silently keep testing three.
- */
-const LISTED_CLASSES = AUDIT_CLASSES.filter((kind) => kind !== 'encoding-refused');
 
 describe('the findings panel', () => {
   it('draws one card per finding, in the class table’s order', () => {
@@ -173,7 +166,9 @@ describe('the findings panel', () => {
     // a refusal is surfaced on the issue itself rather than as one entry in a
     // list of relationship problems. `refused.ts` owns it, and `refused.test.ts`
     // pins that it is drawn — so the class cannot fall between the two.
-    assert.deepEqual([...kinds].sort(), [...LISTED_CLASSES].sort());
+    // EVERY CLASS SINCE #296, the unreadable one included: it is a note in
+    // this panel now, as the export draws it, not a block beside it.
+    assert.deepEqual([...kinds].sort(), [...AUDIT_CLASSES].sort());
     // THE TABLE'S ORDER, WHICH `auditOverlay` ALREADY FIXED. Re-sorting in the
     // panel would be a second opinion about severity beside `AUDIT_CLASS_SPECS`.
     const rank = (kind: AuditClass) => AUDIT_CLASSES.indexOf(kind);
@@ -214,11 +209,42 @@ describe('the findings panel', () => {
         (match) => [match[1] as string, match[2] as string],
       ),
     );
-    assert.deepEqual(states, { cycle: 'error', 'stale-blocker': 'neutral', 'dead-duplicate-ref': 'attention' });
-    // AND EACH NOTE IS EXACTLY ITS PARTS, IN ORDER: the title, the sentence,
-    // then the remedies.
+    assert.deepEqual(states, {
+      cycle: 'error',
+      'stale-blocker': 'neutral',
+      'dead-duplicate-ref': 'attention',
+      'encoding-refused': 'attention',
+    });
+    // AND EACH RELATIONSHIP NOTE IS EXACTLY ITS PARTS, IN ORDER: its state's
+    // icon, then the title, the sentence and the remedies. The unreadable note
+    // carries its ref and reason where a sentence is; `refused.test.ts` pins it.
     for (const card of markup.split('<li class="ig-audit-card"').slice(1)) {
-      assert.match(card, /^[^>]*><p class="ig-audit-title">[^<]+<\/p><p class="ig-audit-detail">[^<]+<\/p>(<div class="ig-audit-remedies">|<\/li>)/, card);
+      if (card.includes('data-ig-audit-kind="encoding-refused"')) continue;
+      assert.match(
+        card,
+        /^[^>]*><svg class="ig-audit-icon"[^>]*>.*?<\/svg><div class="ig-audit-note-text"><p class="ig-audit-title">[^<]+<\/p><p class="ig-audit-detail">[^<]+<\/p>(<div class="ig-audit-remedies">|<\/div><\/li>)/,
+        card,
+      );
+    }
+  });
+
+  it('draws one icon per note state, as the export draws them, hidden from a reader (#296)', () => {
+    // The alert circle for the error state, the triangle for attention, the
+    // clock for neutral. The title says what the note is about, so the icon
+    // is decoration.
+    const markup = markupOf(EVERY_CLASS.issues, EVERY_CLASS.edges, [{ ref: 'f' }]);
+    const iconOf = (kind: string): string =>
+      new RegExp(`<li class="ig-audit-card" data-ig-audit-kind="${kind}"[^>]*>(<svg[^>]*>.*?</svg>)`).exec(markup)?.[1] ?? '';
+    const ICONS: Readonly<Record<string, RegExp>> = {
+      cycle: /<circle cx="12" cy="12" r="10" \/><line x1="12" x2="12" y1="8" y2="12" \/><line x1="12" x2="12.01" y1="16" y2="16" \/>/,
+      'dead-duplicate-ref': /<path d="m21\.73 18-8-14a2 2 0 0 0-3\.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1\.73-3" \/><path d="M12 9v4" \/><path d="M12 17h\.01" \/>/,
+      'encoding-refused': /<path d="m21\.73 18-8-14a2 2 0 0 0-3\.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1\.73-3" \/>/,
+      'stale-blocker': /<circle cx="12" cy="12" r="9" \/><path d="M12 7v5l3 2" \/>/,
+    };
+    for (const [kind, shape] of Object.entries(ICONS)) {
+      const icon = iconOf(kind);
+      assert.match(icon, /^<svg class="ig-audit-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">/, `${kind} has no icon`);
+      assert.match(icon, shape, `${kind} draws the wrong icon`);
     }
   });
 
@@ -289,9 +315,9 @@ describe('the findings panel', () => {
       markup,
       new RegExp(`<h2 class="ig-audit-panel-heading"><span class="ig-audit-panel-count">${overlay.count}</span> ${WORDS.heading.other}</h2>`),
     );
-    // AND THE FIXTURE ACTUALLY SEPARATES THE TWO: the refusal is counted and
-    // not listed here, so a count of the cards would read one less.
-    assert.equal(overlay.count, drawn + 1, markup);
+    // AND THE REFUSAL IS ONE OF THE NOTES (#296), so the count and the notes
+    // agree.
+    assert.equal(overlay.count, drawn, markup);
     // `h2` BECAUSE THE PANEL IS THE INSPECTOR'S PEER, not its child: it sits in
     // the audit region above the selection detail, so an `h3` would announce a
     // level three ahead of the level two it claimed to sit under. The refused
@@ -329,6 +355,10 @@ describe('the findings panel', () => {
       // §17d's filter entry point moved into the panel head, so its word is
       // the panel's to draw now too.
       WORDS.filter,
+      // AN UNREADABLE NOTE IS IN THE PANEL SINCE #296: its rewrite control is
+      // the host's word, and its ref the host's value.
+      WORDS.refusedRewrite,
+      'f',
     ]);
     const drawn = [...markup.matchAll(/>([^<>]+)</g)]
       .map((match) => (match[1] as string).trim())
@@ -343,30 +373,33 @@ describe('the findings panel', () => {
     }
   });
 
-  it('draws no refusal at all, whatever the host reported', () => {
-    // §17d'S FOURTH CLASS IS NOT THIS PANEL'S. SPEC surfaces a refusal "on the
-    // issue itself, because until it parses the issue has no edges at all and
-    // would otherwise look simply unencoded" — the other three say something
-    // about a relationship that EXISTS. `refused.ts` draws it.
+  it('lists an unreadable relationship as a note, counted in the one count (#296)', () => {
+    // THE EXPORT'S PANEL holds every problem, relationships that could not be
+    // read included, and counts them all. It was a block of its own beside the
+    // panel, under a heading of its own.
     //
     // BOTH SHAPES, because they fail differently. A refusal on a ref the
-    // document carries would have been an ordinary card; one on a ref outside it
-    // is the paging case `findings.ts` keeps on purpose, and dropping the finding
-    // there would lose it on exactly the issues paging has not reached.
+    // document carries, and one on a ref outside it: the paging case
+    // `findings.ts` keeps on purpose. Each is a note either way.
     const loaded = markupOf([issue('a'), issue('b'), issue('shut', 'closed')],
-      [['blocked-by', 'a', 'shut']], [{ ref: 'b' }]);
-    assert.equal(loaded.includes('data-ig-audit-kind="encoding-refused"'), false, loaded);
-    assert.equal(loaded.includes(WORDS.titles['encoding-refused']), false, loaded);
-    // AND THE FIXTURE IS NOT VACUOUS: the stale blocker beside it still drew.
+      [['blocked-by', 'a', 'shut']], [{ ref: 'b' }, { ref: 'nowhere-near-this-page' }]);
+    assert.equal([...loaded.matchAll(/data-ig-audit-kind="encoding-refused"/g)].length, 2, loaded);
+    assert.match(loaded, /<span class="ig-audit-panel-count">3<\/span>/);
+    // AND THE FIXTURE IS NOT VACUOUS: the stale blocker beside them still drew.
     assert.match(loaded, /data-ig-audit-kind="stale-blocker"/);
+    // NO BLOCK OF ITS OWN, AND NO HEADING OF ITS OWN.
+    assert.equal(/ig-audit-refused(?:"|-heading|-list)/.test(loaded), false, loaded);
 
-    // A DOCUMENT WHOSE ONLY FINDING IS A REFUSAL KEEPS ITS TITLE (#296). It drew
-    // no panel, so no title at all; the export keeps the title at one finding,
-    // counting the unreadable one. No list is drawn under it: the refused block
-    // beside the panel lists the refusal.
+    // A DOCUMENT WHOSE ONLY FINDING IS A REFUSAL KEEPS ITS TITLE, with the note
+    // under it.
     const overlay = overlayOf([issue('a')], [], [{ ref: 'a' }]);
     assert.equal(overlay.count, 1, 'the fixture produced no finding, so this proves nothing');
-    const alone = renderAuditPanel(overlay, { words: WORDS, known: new Set(['a']), edges: new Set<string>() });
+    const alone = renderAuditPanel(overlay, {
+      words: WORDS,
+      known: new Set(['a']),
+      edges: new Set<string>(),
+      refusals: [{ ref: 'a' }],
+    });
     assert.ok(alone !== null, 'one unreadable finding drew no panel, so no title');
     const markup = renderMarkup(alone);
     // AND THE ONE FORM OF THE HOST'S WORDS (#296): "1 problem to fix", never
@@ -374,7 +407,7 @@ describe('the findings panel', () => {
     assert.match(markup, new RegExp(`<span class="ig-audit-panel-count">1</span> ${WORDS.heading.one}</h2>`));
     assert.match(markup, new RegExp(`<section class="ig-audit-panel" aria-label="${WORDS.heading.one}"`));
     assert.equal(markup.includes(WORDS.heading.other), false, 'one finding read in the plural');
-    assert.equal(markup.includes('ig-audit-list'), false, 'an empty list was drawn under the title');
+    assert.match(markup, /<ul class="ig-audit-list"><li class="ig-audit-card" data-ig-audit-kind="encoding-refused"/);
   });
 
   it('publishes no navigation for a ref the DRAWN surface does not carry', () => {

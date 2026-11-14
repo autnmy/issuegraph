@@ -158,8 +158,8 @@ export {
 export type { AuditPanelOptions, AuditWords } from './audit/panel.ts';
 export { AUDIT_KIND_ATTRIBUTE, renderAuditPanel } from './audit/panel.ts';
 
-export type { EncodingRefusedBlockOptions } from './audit/refused.ts';
-export { renderEncodingRefusedBlock } from './audit/refused.ts';
+// The unreadable relationships are notes in the panel since #296; the options
+// type for its "Open the issue" resolver is the panel's own now.
 
 export { auditStylesheet } from './audit/styles.ts';
 

@@ -2505,13 +2505,10 @@ describe('the inspector zone at the audit sizes §17f produces', () => {
     );
   });
 
-  it('draws the refused block inside the overlay, ahead of the findings list', () => {
-    // §17d'S FOURTH CLASS IS SPEC'S SEPARATE SURFACE: a refusal is "surfaced on
-    // the issue itself, because until it parses the issue has no edges at all".
-    // It LEADS because it is the finding that says the other three cannot be
-    // trusted for that issue — its edges were never read — so a reader meeting
-    // the list first would be reading conclusions drawn from a declaration
-    // nobody could parse.
+  it('draws an unreadable relationship as a note in the panel, inside the overlay (#296)', () => {
+    // THE EXPORT'S PANEL holds every problem, unreadable relationships
+    // included, under its one title; it was a block of its own ahead of the
+    // panel, under a heading of its own.
     const audit = auditOf(3);
     const result = renderWorkspace(backlogOf(312), {
       ...WORDS,
@@ -2522,30 +2519,19 @@ describe('the inspector zone at the audit sizes §17f produces', () => {
       },
       issueUrl: (ref) => `https://example.invalid/${ref}`,
     });
-    // THE CANVAS ZONE NOW, not the inspector: §3 moved both audit surfaces out
-    // of the selection's column and into an overlay over the graph. The ORDER
-    // between them is unchanged, which is what this test is actually about.
     const zone = canvasOf(result.markup);
-    assert.ok(zone.includes('ig-audit-refused'), 'the refused block is not in the zone');
-    assert.ok(
-      zone.indexOf('ig-audit-overlay') < zone.indexOf('ig-audit-refused'),
-      'the refused block is outside the overlay that carries the bound',
-    );
-    assert.ok(
-      zone.indexOf('ig-audit-refused') < zone.indexOf('ig-audit-panel'),
-      'the refusal no longer leads the region',
-    );
-    // AND THE HOST'S OWN VALUES REACHED THE LEAF — the words, the drawn keys and
-    // the URL resolver each arrive through a different argument, and a forward
-    // that dropped one would still draw a block.
-    assert.ok(zone.includes(WORDS.words.audit.refusedHeading), 'the words did not reach the block');
-    assert.ok(zone.includes('https://example.invalid/i0007'), 'the resolver did not reach the block');
-    // THE BLOCK'S OWN CLASS, NOT THE COMMAND. `reveal-issue` is published by the
-    // findings panel's cards too, and this fixture draws three of them — so an
-    // assertion on the command alone passes with `known` unwired entirely, which
-    // is the trap `RENDERED_CONTROLS` records one file over. Only `refused.ts`
-    // emits this class, and it emits it only for a ref the drawn document holds.
-    assert.ok(zone.includes('ig-audit-refused-rewrite'), 'the known set did not reach the block');
+    assert.equal(/class="ig-audit-refused"/.test(zone), false, 'a refused block is still drawn');
+    const panelAt = zone.indexOf('ig-audit-panel');
+    const noteAt = zone.indexOf('data-ig-audit-kind="encoding-refused"');
+    assert.ok(zone.indexOf('ig-audit-overlay') < panelAt, 'the panel is outside the overlay that carries the bound');
+    assert.ok(panelAt >= 0 && noteAt > panelAt, 'the unreadable note is not in the panel');
+    // AND THE HOST'S OWN VALUES REACHED THE NOTE — the words, the drawn keys and
+    // the URL resolver each arrive through a different argument.
+    assert.ok(zone.includes(WORDS.words.audit.titles['encoding-refused']), 'the words did not reach the note');
+    assert.ok(zone.includes('https://example.invalid/i0007'), 'the resolver did not reach the note');
+    // THE NOTE'S OWN CLASS, NOT THE COMMAND: `reveal-issue` is published by the
+    // loop's remedy too, so only this class proves `known` reached the note.
+    assert.ok(zone.includes('ig-audit-refused-rewrite'), 'the known set did not reach the note');
   });
 
   it('draws no region at all when the audit found nothing to show', () => {

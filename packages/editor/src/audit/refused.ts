@@ -1,5 +1,10 @@
 /**
- * §17d's fourth class, drawn on its own rather than in the findings list.
+ * §17d's fourth class: the notes for relationships that could not be read.
+ *
+ * SINCE #296 THESE ARE NOTES IN THE PROBLEMS PANEL, as the export draws them,
+ * not a block of their own beside it. The paragraphs below record why the
+ * class was drawn apart and still explain what each note carries; the block,
+ * its heading and its tab stop are gone, and the panel is the stop.
  *
  * `./panel.ts` lists the three RELATIONSHIP findings — a cycle, a stale
  * blocker, a dead duplicate ref. This module draws the fourth, and the
@@ -45,12 +50,11 @@
  * because leaving the application does not need a local row, and it keeps its
  * prose, because the finding is true.
  *
- * ## The block is a tab stop for the same reason the panel is
+ * ## A note with no control is still reachable
  *
- * Every control here is conditional, so a block whose refusals all name
- * unloaded issues, with no URL resolver supplied, has NO focusable descendant —
- * and browsers disagree about putting a generic container in the tab order.
- * `./panel.ts` met this and settled it; this is the same answer one leaf over.
+ * Every control here is conditional, so a note whose issue is unloaded, with
+ * no URL resolver supplied, has NO focusable descendant. The panel it sits in
+ * is a declared tab stop, which is what keeps it reachable.
  *
  * @see https://github.com/autnmy/issuegraph/blob/main/SPEC.md
  */
@@ -59,7 +63,7 @@ import type { IssueRef } from '@issuegraph/store';
 import { type ElementSpec, element, isLinkable, issueNumber } from '@issuegraph/viewer';
 
 import type { EncodingRefusal } from './findings.ts';
-import { AUDIT_KIND_ATTRIBUTE, type AuditWords } from './panel.ts';
+import { AUDIT_KIND_ATTRIBUTE, type AuditWords, noteIcon } from './panel.ts';
 
 /**
  * The class every card here carries, as a value rather than a literal at four
@@ -72,7 +76,7 @@ import { AUDIT_KIND_ATTRIBUTE, type AuditWords } from './panel.ts';
  */
 const REFUSED_KIND = 'encoding-refused';
 
-export interface EncodingRefusedBlockOptions {
+export interface RefusedNoteOptions {
   readonly words: AuditWords;
   /**
    * The keys the DRAWN surface carries.
@@ -166,7 +170,7 @@ function controlName(word: string, ref: IssueRef): string {
 function openControl(
   refusal: EncodingRefusal,
   words: AuditWords,
-  issueUrl: EncodingRefusedBlockOptions['issueUrl'],
+  issueUrl: RefusedNoteOptions['issueUrl'],
 ): ElementSpec | null {
   if (issueUrl === undefined) return null;
   const href = issueUrl(refusal.ref);
@@ -265,13 +269,16 @@ function reasonSpec(refusal: EncodingRefusal): ElementSpec | null {
 }
 
 /**
- * One refusal's card, as the export's note for relationships that could not be
- * read (#296): the attention state, the host's title, the ref and the reason,
- * and what can be done. It drew a mono class chip where the title now is.
+ * One unreadable issue's note, in the problems panel (#296): the attention
+ * state's icon and fill, the host's title, the ref and the reason, and the
+ * remedies the export names, "Open the issue" (`refusedOpen`) and "Rewrite it
+ * here" (`refusedRewrite`). It was a card in a block of its own beside the
+ * panel, under a heading of its own; the export draws it as one more note in
+ * the panel, counted in the panel's one count.
  */
 function refusalSpec(
   refusal: EncodingRefusal,
-  options: EncodingRefusedBlockOptions,
+  options: RefusedNoteOptions,
 ): ElementSpec {
   const { words, known, issueUrl } = options;
   const controls = [
@@ -281,7 +288,7 @@ function refusalSpec(
   return element(
     'li',
     {
-      class: 'ig-audit-refused-card',
+      class: 'ig-audit-card',
       // `data-ig-audit-kind`, NEVER `data-ig-audit`. `./styles.ts` ends with an
       // UNQUALIFIED `[data-ig-audit]` rule, deliberately, because it lands on a
       // row the viewer rendered and this layer may not rewrite that row's
@@ -293,59 +300,28 @@ function refusalSpec(
       'data-s': 'attention',
     },
     [
-      element('p', { class: 'ig-audit-title' }, [words.titles[REFUSED_KIND]]),
-      element('div', { class: 'ig-audit-refused-head' }, [
-        element('span', { class: 'ig-audit-refused-ref' }, [issueNumber(refusal.ref)]),
+      noteIcon('attention'),
+      element('div', { class: 'ig-audit-note-text' }, [
+        element('p', { class: 'ig-audit-title' }, [words.titles[REFUSED_KIND]]),
+        element('div', { class: 'ig-audit-refused-head' }, [
+          element('span', { class: 'ig-audit-refused-ref' }, [issueNumber(refusal.ref)]),
+        ]),
+        reasonSpec(refusal),
+        // NO EMPTY CONTROL ROW. Both controls are conditional, and a note that
+        // can offer neither is inert rather than broken — see the header.
+        controls.length === 0 ? null : element('div', { class: 'ig-audit-remedies' }, controls),
       ]),
-      reasonSpec(refusal),
-      // NO EMPTY CONTROL ROW. Both controls are conditional, and a card that
-      // can offer neither is inert rather than broken — see the header.
-      controls.length === 0
-        ? null
-        : element('div', { class: 'ig-audit-refused-controls' }, controls),
     ],
   );
 }
 
 /**
- * The refused block, or `null` when the host reported no refusals.
- *
- * `null` RATHER THAN AN EMPTY BLOCK, the same call `renderAuditPanel` makes: a
- * heading over an empty region is not a control, and this zone's space belongs
- * to the selection.
+ * The notes for the host's unreadable relationships, one per issue, for the
+ * problems panel to list (#296). Empty when the host reported none.
  */
-export function renderEncodingRefusedBlock(
+export function refusedNotes(
   encodingRefused: readonly EncodingRefusal[],
-  options: EncodingRefusedBlockOptions,
-): ElementSpec | null {
-  const drawn = refusalsToDraw(encodingRefused);
-  if (drawn.length === 0) return null;
-  const { words } = options;
-  return element(
-    'section',
-    {
-      class: 'ig-audit-refused',
-      // A `section` WITH NO NAME IS NOT A LANDMARK — the implicit `region` role
-      // is conditional on an accessible name, so an unnamed one is exposed as
-      // nothing. `./panel.ts` states the same rule.
-      'aria-label': words.refusedHeading,
-      // A TAB STOP. Every control below is conditional, so this block can have
-      // no focusable descendant at all — see the header.
-      tabindex: '0',
-    },
-    [
-      // A REAL HEADING, AT THE PANEL'S LEVEL. `./panel.ts` records what a `span`
-      // cost it: the section went invisible to heading navigation and left a
-      // gap in the column's outline. This block is drawn ABOVE that `h2` as its
-      // sibling, so anything shallower here would reopen the gap the panel
-      // closed — and anything deeper would claim a nesting the markup does not
-      // have. Two peers, two `h2`s.
-      element('h2', { class: 'ig-audit-refused-heading' }, [words.refusedHeading]),
-      element(
-        'ul',
-        { class: 'ig-audit-refused-list' },
-        drawn.map((refusal) => refusalSpec(refusal, options)),
-      ),
-    ],
-  );
+  options: RefusedNoteOptions,
+): readonly ElementSpec[] {
+  return refusalsToDraw(encodingRefused).map((refusal) => refusalSpec(refusal, options));
 }

@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { renderMarkup } from '@issuegraph/viewer';
+import { element, renderMarkup } from '@issuegraph/viewer';
 
 import type { EncodingRefusal } from './findings.ts';
 import type { AuditWords } from './panel.ts';
-import { renderEncodingRefusedBlock } from './refused.ts';
-import type { EncodingRefusedBlockOptions } from './refused.ts';
+import { refusedNotes } from './refused.ts';
+import type { RefusedNoteOptions } from './refused.ts';
 import { AUDIT_SEVERITY_ATTRIBUTE } from './surface.ts';
 
 /**
@@ -26,7 +26,6 @@ const WORDS: AuditWords = {
     'encoding-refused': 'this declaration could not be read',
   },
   filter: 'narrow the list',
-  refusedHeading: 'could not be read',
   refusedOpen: 'see it upstream',
   remedies: {
     pickEdge: 'choose an edge',
@@ -37,17 +36,18 @@ const WORDS: AuditWords = {
   refusedRewrite: 'fix it here',
 };
 
+/** The notes, in the list the panel draws them in (#296). */
 function markupOf(
   refusals: readonly EncodingRefusal[],
-  options: Partial<Omit<EncodingRefusedBlockOptions, 'words'>> = {},
+  options: Partial<Omit<RefusedNoteOptions, 'words'>> = {},
 ): string {
-  const spec = renderEncodingRefusedBlock(refusals, {
+  const notes = refusedNotes(refusals, {
     words: WORDS,
     known: options.known ?? new Set(refusals.map((refusal) => refusal.ref)),
     issueUrl: options.issueUrl,
   });
-  assert.ok(spec !== null, 'the fixture drew no block, so this proves nothing');
-  return renderMarkup(spec);
+  assert.ok(notes.length > 0, 'the fixture drew no note, so this proves nothing');
+  return renderMarkup(element('ul', { class: 'ig-audit-list' }, notes));
 }
 
 const REFUSAL: EncodingRefusal = {
@@ -56,26 +56,23 @@ const REFUSAL: EncodingRefusal = {
   sourceLine: 'blocked-by: [231, 234',
 };
 
-describe('the encoding-refused block', () => {
-  it('draws nothing when the host reported no refusal', () => {
-    // `null` RATHER THAN AN EMPTY BLOCK, the call `renderAuditPanel` makes one
-    // leaf over: a heading over an empty region is not a control, and this
-    // column's space belongs to the selection.
-    assert.equal(renderEncodingRefusedBlock([], { words: WORDS, known: new Set() }), null);
+describe('the unreadable relationships, as notes in the problems panel (#296)', () => {
+  it('draws no note when the host reported no refusal', () => {
+    assert.deepEqual(refusedNotes([], { words: WORDS, known: new Set() }), []);
   });
 
   it('draws the ref, the reader’s words and the line it stopped on', () => {
     const markup = markupOf([REFUSAL]);
-    assert.match(markup, new RegExp(`<h2 class="ig-audit-refused-heading">${WORDS.refusedHeading}</h2>`));
-    // AND THE SECTION IS NAMED. An unnamed `section` carries no landmark role at
-    // all, so a reader navigating by landmark cannot reach the block.
-    assert.match(markup, new RegExp(`<section class="ig-audit-refused" aria-label="${WORDS.refusedHeading}"`));
+    // NO BLOCK AND NO HEADING OF ITS OWN: the panel's title heads every note.
+    assert.equal(/ig-audit-refused(?:"|-heading|-list)|<h2|<section/.test(markup), false, markup);
     assert.match(markup, new RegExp(`<span class="ig-audit-refused-ref">${REFUSAL.ref}</span>`));
     assert.match(markup, /<span class="ig-audit-refused-diagnostic">unparseable YAML at line 3</);
     assert.match(markup, /<span class="ig-audit-refused-source">blocked-by: \[231, 234</);
     // THE EXPORT'S NOTE (#296): the attention state and the host's title where a
     // mono class chip used to be.
-    assert.match(markup, /<li class="ig-audit-refused-card" data-ig-audit-kind="encoding-refused" data-s="attention">/);
+    assert.match(markup, /<li class="ig-audit-card" data-ig-audit-kind="encoding-refused" data-s="attention">/);
+    // THE ATTENTION STATE'S ICON leads it, as every note's does.
+    assert.match(markup, /data-s="attention"><svg class="ig-audit-icon"[^>]*><path d="m21\.73 18/);
     assert.match(markup, new RegExp(`<p class="ig-audit-title">${WORDS.titles['encoding-refused']}</p>`));
     assert.equal(markup.includes('ig-audit-chip'), false, 'the card still draws a class chip');
   });
@@ -109,7 +106,7 @@ describe('the encoding-refused block', () => {
       { ref: 'i0001', diagnostic: 'second' },
       { ref: 'i0002' },
     ]);
-    assert.equal([...markup.matchAll(/<li class="ig-audit-refused-card"/g)].length, 2, markup);
+    assert.equal([...markup.matchAll(/<li class="ig-audit-card"/g)].length, 2, markup);
     // FIRST OCCURRENCE WINS, the model's own rule for a repeated key.
     assert.match(markup, />first</);
     assert.equal(markup.includes('>second<'), false, markup);
@@ -228,7 +225,7 @@ describe('the encoding-refused block', () => {
       // THE FINDING IS STILL DRAWN. Dropping it would lose the refusal on
       // exactly the issues paging has not reached — and SPEC's whole reason for
       // this class is that such an issue otherwise looks merely unencoded.
-      assert.match(markup, /ig-audit-refused-card/);
+      assert.match(markup, /data-ig-audit-kind="encoding-refused"/);
       assert.match(markup, /ig-audit-refused-source/);
     });
 
@@ -244,16 +241,15 @@ describe('the encoding-refused block', () => {
     });
   });
 
-  it('is reachable from the keyboard even when every card is inert', () => {
-    // EVERY CONTROL HERE IS CONDITIONAL, so a block whose refusals all name
-    // unloaded issues, with no resolver supplied, has NO focusable descendant —
-    // and browsers disagree about putting a generic container in the tab order.
-    // `panel.ts` met this and declared the stop rather than depending on which
-    // engine is running; this is the same answer one leaf over.
+  it('keeps its title and ref when it can offer neither control', () => {
+    // EVERY CONTROL HERE IS CONDITIONAL. The panel the note sits in is a
+    // declared tab stop, so an inert note is still reached; what it must keep
+    // is what it says.
     const markup = markupOf([REFUSAL], { known: new Set() });
     assert.equal(markup.includes('<button'), false, markup);
     assert.equal(markup.includes('<a '), false, markup);
-    assert.match(markup, /<section class="ig-audit-refused"[^>]*tabindex="0"/);
+    assert.match(markup, new RegExp(`<p class="ig-audit-title">${WORDS.titles['encoding-refused']}</p>`));
+    assert.match(markup, /<span class="ig-audit-refused-ref">i0001<\/span>/);
   });
 
   it('names each control by something that cannot collide', () => {
@@ -265,9 +261,7 @@ describe('the encoding-refused block', () => {
     const markup = markupOf([REFUSAL, { ref: 'i0002' }], {
       issueUrl: (ref) => `https://example.invalid/${ref}`,
     });
-    // THE CONTROLS ONLY. The section carries an `aria-label` too — its heading,
-    // which names the LANDMARK rather than a move — so a sweep of every
-    // `aria-label` on the block would be asking a different question.
+    // THE CONTROLS ONLY, so a later named element on the note is not swept in.
     const names = [...markup.matchAll(/<(?:a|button)[^>]*aria-label="([^"]+)"/g)].map(
       (match) => match[1] ?? '',
     );

@@ -123,9 +123,11 @@
  * @see https://github.com/autnmy/issuegraph/blob/main/SPEC.md
  */
 
-import { type ElementSpec, element } from '@issuegraph/viewer';
+import type { IssueRef } from '@issuegraph/store';
+import { type ElementSpec, element, svg } from '@issuegraph/viewer';
 
-import type { AuditClass, AuditEdge, AuditFinding } from './findings.ts';
+import type { AuditClass, AuditEdge, AuditFinding, EncodingRefusal } from './findings.ts';
+import { refusedNotes } from './refused.ts';
 import { AUDIT_FILTER_ATTRIBUTE } from './surface.ts';
 import type { AuditOverlay } from './surface.ts';
 
@@ -181,23 +183,20 @@ export interface AuditWords {
    * `duplicate-of` is repointed, and a cycle is neither.
    */
   readonly remedies: AuditRemedyWords;
-  /**
-   * The refused block's own heading — the frame's `Encoding refused`.
-   *
-   * THE LAST THREE BELONG TO `./refused.ts`, AND THEY LIVE HERE ANYWAY. §17d is
+  /*
+   * THE LAST TWO BELONG TO `./refused.ts`, AND THEY LIVE HERE ANYWAY. §17d is
    * one section and its words are one record: a host wiring the audit supplies
-   * `AuditWords` once, and splitting a second record off for the fourth class
-   * would let a host supply half a section. `titles` is already total over
-   * `AuditClass`, which includes `encoding-refused` — so the words for that
-   * class were never going to sit anywhere else.
+   * `AuditWords` once. `titles` is already total over `AuditClass`, which
+   * includes `encoding-refused`.
    *
-   * `classes` AND `show` LEFT THIS RECORD WITH #296: the export's note draws no
-   * class chip and no `Show` button, so nothing reads either word.
+   * `classes`, `show` AND `refusedHeading` LEFT THIS RECORD WITH #296: the
+   * export's note draws no class chip and no `Show` button, and unreadable
+   * relationships are notes in the panel, under its title, not a block with a
+   * heading of its own.
    */
-  readonly refusedHeading: string;
-  /** The outward link's label. The package draws the `↗`. */
+  /** The outward link's label — the export's "Open the issue". The package draws the `↗`. */
   readonly refusedOpen: string;
-  /** The reveal control's label — the frame's `Rewrite from editor`. */
+  /** The reveal control's label — the export's "Rewrite it here". */
   readonly refusedRewrite: string;
 }
 
@@ -269,19 +268,70 @@ export interface AuditPanelOptions {
    * once, off the NORMALIZED document it draws, and hands it to both.
    */
   readonly known: ReadonlySet<string>;
+  /**
+   * The host's unreadable relationships, each drawn as a note in this panel
+   * (#296) with its diagnostic and the line it stopped on. The same refusals
+   * `AuditInput.encodingRefused` gave the audit, so each one the title counts
+   * is a note here.
+   */
+  readonly refusals?: readonly EncodingRefusal[] | undefined;
+  /**
+   * Where an issue lives, for an unreadable note's "Open the issue" link. See
+   * `./refused.ts`, which owns the rule that withholds an unsafe or absent URL.
+   */
+  readonly issueUrl?: ((ref: IssueRef) => string | null) | undefined;
 }
+
+/** A note's state, as the export's rules name the three it draws. */
+export type NoteState = 'error' | 'attention' | 'neutral';
 
 /**
  * The state a finding's note is drawn in, as the export's rules give each
  * class: a loop is the error state, a duplicate of a closed issue the
  * attention state, and a blocker already closed the neutral state.
  */
-const NOTE_STATE: Readonly<Record<AuditClass, 'error' | 'attention' | 'neutral'>> = Object.freeze({
+const NOTE_STATE: Readonly<Record<AuditClass, NoteState>> = Object.freeze({
   cycle: 'error',
   'dead-duplicate-ref': 'attention',
   'encoding-refused': 'attention',
   'stale-blocker': 'neutral',
 });
+
+/**
+ * The SVG children of each state's icon, as the export's boards draw them: the
+ * alert circle for the error state, the triangle for attention, the clock for
+ * neutral. Built in the SVG namespace, because an icon built with `element`
+ * draws nothing once mounted.
+ */
+const NOTE_ICON: Readonly<Record<NoteState, () => readonly ElementSpec[]>> = Object.freeze({
+  error: () => [
+    svg('circle', { cx: '12', cy: '12', r: '10' }),
+    svg('line', { x1: '12', x2: '12', y1: '8', y2: '12' }),
+    svg('line', { x1: '12', x2: '12.01', y1: '16', y2: '16' }),
+  ],
+  attention: () => [
+    svg('path', { d: 'm21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3' }),
+    svg('path', { d: 'M12 9v4' }),
+    svg('path', { d: 'M12 17h.01' }),
+  ],
+  neutral: () => [
+    svg('circle', { cx: '12', cy: '12', r: '9' }),
+    svg('path', { d: 'M12 7v5l3 2' }),
+  ],
+});
+
+/**
+ * A note's icon, one per state (#296). Decoration: the title says what the
+ * note is about, so the icon is hidden from the accessibility tree and from the
+ * tab order.
+ */
+export function noteIcon(state: NoteState): ElementSpec {
+  return svg(
+    'svg',
+    { class: 'ig-audit-icon', viewBox: '0 0 24 24', 'aria-hidden': 'true', focusable: 'false' },
+    NOTE_ICON[state](),
+  );
+}
 
 /**
  * The note for one finding: a state, a title, a body and its remedies (#296).
@@ -316,9 +366,12 @@ function cardSpec(
       'data-s': NOTE_STATE[finding.kind],
     },
     [
-      element('p', { class: 'ig-audit-title' }, [words.titles[finding.kind]]),
-      element('p', { class: 'ig-audit-detail' }, [finding.detail]),
-      remedySpec(finding, known, edges, words),
+      noteIcon(NOTE_STATE[finding.kind]),
+      element('div', { class: 'ig-audit-note-text' }, [
+        element('p', { class: 'ig-audit-title' }, [words.titles[finding.kind]]),
+        element('p', { class: 'ig-audit-detail' }, [finding.detail]),
+        remedySpec(finding, known, edges, words),
+      ]),
     ],
   );
 }
@@ -453,9 +506,8 @@ function remedySpec(
  * not; so the ambient half stays put at zero and the panel goes away.
  *
  * EVERY FINDING DECIDES, SINCE #296, and the title counts them all, the same
- * number the header shows. A document whose only findings are unreadable
- * relationships draws the title and no list, with `./refused.ts`'s block
- * beside it.
+ * number the header shows. Unreadable relationships are notes in this panel
+ * too, drawn from {@link AuditPanelOptions.refusals} by `./refused.ts`.
  */
 export function renderAuditPanel(
   overlay: AuditOverlay,
@@ -467,11 +519,15 @@ export function renderAuditPanel(
   // whose one finding was unreadable drew no panel, so no title, at all. The
   // export keeps one count that includes relationships that could not be read,
   // so the title counts every finding and stays at one. The unreadable ones are
-  // still drawn by `./refused.ts`, beside this panel, so no card is listed here
-  // for them.
+  // notes here too, after the three relationship classes, as `AUDIT_CLASSES`
+  // orders them; their own diagnostics come from the host's refusals.
   if (overlay.count === 0) return null;
   const listed = overlay.findings.filter((finding) => finding.kind !== 'encoding-refused');
   const { words } = options;
+  const notes = [
+    ...listed.map((finding) => cardSpec(finding, options.known, options.edges, words)),
+    ...refusedNotes(options.refusals ?? [], { words, known: options.known, issueUrl: options.issueUrl }),
+  ];
   // THE FORM THE COUNT TAKES, as the header's own problem / problems does.
   const heading = overlay.count === 1 ? words.heading.one : words.heading.other;
   return element(
@@ -562,15 +618,8 @@ export function renderAuditPanel(
     // arrives in `AUDIT_CLASSES` order because `auditDocument` concatenates its
     // four detectors in that order; re-sorting here would be a second opinion
     // about severity next to `AUDIT_CLASS_SPECS`, which is the one that ranks.
-    // NO EMPTY LIST: with only unreadable findings the title stands alone, and
-    // the refused block beside it lists them.
-    listed.length === 0
-      ? null
-      : element(
-          'ul',
-          { class: 'ig-audit-list' },
-          listed.map((finding) => cardSpec(finding, options.known, options.edges, words)),
-        ),
+    // NO EMPTY LIST, for a host that counted refusals it did not pass.
+    notes.length === 0 ? null : element('ul', { class: 'ig-audit-list' }, notes),
     ],
   );
 }

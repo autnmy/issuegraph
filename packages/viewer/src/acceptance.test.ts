@@ -291,6 +291,9 @@ describe('the public surface', () => {
       'sameSelection',
       'skeletonSpec',
       'storedSelectionOf',
+      // An SVG-namespace spec, for the editor's note icons (#296): `element`
+      // alone builds an icon that draws nothing once mounted.
+      'svg',
       'themeCss',
       'treatmentFor',
       'viewerSelectionOf',

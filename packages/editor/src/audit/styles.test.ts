@@ -118,16 +118,12 @@ describe('the leaves size nothing, and ring the stops their markup declares', ()
   }
 
   /**
-   * BOTH SURFACES, BECAUSE §17d HAS TWO NOW. `./refused.ts` draws the fourth
-   * class outside the findings list, and every rule below is as true of it as of
-   * the panel — a leaf that sized itself would be wrong in every composition but
-   * one, and a leaf that scrolled would nest a second scroller inside the region
-   * that already scrolls. Written as a table so a third surface inherits the
-   * boundary instead of being reviewed into it.
+   * ONE SURFACE SINCE #296: the refused block's notes moved into the panel.
+   * Written as a table so a second surface inherits the boundary instead of
+   * being reviewed into it.
    */
   const SURFACES: readonly (readonly [string, string])[] = [
     ['.ig-audit-panel', '.ig-audit-list'],
-    ['.ig-audit-refused', '.ig-audit-refused-list'],
   ];
 
   for (const [surface, list] of SURFACES) {
@@ -239,11 +235,6 @@ describe('the problems panel head is one title with the count inside it (#288)',
     assert.equal(declaredOn(css, '.ig-audit-panel-heading', 'letter-spacing'), undefined, 'the title is still tracked');
   });
 
-  it('gives the refused block’s heading, the panel’s peer, the same type', () => {
-    assert.deepEqual(typeMisses(css, ['.ig-audit-refused-heading'], TITLE), []);
-    assert.equal(declaredOn(css, '.ig-audit-refused-heading', 'text-transform'), undefined, 'the peer heading is still capitalised');
-  });
-
   it('draws the count in the title’s own ink and size, not gold, in the sans with tabular figures', () => {
     const inside = ['.ig-audit-panel', '.ig-audit-panel-head', '.ig-audit-panel-heading'];
     assert.equal(declaredOn(css, '.ig-audit-panel-count', 'color', inside)?.value, 'inherit');
@@ -337,9 +328,32 @@ describe('each finding is drawn as the export’s note (#296)', () => {
       assert.equal(declaredOn(css, '.ig-audit-detail', 'color', [...inside, card])?.value, 'var(--ig-text)', `${state} note sentence`);
       assert.equal(declaredOn(css, card, 'border', inside), undefined, `${state} note draws a border`);
     }
-    // The refused block's card is the same attention note.
-    const refused = ".ig-audit-refused-card[data-s='attention']";
-    assert.equal(declaredOn(css, refused, 'background', ['.ig-audit-refused', '.ig-audit-refused-list'])?.value, 'var(--ig-state-conflict-fill)');
+  });
+
+  it('draws each note\u2019s icon at the export\u2019s size and stroke, in its state\u2019s ink (#296)', () => {
+    const ICON: Readonly<Record<string, string>> = {
+      'block-size': 'var(--ig-space-loose)',
+      'inline-size': 'var(--ig-space-loose)',
+      fill: 'none',
+      stroke: 'currentColor',
+      'stroke-width': 'var(--ig-stroke)',
+    };
+    for (const [property, expected] of Object.entries(ICON)) {
+      assert.equal(declaredOn(css, '.ig-audit-icon', property, [...inside, '.ig-audit-card'])?.value, expected, `the icon's ${property}`);
+    }
+    const INK: readonly (readonly [string, string])[] = [
+      ['error', 'var(--ig-state-failed)'],
+      ['attention', 'var(--ig-state-conflict)'],
+      ['neutral', 'var(--ig-text)'],
+    ];
+    for (const [state, ink] of INK) {
+      assert.equal(declaredOn(css, '.ig-audit-icon', 'color', [...inside, `.ig-audit-card[data-s='${state}']`])?.value, ink, `${state} icon ink`);
+    }
+  });
+
+  it('draws no refused block of its own any more', () => {
+    const bare = auditStylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
+    assert.equal(/\.ig-audit-refused(?:-heading|-list|-card|-controls)?\s*[{,:]/.test(bare), false, 'a rule still styles the refused block');
   });
 
   it('styles no class chip, walk line or show button any more', () => {

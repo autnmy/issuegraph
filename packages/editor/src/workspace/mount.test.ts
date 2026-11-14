@@ -225,17 +225,12 @@ describe("the audit region's scroll offset survives a redraw", () => {
     }
   });
 
-  it('keeps focus on the refused block, which is the stop that needs it most', async () => {
-    // THE SECOND STOP, AND THE ONE WITH THE STRONGEST CLAIM. Both of the refused
-    // block's controls are conditional, so a block whose refusals all name
-    // issues outside the drawn page — the case `findings.ts` keeps on purpose —
-    // has NO focusable descendant at all, and the section itself is the only
-    // thing a keyboard reader can hold. Losing it to the rail on an unrelated
-    // redraw is losing the surface.
-    //
-    // AND IT MUST COME BACK TO THE SAME SURFACE. Restoring "whichever audit stop
-    // the redraw drew first" would move a reader from the block to the panel,
-    // which is why the stop is captured by name.
+  it('keeps focus on the panel when its only note is an inert unreadable one', async () => {
+    // AN UNREADABLE NOTE'S CONTROLS ARE BOTH CONDITIONAL, so a note whose issue
+    // is outside the drawn page — the case `findings.ts` keeps on purpose — has
+    // no focusable descendant, and the panel it sits in (#296) is the stop a
+    // keyboard reader holds. Losing it to the rail on an unrelated redraw is
+    // losing the surface. The stop is captured by name and restored by name.
     function withRefusalOnly(snapshot: StoreSnapshot): WorkspaceProjection {
       return {
         ...project(snapshot),
@@ -249,14 +244,15 @@ describe("the audit region's scroll offset survives a redraw", () => {
     const page = await mounted(SEED, { project: withRefusalOnly });
     try {
       await page.openAudit();
-      const before = page.element.querySelector<HTMLElement>('.ig-audit-refused');
-      assert.ok(before !== null, 'the fixture drew no refused block');
+      // THE UNREADABLE NOTE IS IN THE PANEL SINCE #296, so the panel is the
+      // audit stop a reader holds.
+      const before = page.element.querySelector<HTMLElement>('.ig-audit-panel');
+      assert.ok(before !== null, 'the fixture drew no panel');
+      const note = before.querySelector('[data-ig-audit-kind="encoding-refused"]');
+      assert.ok(note !== null, 'the panel did not list the unreadable note');
       // THE INERT CASE ITSELF: the ref names nothing the page carries, so the
-      // block draws its card and neither control.
-      assert.equal(before.querySelector('button'), null, 'the fixture drew a control, so this is not the inert case');
-      // THE PANEL KEEPS ITS TITLE at one unreadable finding (#296), with no list
-      // under it, so the block is not the only audit stop on the page.
-      assert.equal(page.element.querySelector('.ig-audit-panel .ig-audit-list'), null, 'the panel listed the refusal too');
+      // note draws neither control.
+      assert.equal(note.querySelector('button, a'), null, 'the fixture drew a control, so this is not the inert case');
 
       before.focus();
       assert.equal(page.dom.window.document.activeElement, before, 'the fixture cannot hold focus');
@@ -264,13 +260,13 @@ describe("the audit region's scroll offset survives a redraw", () => {
       page.handle.update();
       await flush();
 
-      const after = page.element.querySelector<HTMLElement>('.ig-audit-refused');
-      assert.ok(after !== null, 'the redraw dropped the block');
+      const after = page.element.querySelector<HTMLElement>('.ig-audit-panel');
+      assert.ok(after !== null, 'the redraw dropped the panel');
       assert.notEqual(after, before, 'no redraw happened, so this test would prove nothing');
       assert.equal(
         page.dom.window.document.activeElement,
         after,
-        'focus left the refused block — the rail fallback claimed it',
+        'focus left the panel — the rail fallback claimed it',
       );
       page.handle.destroy();
     } finally {
