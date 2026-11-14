@@ -5691,3 +5691,32 @@ describe('the editor builds and reports a selection set', () => {
     }
   });
 });
+
+describe('tree mode keeps the findings panel', () => {
+  function withCycle(snapshot: StoreSnapshot): WorkspaceProjection {
+    return {
+      ...project(snapshot),
+      audit: {
+        document: { issues: snapshot.issues, edges: snapshot.landed },
+        graph: { cycles: [['1', '2']], duplicateCanonical: () => null },
+      },
+    };
+  }
+
+  it('opens the findings panel over the tree from the header count, as it does over the graph', async () => {
+    for (const canvas of ['tree', 'neighbourhood'] as const) {
+      const page = await mounted(SEED, { project: withCycle, canvas });
+      try {
+        await page.openAudit();
+        const zone = page.zone('canvas');
+        assert.ok(zone !== null);
+        assert.ok(zone.querySelector('.ig-audit-overlay') !== null, `${canvas}: the header count opened no findings panel`);
+        if (canvas === 'tree') {
+          assert.ok(zone.querySelector('.ig-tree') !== null, 'the canvas did not draw the tree, so this proves nothing');
+        }
+      } finally {
+        page.handle.destroy();
+      }
+    }
+  });
+});
