@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { type ViewerDocument, type ViewerEdge, normalizeDocument } from './document.ts';
-import { edgeGeometry, layoutGraph } from './layout.ts';
+import { edgeGeometry, layoutGraph, trunkRoutes } from './layout.ts';
 import { cardBlocks } from './parts.ts';
 import { fixtureDocument } from './testing/fixtures.ts';
 import { defaultTheme, extendTheme } from './theme.ts';
@@ -619,5 +619,63 @@ describe('edgeGeometry', () => {
   it('refuses rather than guesses when a node has no box', () => {
     const layout = laidOut();
     assert.equal(edgeGeometry(layout, { field: 'blocked-by', from: '101', to: 'nope' }), null);
+  });
+});
+
+describe('trunkRoutes', () => {
+  // h is ranked between a1 and a2; g is an open blocker off the order, so the
+  // left gutter; d is a duplicate of g the order excludes, so the right gutter.
+  const slot = (rank: number, key: string) => ({ rank, lead: key, members: [key], ready: true, holds: [] });
+  const input: ViewerDocument = {
+    issues: ['a1', 'h', 'a2', 'g', 'd'].map((key) => ({ key, title: `Issue ${key}`, open: true, priority: 2 })),
+    edges: [
+      { field: 'blocked-by', from: 'h', to: 'a1' },
+      { field: 'blocked-by', from: 'a2', to: 'h' },
+      { field: 'blocked-by', from: 'a2', to: 'g' },
+      { field: 'duplicate-of', from: 'd', to: 'g' },
+    ],
+    order: {
+      slots: ['a1', 'h', 'a2'].map((key, index) => slot(index + 1, key)),
+      excluded: [{ key: 'd', canonical: 'g', reason: 'duplicate-of' }],
+    },
+    cycles: [],
+  };
+  const { document } = normalizeDocument(input);
+  // As drawn: a blocked-by points at what is held up.
+  const into: ViewerEdge = { field: 'blocked-by', from: 'a1', to: 'h' };
+  const outOf: ViewerEdge = { field: 'blocked-by', from: 'h', to: 'a2' };
+
+  it('closes trunks up evenly when a channel holds more than fit at --ig-space-wide', () => {
+    // A 60 gutter leaves a 30 channel: two trunks at 20 would run the second
+    // into the right gutter's cards, so they take 10 each.
+    const theme = extendTheme(defaultTheme, { metrics: { '--ig-gutter-width': 60 } });
+    const layout = layoutGraph(document, theme);
+    const from = layout.columnX.spine + theme.metrics['--ig-spine-width'];
+    const xs = trunkRoutes(layout, 'h', [into, outOf], theme).map((route) => route?.geometry.control.x);
+    assert.deepEqual(xs, [from + 10, from + 20]);
+    assert.ok(from + 20 < layout.columnX.right, 'the last trunk reached the next column');
+  });
+
+  it('keeps the arc for a pair of gutters, an edge off the selection, and the column preview', () => {
+    const layout = layoutGraph(document, defaultTheme);
+    // g's duplicate is across the spine from it: no channel joins them.
+    assert.deepEqual(trunkRoutes(layout, 'g', [{ field: 'duplicate-of', from: 'd', to: 'g' }], defaultTheme), [null]);
+    assert.deepEqual(trunkRoutes(layout, 'h', [{ field: 'blocked-by', from: 'g', to: 'a2' }], defaultTheme), [null]);
+    assert.deepEqual(trunkRoutes(layoutGraph(document, defaultTheme, true), 'h', [into], defaultTheme), [null]);
+  });
+
+  it('orients each route as drawn, its terminal where the edge points', () => {
+    const layout = layoutGraph(document, defaultTheme);
+    const hub = layout.nodes.get('h');
+    const below = layout.nodes.get('a2');
+    assert.ok(hub !== undefined && below !== undefined);
+    const [arriving, leaving] = trunkRoutes(layout, 'h', [into, outOf], defaultTheme);
+    assert.ok(arriving !== null && arriving !== undefined && leaving !== null && leaving !== undefined);
+    assert.equal(arriving.geometry.end.x, hub.x + hub.width, 'into the selection, the terminal is on the selection');
+    assert.equal(leaving.geometry.end.x, below.x + below.width, 'out of it, the terminal is on the neighbour');
+    // Pointing back at the card from the trunk, which sits to its right.
+    assert.equal(arriving.geometry.endAngle, Math.PI);
+    assert.equal(arriving.sharesEnd, false);
+    assert.ok(arriving.geometry.d.startsWith(`M ${(hub.x + hub.width).toFixed(2)} `), 'a route is written from the selection');
   });
 });

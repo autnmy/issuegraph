@@ -5,7 +5,7 @@ import { edgeIdentity } from '@issuegraph/core';
 
 import { paperTheme } from '../acceptance.test.ts';
 import { type ViewerDocument, normalizeDocument } from '../document.ts';
-import { layoutGraph, measureLabel } from '../layout.ts';
+import { edgeGeometry, layoutGraph, measureLabel } from '../layout.ts';
 import { cardBlocks } from '../parts.ts';
 import { type ElementSpec, renderMarkup } from '../element.ts';
 import {
@@ -1901,5 +1901,223 @@ describe('an off-order card shows its reason in its priority’s place (q336, RU
 
   it('keeps the priority on a card with no reason', () => {
     assert.match(cardOf(render(offOrder), 'canon'), /<span class="ig-badge" data-priority="tier">P2<\/span>/);
+  });
+});
+
+describe('lines into and out of the selection share a trunk per kind and direction (#303, RULES, Graphs, Dense neighbourhoods)', () => {
+  // h is rank 4 on the spine. b1-b3 block it from above and c1-c2 are blocked
+  // by it below, all on the spine; s1 and s2 serialize with it; g1 and g2 are
+  // open blockers off the order, so the left gutter; d1 and d2 are duplicates of
+  // it the order excludes, so the right gutter.
+  const slot = (rank: number, key: string) => ({ rank, lead: key, members: [key], ready: true, holds: [] });
+  const hub: ViewerDocument = {
+    issues: ['b1', 'b2', 'b3', 'h', 'c1', 'c2', 's1', 's2', 'g1', 'g2', 'd1', 'd2'].map((key) => ({
+      key,
+      title: `Issue ${key}`,
+      open: true,
+      priority: 2,
+    })),
+    edges: [
+      { field: 'blocked-by', from: 'h', to: 'b1' },
+      { field: 'blocked-by', from: 'h', to: 'b2' },
+      { field: 'blocked-by', from: 'h', to: 'b3' },
+      { field: 'blocked-by', from: 'c1', to: 'h' },
+      { field: 'blocked-by', from: 'c2', to: 'h' },
+      { field: 'serialize-with', from: 'h', to: 's1' },
+      { field: 'serialize-with', from: 's2', to: 'h' },
+      { field: 'blocked-by', from: 'h', to: 'g1' },
+      { field: 'blocked-by', from: 'h', to: 'g2' },
+      { field: 'duplicate-of', from: 'd1', to: 'h' },
+      { field: 'duplicate-of', from: 'd2', to: 'h' },
+      // Between two neighbours: it waits until one of them is selected.
+      { field: 'blocked-by', from: 'c1', to: 'b1' },
+    ],
+    order: {
+      slots: ['b1', 'b2', 'b3', 'h', 'c1', 'c2', 's1', 's2'].map((key, index) => slot(index + 1, key)),
+      excluded: [
+        { key: 'd1', canonical: 'h', reason: 'duplicate-of' },
+        { key: 'd2', canonical: 'h', reason: 'duplicate-of' },
+      ],
+    },
+    cycles: [],
+  };
+  const { document } = normalizeDocument(hub);
+  const layout = layoutGraph(document, defaultTheme);
+  const wide = defaultTheme.metrics['--ig-space-wide'];
+  const spineRight = layout.columnX.spine + defaultTheme.metrics['--ig-spine-width'];
+  const leftRight = layout.columnX.left + defaultTheme.metrics['--ig-gutter-width'];
+
+  interface Line {
+    readonly identity: string;
+    readonly field: string;
+    readonly points: readonly { readonly x: number; readonly y: number }[];
+  }
+
+  /** Every relationship's first stroke, by identity, with its path as points. */
+  function linesOf(options: object): readonly Line[] {
+    const tags = [...canvasOf(render(hub, options)).matchAll(/<path class="ig-edge"[^>]*>/g)]
+      .map(([tag]) => tag)
+      .filter((tag) => !tag.includes('aria-hidden'));
+    return tags.map((tag) => {
+      const numbers = (/ d="([^"]*)"/.exec(tag)?.[1] ?? '').match(/-?\d+(?:\.\d+)?/g)?.map(Number) ?? [];
+      return {
+        identity: /data-ig-group="([^"]*)"/.exec(tag)?.[1] ?? '',
+        field: /data-edge="([^"]*)"/.exec(tag)?.[1] ?? '',
+        points: numbers.flatMap((value, index) =>
+          index % 2 === 0 ? [{ x: value, y: numbers[index + 1] ?? Number.NaN }] : [],
+        ),
+      };
+    });
+  }
+
+  function line(lines: readonly Line[], field: Parameters<typeof edgeIdentity>[0], from: string, to: string): Line {
+    const found = lines.find((candidate) => candidate.identity === edgeIdentity(field, from, to));
+    assert.ok(found !== undefined, `no line for ${from} ${field} ${to}`);
+    return found;
+  }
+
+  /** A route's trunk: the x of its one vertical run. */
+  function trunkX(route: Line): number {
+    assert.equal(route.points.length, 4, `not a trunk route: ${JSON.stringify(route.points)}`);
+    const [, turn, back] = route.points;
+    assert.ok(turn !== undefined && back !== undefined);
+    assert.equal(turn.x, back.x, 'the middle run is not vertical');
+    return turn.x;
+  }
+
+  const selected = linesOf({ selected: 'h' });
+
+  it('draws one trunk per kind and direction, each relationship joining it', () => {
+    const trunks = (pairs: readonly (readonly [Parameters<typeof edgeIdentity>[0], string, string])[]): Set<number> =>
+      new Set(pairs.map(([field, from, to]) => trunkX(line(selected, field, from, to))));
+    const into = trunks([['blocked-by', 'h', 'b1'], ['blocked-by', 'h', 'b2'], ['blocked-by', 'h', 'b3']]);
+    const outOf = trunks([['blocked-by', 'c1', 'h'], ['blocked-by', 'c2', 'h']]);
+    const serial = trunks([['serialize-with', 'h', 's1'], ['serialize-with', 's2', 'h']]);
+    const duplicates = trunks([['duplicate-of', 'd1', 'h'], ['duplicate-of', 'd2', 'h']]);
+    const leftInto = trunks([['blocked-by', 'h', 'g1'], ['blocked-by', 'h', 'g2']]);
+    for (const group of [into, outOf, serial, duplicates, leftInto]) assert.equal(group.size, 1, 'a group drew more than one trunk');
+    const all = [...into, ...outOf, ...serial, ...duplicates, ...leftInto];
+    assert.equal(new Set(all).size, 5, 'two groups shared a trunk');
+    // The line between two neighbours waits.
+    assert.equal(selected.some((candidate) => candidate.identity === edgeIdentity('blocked-by', 'c1', 'b1')), false);
+  });
+
+  it('sets the first trunk 20 right of the column and each further one 20 further, in the legend order, in before out', () => {
+    assert.equal(wide, 20, 'the board spells 20 as --ig-space-wide');
+    assert.equal(trunkX(line(selected, 'blocked-by', 'h', 'b1')), spineRight + wide);
+    assert.equal(trunkX(line(selected, 'blocked-by', 'c1', 'h')), spineRight + wide * 2);
+    assert.equal(trunkX(line(selected, 'serialize-with', 'h', 's1')), spineRight + wide * 3);
+    assert.equal(trunkX(line(selected, 'duplicate-of', 'd1', 'h')), spineRight + wide * 4);
+    // The left gutter's blockers come in through the channel right of THEIR column.
+    assert.equal(trunkX(line(selected, 'blocked-by', 'h', 'g1')), leftRight + wide);
+  });
+
+  it('caps a group into the selection with one terminal, and each line out of it with its own', () => {
+    const terminals = [...canvasOf(render(hub, { selected: 'h' })).matchAll(/<(?:path|circle) class="ig-terminal"[^>]*>/g)].map(
+      ([tag]) => tag,
+    );
+    const groupOf = (tag: string): string => /data-ig-group="([^"]*)"/.exec(tag)?.[1] ?? '';
+    const capping = (identities: readonly string[]): number =>
+      terminals.filter((tag) => identities.includes(groupOf(tag))).length;
+    // In: one chevron for b1-b3, one for g1-g2 on the other bound, one circle for d1-d2.
+    assert.equal(capping(['b1', 'b2', 'b3'].map((key) => edgeIdentity('blocked-by', 'h', key))), 1);
+    assert.equal(capping(['g1', 'g2'].map((key) => edgeIdentity('blocked-by', 'h', key))), 1);
+    assert.equal(capping(['d1', 'd2'].map((key) => edgeIdentity('duplicate-of', key, 'h'))), 1);
+    // Out: the arrow points at what is held up, so each blocked card has its own.
+    assert.equal(capping([edgeIdentity('blocked-by', 'c1', 'h')]), 1);
+    assert.equal(capping([edgeIdentity('blocked-by', 'c2', 'h')]), 1);
+    // Serialize-with is symmetric and carries none.
+    assert.equal(terminals.filter((tag) => tag.includes('data-edge="serialize-with"')).length, 0);
+    assert.equal(terminals.length, 5);
+  });
+
+  it('runs a stub from each neighbour to its trunk and one from the trunk to the selection, on their bounds', () => {
+    const selectedBox = layout.nodes.get('h');
+    assert.ok(selectedBox !== undefined);
+    const onBound = (key: string, point: { x: number; y: number } | undefined): void => {
+      const box = layout.nodes.get(key);
+      assert.ok(box !== undefined && point !== undefined);
+      assert.ok(point.x === box.x || point.x === box.x + box.width, `${key}'s stub does not end on its bound`);
+      assert.ok(point.y > box.y && point.y < box.y + box.height, `${key}'s stub is not beside its card`);
+    };
+    for (const [field, from, to, member] of [
+      ['blocked-by', 'h', 'b1', 'b1'],
+      ['blocked-by', 'h', 'b3', 'b3'],
+      ['blocked-by', 'c2', 'h', 'c2'],
+      ['serialize-with', 's2', 'h', 's2'],
+      ['duplicate-of', 'd2', 'h', 'd2'],
+      ['blocked-by', 'h', 'g2', 'g2'],
+    ] as const) {
+      const route = line(selected, field, from, to);
+      const [hubEnd, toTrunk, fromTrunk, memberEnd] = route.points;
+      onBound('h', hubEnd);
+      onBound(member, memberEnd);
+      // Both stubs are level, so each meets its card square on.
+      assert.equal(hubEnd?.y, toTrunk?.y);
+      assert.equal(fromTrunk?.y, memberEnd?.y);
+    }
+  });
+
+  it('crosses no card with any line', () => {
+    const boxes = [...layout.nodes.values()];
+    // Strictly inside: a stub may end ON a card's bound. A level or upright run
+    // has a span of no width on one axis, and that span is inside the box's
+    // open interval exactly when the run crosses the card.
+    const within = (a: number, b: number, low: number, high: number): boolean =>
+      Math.max(a, b) > low && Math.min(a, b) < high;
+    for (const route of selected) {
+      route.points.slice(1).forEach((point, index) => {
+        const from = route.points[index];
+        assert.ok(from !== undefined);
+        for (const box of boxes) {
+          const crosses: boolean =
+            within(from.x, point.x, box.x, box.x + box.width) && within(from.y, point.y, box.y, box.y + box.height);
+          assert.equal(crosses, false, `${route.identity} crosses ${box.key}`);
+        }
+      });
+    }
+  });
+
+  it('parts a doubled kind on the diagonal, so its trunk draws two lines too', () => {
+    const strokes = [...canvasOf(render(hub, { selected: 'h' })).matchAll(/<path class="ig-edge" data-edge="serialize-with"[^>]*>/g)];
+    const offset = defaultTheme.metrics['--ig-stroke'];
+    assert.ok(strokes.length === 4, 'two serialize-with lines, two strokes each');
+    for (const [tag] of strokes) {
+      assert.match(tag, new RegExp(`transform="translate\\((-?${String(offset)}) (-?${String(offset)})\\)"`));
+    }
+  });
+
+  it('draws every line as its arc with nothing selected, with a relationship selected, and with a set selected', () => {
+    const arcs = (options: object): void => {
+      for (const route of linesOf(options)) {
+        const edge = document.edges.find((candidate) => edgeIdentity(candidate.field, candidate.from, candidate.to) === route.identity);
+        assert.ok(edge !== undefined);
+        const drawn = edge.field === 'blocked-by' ? { field: edge.field, from: edge.to, to: edge.from } : edge;
+        const arc = edgeGeometry(layout, drawn);
+        assert.ok(arc !== null);
+        const tag = canvasOf(render(hub, options)).match(new RegExp(`<path class="ig-edge"[^>]*data-ig-group="${route.identity.replace(/\|/g, '\\|')}"[^>]*>`))?.[0] ?? '';
+        assert.match(tag, new RegExp(` d="${arc.d}"`), `${route.identity} left its arc`);
+      }
+    };
+    arcs({});
+    arcs({ selectedEdge: edgeIdentity('blocked-by', 'h', 'b1') });
+    arcs({ selected: ['h', 'c1'] });
+    assert.equal(linesOf({}).length, document.edges.length, 'with nothing selected a line went undrawn');
+  });
+
+  it('gives a kind switched off no trunk, so the next kind takes its place', () => {
+    const legendSwitch = {
+      label: 'kinds to draw',
+      command: 'legend-kind',
+      drawn: 'drawn',
+      kinds: [
+        { field: 'blocked-by' as const, count: 7, on: true, switchable: true },
+        { field: 'serialize-with' as const, count: 2, on: false, switchable: true },
+        { field: 'duplicate-of' as const, count: 2, on: true, switchable: true },
+      ],
+    };
+    const switched = linesOf({ selected: 'h', legendSwitch });
+    assert.equal(switched.some((route) => route.field === 'serialize-with'), false);
+    assert.equal(trunkX(line(switched, 'duplicate-of', 'd1', 'h')), spineRight + wide * 3);
   });
 });
