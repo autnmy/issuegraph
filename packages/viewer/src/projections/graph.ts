@@ -61,6 +61,7 @@ import {
 } from '../parts.ts';
 import { type Receding, recedingOf } from '../recede.ts';
 import { type LateralNeighbours, type Scene, resolveFocusKey } from '../scene.ts';
+import { isSelectedKey } from '../selection.ts';
 import { type Theme, resolveTheme } from '../theme.ts';
 import { type EdgeTerminal, dashArrayFor, treatmentFor } from '../vocabulary.ts';
 import {
@@ -348,7 +349,7 @@ function nodeCard(
     {
       class: 'ig-rail-row',
       'data-ig-key': key,
-      'aria-current': options.selected === key ? 'true' : 'false',
+      'aria-current': isSelectedKey(options.selected, key) ? 'true' : 'false',
       'aria-label': label,
       title: heldBecause === '' ? null : heldBecause,
       tabindex: focused === key ? 0 : -1,

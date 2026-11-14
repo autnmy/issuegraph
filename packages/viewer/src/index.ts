@@ -127,6 +127,19 @@ export { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET, relatedKeys } from './projectio
 export type { RecedeSelection, Receding } from './recede.ts';
 export { RECEDE_ALPHA, recedingOf } from './recede.ts';
 
+// THE SELECTION SET, on the surface because every shell that builds a set from
+// input — this package's mount, a host's editor — reads its gesture rules here
+// rather than writing its own, and stores it in the one form the projections
+// draw.
+export type { SelectionGesture, StoredSelection, ViewerSelection } from './selection.ts';
+export {
+  isNarrowBox,
+  nextSelection,
+  sameSelection,
+  storedSelectionOf,
+  viewerSelectionOf,
+} from './selection.ts';
+
 // `isFooterSlot` IS ON THE SURFACE FOR THE EDITOR'S RAIL, which windows the
 // sequence and carries the footer's slots whole. Which slots belong to the
 // footer is this package's rule — any tracker-family hold — and a rail that

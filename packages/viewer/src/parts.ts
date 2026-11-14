@@ -1433,14 +1433,23 @@ export function stationsOf(document: NormalizedDocument): ReadonlyMap<string, st
  * The projection publishes the SAME map it canonicalized with, so `reconcile`
  * cannot reach a different answer than the markup did.
  */
-export function atStations<T extends { selected?: string | null | undefined; focused?: string | null | undefined }>(
-  options: T,
-  stations: ReadonlyMap<string, string>,
-): T {
+export function atStations<
+  T extends { selected?: string | readonly string[] | null | undefined; focused?: string | null | undefined },
+>(options: T, stations: ReadonlyMap<string, string>): T {
   if (stations.size === 0) return options;
   const at = (key: string | null | undefined): string | null | undefined =>
     key === null || key === undefined ? key : (stations.get(key) ?? key);
-  return { ...options, selected: at(options.selected), focused: at(options.focused) };
+  // A SET IS NAMED MEMBER BY MEMBER: each member's lead, duplicates dropped,
+  // in addition order. Only marks and focus read this; what recedes was worked
+  // out from the set as given, so a member keeps its own neighbours.
+  const leads = (keys: readonly string[]): readonly string[] =>
+    Object.freeze([...new Set(keys.map((key) => stations.get(key) ?? key))]);
+  const { selected } = options;
+  return {
+    ...options,
+    selected: typeof selected === 'object' && selected !== null ? leads(selected) : at(selected),
+    focused: at(options.focused),
+  };
 }
 
 /**

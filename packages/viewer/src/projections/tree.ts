@@ -27,6 +27,7 @@ import {
   statesItsOwnCause,
 } from '../parts.ts';
 import { type LateralNeighbours, type Scene, resolveFocusKey } from '../scene.ts';
+import { isSelectedKey } from '../selection.ts';
 import type { SceneOptions } from './linear.ts';
 
 interface Forest {
@@ -166,7 +167,7 @@ function treeRow(
       // nested list is announced with its depth natively, needs no ARIA to say
       // so, and leaves the link legal. `data-level` is for styling and tests.
       'data-level': level,
-      'aria-current': options.selected === key ? 'true' : 'false',
+      'aria-current': isSelectedKey(options.selected, key) ? 'true' : 'false',
       'aria-label': `${issue?.title ?? key} — ${key}`,
       tabindex: focused === key ? 0 : -1,
     },

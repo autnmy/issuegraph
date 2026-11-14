@@ -245,6 +245,9 @@ describe('the public surface', () => {
       // while a raw scan sees no scheme at all and reads the value as relative.
       // A second copy of this fails OPEN, in the host's own origin.
       'isLinkable',
+      // THE SELECTION SET's gesture rules and stored form, so a host editor
+      // builds a set by the same rules the mount does, never a copy of them.
+      'isNarrowBox',
       // The one construction of "which verb, read from which end". The rail
       // badge and the inspector row draw one edge one zone apart, and a
       // consumer left to write the ternary itself has a second copy whose
@@ -253,6 +256,7 @@ describe('the public surface', () => {
       'labelFrom',
       'mountViewer',
       'navigate',
+      'nextSelection',
       'normalizeDocument',
       'provenanceClause',
       'recedingOf',
@@ -270,9 +274,12 @@ describe('the public surface', () => {
       // its own zones without a second copy of the row geometry.
       'renderViewerSkeleton',
       'resolveTheme',
+      'sameSelection',
       'skeletonSpec',
+      'storedSelectionOf',
       'themeCss',
       'treatmentFor',
+      'viewerSelectionOf',
       'viewerStylesheet',
     ]);
   });

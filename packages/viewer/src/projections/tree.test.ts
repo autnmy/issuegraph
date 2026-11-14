@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import { type ViewerDocument, normalizeDocument } from '../document.ts';
 import { renderMarkup } from '../element.ts';
 import { ROW_BADGE_BUDGET } from '../parts.ts';
-import { denseRowDocument, fixtureDocument } from '../testing/fixtures.ts';
+import { denseRowDocument, fixtureDocument, twoUnitDocument } from '../testing/fixtures.ts';
 import { treeScene } from './tree.ts';
 
 const emptyOrder = { slots: [], excluded: [] };
@@ -275,5 +275,16 @@ describe('the tree projection and a detached footer', () => {
     assert.equal(plain.footer, null);
     assert.equal(renderMarkup(asked.root), renderMarkup(plain.root));
     assert.deepEqual([...asked.focusOrder], [...plain.focusOrder]);
+  });
+});
+
+describe('a selected set in the tree', () => {
+  it('marks every selected issue on its own row and stamps nothing', () => {
+    const markup = render(twoUnitDocument, { selected: ['22', '12'] });
+    const current = [...markup.matchAll(/<li class="ig-tree-item" data-ig-key="([^"]*)"[^>]*aria-current="true"/g)].map(
+      (match) => match[1],
+    );
+    assert.deepEqual(new Set(current), new Set(['22', '12']));
+    assert.equal(markup.includes('data-recede'), false);
   });
 });

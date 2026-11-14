@@ -46,11 +46,16 @@ import {
 } from '../parts.ts';
 import { type Receding, recedingOf } from '../recede.ts';
 import { type LateralNeighbours, type Scene, resolveFocusKey } from '../scene.ts';
+import { isSelectedKey } from '../selection.ts';
 import { treatmentFor } from '../vocabulary.ts';
 
 export interface SceneOptions {
-  /** The selected key, if any. Rendered as `aria-current`. */
-  readonly selected?: string | null | undefined;
+  /**
+   * The selected issue, or a set of them in the order they were added. Every
+   * selected issue is rendered as `aria-current`. A single key is a string, so
+   * the one-key call form keeps working; see `StoredSelection`.
+   */
+  readonly selected?: string | readonly string[] | null | undefined;
   /** The key holding the roving tab stop. Defaults to the first in order. */
   readonly focused?: string | null | undefined;
   /**
@@ -351,7 +356,7 @@ export function slotRow(
 ): ElementSpec {
   const held = !slot.ready;
   const lead = document.byKey.get(slot.lead);
-  const selected = options.selected === slot.lead;
+  const selected = isSelectedKey(options.selected, slot.lead);
   const focused = options.focused === slot.lead;
   const unit = slot.members.length > 1;
   const expanded = options.expanded?.includes(slot.lead) ?? false;
@@ -501,7 +506,7 @@ export function footerRow(
     {
       class: 'ig-footer-row',
       'data-ig-key': slot.lead,
-      'aria-current': options.selected === slot.lead ? 'true' : 'false',
+      'aria-current': isSelectedKey(options.selected, slot.lead) ? 'true' : 'false',
       'aria-label':
         because === '' ? slotLabel(document, slot) : `${slotLabel(document, slot)} — ${because}`,
       tabindex: options.focused === slot.lead ? 0 : -1,
@@ -590,7 +595,7 @@ export function excludedRow(
     {
       class: 'ig-footer-row',
       'data-ig-key': key,
-      'aria-current': options.selected === key ? 'true' : 'false',
+      'aria-current': isSelectedKey(options.selected, key) ? 'true' : 'false',
       'aria-label': `${issue?.title ?? key} — ${treatmentFor('duplicate-of').label} ${canonical}, which gets worked instead`,
       // A HARDCODED -1 HERE MEANT THE VIEWER LOST ITS TAB STOP ENTIRELY. An
       // exclusion is in `focusOrder`, so focus can resolve to one — and when it
@@ -633,7 +638,7 @@ export function asideRow(
     {
       class: 'ig-footer-row',
       'data-ig-key': key,
-      'aria-current': options.selected === key ? 'true' : 'false',
+      'aria-current': isSelectedKey(options.selected, key) ? 'true' : 'false',
       'aria-label': `${issue?.title ?? key} — ${key} — related, not drawn here`,
       tabindex: options.focused === key ? 0 : -1,
     },
