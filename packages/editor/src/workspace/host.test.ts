@@ -1249,10 +1249,13 @@ describe('the narrow tabs and the Related groups list', () => {
     assert.deepEqual(both.switchedKinds, ['serialize-with', 'blocked-by']);
     const back = drive([{ kind: 'control', name: 'legend-kind', value: 'serialize-with' }], both).state;
     assert.deepEqual(back.switchedKinds, ['blocked-by'], 'a second press did not flip the kind back');
+    // Design q351: was decomposed from is a switch now, off at first.
+    const parent = drive([{ kind: 'control', name: 'legend-kind', value: 'decomposed-from' }], back).state;
+    assert.deepEqual(parent.switchedKinds, ['blocked-by', 'decomposed-from']);
 
     // The value comes from a `data-ig-value` attribute in the page, so only a kind the switch
-    // turns may flip: decomposed-from lives in Sub-issues, and together-with always draws.
-    for (const value of ['decomposed-from', 'together-with', 'nonsense', 'Blocked-By', '', '__proto__', 'toString', undefined]) {
+    // turns may flip: together-with always draws.
+    for (const value of ['together-with', 'nonsense', 'Blocked-By', '', '__proto__', 'toString', undefined]) {
       const command: HostCommand =
         value === undefined
           ? { kind: 'control', name: 'legend-kind' }

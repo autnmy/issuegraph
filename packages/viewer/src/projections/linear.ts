@@ -96,9 +96,11 @@ export interface SceneOptions {
    */
   readonly selectedEdge?: string | null | undefined;
   /**
-   * The legend as a switch for each kind, with the kinds switched off left
-   * undrawn (RULES, Graphs, Dense neighbourhoods). The graph only: the list and
-   * the tree draw no lines to switch. Absent, the legend is the static key.
+   * The legend past 8 relationships on the selection: a switch for each kind,
+   * with the kinds switched off left undrawn, or plain with each kind's count
+   * when there is nothing to choose (RULES, Graphs, Dense neighbourhoods). The
+   * graph only: the list and the tree draw no lines to switch. Absent, the
+   * legend is the static key.
    */
   readonly legendSwitch?: LegendSwitch | undefined;
   /**
@@ -621,7 +623,8 @@ export function excludedRow(
 
 /**
  * A footer entry that is neither a slot nor an exclusion: an ordinary issue the
- * canvas had no column for.
+ * canvas had no column for, or that the order does not place at all (a closed
+ * issue, or one the host's order did not read).
  *
  * ONLY THE COMPACT GRAPH PRODUCES ONE. It draws no gutters, so an off-order
  * relationship endpoint — an open blocker, a closed split origin — has nowhere
@@ -649,7 +652,11 @@ export function asideRow(
     footerEntry(
       issue?.title ?? key,
       issue === undefined ? null : identity(issue),
-      element('span', { class: 'ig-badge', 'data-hold': 'related' }, ['Related']),
+      // ITS TAG IS A NODE'S (RULES, Graphs, Dense neighbourhoods): the reason,
+      // of which an issue the order does not place has none, else its
+      // priority, else its number alone. "Related" said nothing: every row
+      // that draws one is related.
+      cardPriorityBadge(issue),
       footerRelationships(document, [key], relationships),
     ),
   );
@@ -681,6 +688,11 @@ export interface ListedRowsOptions {
   readonly label: string;
   /** The key holding the list's tab stop; every other row is at `-1`. */
   readonly focused?: string | null | undefined;
+  /**
+   * The key whose row is the selected row, the order's `fill-strong`: a
+   * selected relationship's far end, under the head that names its kind.
+   */
+  readonly selected?: string | null | undefined;
 }
 
 /**
@@ -702,7 +714,7 @@ export function listedRowsScene(
   options: ListedRowsOptions,
 ): Scene {
   const order = keys.filter((key, index) => keys.indexOf(key) === index);
-  const rowOptions: SceneOptions = { focused: options.focused ?? null };
+  const rowOptions: SceneOptions = { focused: options.focused ?? null, selected: options.selected ?? null };
   const root = element(
     'div',
     { class: 'ig-viewer ig-linear', 'data-frame': 'none', 'data-density': 'dense', 'data-ig-detached': 'rows' },

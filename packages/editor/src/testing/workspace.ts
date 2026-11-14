@@ -60,6 +60,7 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
   canvas: {
     focus: 'centred on',
     selected: 'picked',
+    selectedIssues: (count: number): string => `a set of ${String(count)}`,
     of: 'out of',
     shown: 'drawn here',
     related: 'linked to it',
@@ -103,6 +104,8 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
   relationshipsDrawn: (drawn: number, total: number): string => `${String(drawn)} drawn out of ${String(total)}`,
   listedByRelationship: (count: number, issue: string): string =>
     `${String(count)} issues touch ${issue}, too many for one picture, so they are listed by kind`,
+  listedAroundSelected: (count: number, selected: number): string =>
+    `${String(count)} issues touch the ${String(selected)} picked, too many for one picture, so they are listed by kind`,
   addRelationship: 'begin a relationship',
   // DELIBERATELY UNLIKE THE CONTROL'S LABEL ABOVE. A fixture that spelled the
   // heading and the control the same way would pass whichever one the panel

@@ -806,6 +806,33 @@ describe('the order rows a list draws in place of the graph (#303)', () => {
     assert.match(renderMarkup(asideRow(document, '110', {})), /aria-label="[^"]+ — 110 — related, not drawn here"/);
   });
 
+  it('tags an issue the order does not place as a node does: its priority, or its number alone, never "Related" (Design q351)', () => {
+    // "A neighbour outside the order takes its reason as its plain tag ... One with no priority and
+    // no reason shows its number alone, as a node does." 110 declares P3 and has no reason.
+    const aside = row(markup, '110');
+    assert.equal(aside.includes('>Related<'), false, 'the row was tagged "Related"');
+    assert.equal(aside.includes('data-hold="related"'), false);
+    assert.match(aside, />P3</);
+    const bare = normalizeDocument({
+      ...fixtureDocument,
+      issues: fixtureDocument.issues.map((issue) => (issue.key === '110' ? { key: '110', title: issue.title, open: true } : issue)),
+    }).document;
+    const numberAlone = renderMarkup(listedRowsScene(bare, ['110'], { label: 'neighbours' }).root);
+    assert.equal(numberAlone.includes('ig-badge'), false, 'a row with no priority and no reason carried a tag');
+    assert.match(numberAlone, /#110/);
+    // The order's footer draws the same row, with the same tag.
+    assert.equal(renderMarkup(asideRow(document, '110', {})).includes('>Related<'), false);
+    // A reason is the tag where there is one: the excluded duplicate.
+    assert.match(row(markup, '106'), />Duplicate</);
+  });
+
+  it('marks the selected relationship’s row as the order marks a selected row, and only that row (Design q349)', () => {
+    const selected = renderMarkup(listedRowsScene(document, keys, { label: 'neighbours', selected: '104' }).root);
+    assert.match(row(selected, '104'), /aria-current="true"/);
+    for (const key of ['102', '101', '105', '106', '110']) assert.match(row(selected, key), /aria-current="false"/, key);
+    assert.equal(markup.includes('aria-current="true"'), false, 'a list with no selected row marked one');
+  });
+
   it('leaves the order’s own rows naming their relationships', () => {
     assert.ok(edgeBadgesIn(render()).length > 0);
   });

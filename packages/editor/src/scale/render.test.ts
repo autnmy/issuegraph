@@ -39,6 +39,7 @@ describe('the three tiers render', () => {
   it('draws what surrounds the selection, and hands the viewer its legend switch (#303)', () => {
     const document = relatedDocument(10);
     const legendSwitch = {
+      kind: 'switch' as const,
       label: 'kinds to draw',
       command: 'legend-kind',
       drawn: '2 of 2',

@@ -161,8 +161,8 @@ export interface HostState {
   readonly shownGroups: readonly string[];
   /**
    * The kinds the reader switched on or off in the legend, away from where
-   * they start for this selection (past 8 relationships, blocked-by alone, or
-   * the first kind the selection has in the legend's order). See
+   * they start for this selection (past 8 relationships with two kinds or
+   * more that switch, the first of them in the legend's order). See
    * `drawnKinds`. Cleared when the selection moves, as `shownGroups` is: the
    * next issue's kinds start over.
    */
@@ -966,9 +966,9 @@ function controlled(
       return value === undefined || !isNarrowTab(value)
         ? unclaimed(state)
         : settled({ ...state, ...pressNarrowTab(value, state.canvas) });
-    // The legend's switch: each press flips one kind. A kind the canvas never
-    // draws (decomposed-from) or always draws (together-with, the unit's
-    // region) is no switch, so a press naming it is somebody else's.
+    // The legend's switch: each press flips one kind. A kind the canvas
+    // always draws (together-with, the unit's region) is no switch, so a press
+    // naming it is somebody else's.
     case 'legend-kind':
       return value === undefined || !isEdgeField(value) || !SWITCHABLE_KINDS.includes(value)
         ? unclaimed(state)
