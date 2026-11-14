@@ -1,0 +1,44 @@
+{
+  "kind": "complete",
+  "summary": {
+    "subject": "test(editor): trim the narrow-rule test copies to what they use",
+    "body": "Each standalone copy carried the whole mount.test.ts header, and its unused imports and helpers failed the editor typecheck. Each now keeps only what its one test reaches."
+  },
+  "commitConvention": "conventional",
+  "repositorySuite": "ran-in-part",
+  "prBody": {
+    "what": "Below 640 pixels wide, the standalone viewer and the editor workspace now keep the selection to one issue. When either one mounts or is resized narrower than 640, a set of issues is cut to the issue the reader added last. A Cmd-click or Shift-click there leaves only the clicked issue, and widening again brings nothing back, because the stored selection itself changed. Each mount measures only its own box: mountViewer measures the container it was given, through a new optional getBoundingClientRect on MountElement, and mountWorkspace measures the element the host passes in. A box that measures 0 by 0, or one that cannot be measured, reduces nothing. Hosts hear about a reduction once, through the existing onSelectionChange (and onSelect in the viewer). SpecDocument gains an optional defaultView, and the test document double gains a settable one with a fake resize observer. The viewer README and CHANGELOG state the rule.",
+    "why": "The editor already switches to a one-view layout under 640, and the viewer already exports the narrow-box test, but both mounts kept and drew a set of several issues at any width. On a phone a reader could build a selection they could not see or act on. Applying the rule inside each mount, through the selection writes and the notice point that already exist, means a host sees one ordinary selection change and needs no narrow-width logic of its own.",
+    "approach": "Each mount keeps one narrow flag, decided only by isNarrowBox, and passes every selection write through the existing limit-to-one rule while it is set. The viewer reduces at the head of draw(), which every writer reaches, so a mount-time reduction is reported during mountViewer before the handle returns. The editor reduces in applyResult, so handle.state is exact before the coalesced render. The editor measures the host's element, not its .ig-mount wrapper, so with host padding its container-query layout can switch at a slightly different width. Each mount takes its resize observer from its element's own document, ownerDocument.defaultView.ResizeObserver; in a browser that is the same constructor the editor's existing rail observer uses, which still reads the global and is left as it is. Measuring and watching are separate, so a document with no observer still gets the reduction at mount. A resize in the viewer puts focus back on the redrawn row only when focus was inside it.",
+    "testPlan": "Viewer tests cover a narrow seeded set reduced at mount with no observer or a null view, a live set shrinking from 640 to 639, 640 and an all-zero box keeping the set, growing back restoring nothing, clicks while narrow, a missing measure, an unknown last key, one notice per reduction, no global observer, focus across a resize, and silence after destroy. Editor tests repeat these with a stubbed root box, with and without an observer on the jsdom window. The named viewer and editor test files passed under node --test (exit 0), as did pnpm run lint, pnpm run check:isolation and tsc on each package. The root npm test was not run here; CI runs it.",
+    "risks": "The editor measures the host's element while its layout switches on a container query over its own wrapper, so a host that pads that element can see the one-issue rule start a few pixels away from the tab layout. A viewer host that relied on keeping a set selected in a narrow container loses it once the container measures under 640.",
+    "shape": {
+      "complexity": "added",
+      "note": "Neither mount applied a width rule before, so a narrow flag and a resize watch had to be added to each; the reduction itself reuses limit-to-one.",
+      "ways": { "before": 0, "after": 2 },
+      "places": { "before": 0, "after": 2 }
+    }
+  },
+  "riskClaims": [
+    {
+      "claim": "Trimming the standalone editor test copies changed no test body or assertion; only unused imports and unused helper declarations were removed.",
+      "evidenceKind": "diff-read",
+      "evidence": "git diff -U0 on packages/editor/src/workspace/mount.5.test.ts to mount.13.test.ts: the only added line in each is the narrowed node:test import; the same 15 test titles passed before and after the trim."
+    }
+  ],
+  "testChanges": [
+    {
+      "path": "packages/editor/src/workspace/mount.test.ts",
+      "reason": "The shared mounted() helper gains an optional beforeMount hook, called with the jsdom window just before mountWorkspace, so a test can stub the root element's box or the window's ResizeObserver; no existing test changed.",
+      "noExpectationMoved": true,
+      "examples": []
+    },
+    {
+      "path": "packages/viewer/src/mount.test.ts",
+      "reason": "Adds tests for the under-640 rule, the resize observer taken from the container's document, and focus across a resize reduction; no existing test changed.",
+      "noExpectationMoved": true,
+      "examples": []
+    }
+  ],
+  "reason": null
+}
