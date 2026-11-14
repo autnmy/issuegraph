@@ -1761,6 +1761,12 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // element is not assembled from optional parts: `isolatedSpec` returns
         // null rather than an empty husk, so anything found here has content.
         const isolated = canvas.querySelector('.ig-ladder-isolated');
+        // §17d'S FINDINGS PANEL SURVIVES TOO. It is an overlay drawn in THIS
+        // zone (RULINGS.md §3: over the canvas, anchored to the header count),
+        // so the assignment below deleted it and the header's problem count
+        // opened nothing in tree mode, at every width. It is kept whole, as the
+        // isolated list is, and put back last so it still floats over the tree.
+        const findings = canvas.querySelector('.ig-audit-overlay');
         canvas.innerHTML = renderViewer(withoutChrome(viewer), {
           projection: 'tree',
           theme: resolved,
@@ -1796,6 +1802,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // the rail drew a second one beside the one on screen.
         surface.firstElementChild?.setAttribute('data-canvas-legend', 'drawn');
         if (isolated !== null) canvas.append(isolated);
+        if (findings !== null) canvas.append(findings);
         if (toolbar !== null && toolbar.childElementCount > 0) canvas.prepend(toolbar);
         const states = new Map(
           overlaysFor(viewer.edges, writeStates, selectedEdgeId(state.selection)).map((edge) => [edge.id, overlayFor(edge).attribute]),
