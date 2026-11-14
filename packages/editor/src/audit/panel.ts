@@ -5,13 +5,13 @@
  * left-bar on an affected rail row. Neither says what was found. This module
  * draws the list, so a reader who sees a count has somewhere to read it.
  *
- * ## Three classes, not four — the fourth is `./refused.ts`'
+ * ## Four classes, one list
  *
- * `encoding-refused` is drawn OUTSIDE this panel, and SPEC is why: a refusal is
- * *"surfaced on the issue itself, because until it parses the issue has no
- * edges at all and would otherwise look simply unencoded"*. The other three
- * say something about a relationship that exists; that one says the
- * relationships cannot be read.
+ * `encoding-refused` used to be drawn OUTSIDE this panel, in its own block,
+ * because SPEC surfaces a refusal on the issue itself. Since #296 the export
+ * draws an unreadable relationship as one more note in this list, counted in
+ * the one count; `./refused.ts` supplies those notes (`refusedNotes`) and
+ * the issue's own row still carries its mark.
  *
  * ONE COUNT, SINCE #296. This panel's title counted its own cards while the
  * header counted every finding, so the two disagreed by the unreadable ones.
