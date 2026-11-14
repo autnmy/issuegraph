@@ -228,6 +228,14 @@ export const workspaceStylesheet = `
   font-size: var(--ig-font-size-small);
 }
 
+/* ONE SIZE ON THE LINE (#254 design read): the export draws the counts and the
+   freshness as one muted span ("312 open, 64 with relationships, as of 2m
+   ago" in its words), so the freshness takes the body size beside the counts. It stays out
+   of the counts rule because a time takes no tabular figures. */
+.ig-workspace-freshness {
+  font-size: var(--ig-font-size);
+}
+
 /* BUT THE PAIR IS A COUNT, AND A COUNT IS BODY TEXT. It takes the body size
    with tabular figures, as every count both packages draw does; quiet is the
    muted colour above, not a smaller size. Its two numbers are .ig-workspace-count

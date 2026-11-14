@@ -170,6 +170,8 @@ export const scaleLadderStylesheet = `
   font-family: var(--ig-font-ui);
   font-size: var(--ig-font-size);
   font-variant-numeric: tabular-nums;
+  /* Medium, as the export's group count "38 issues" is (#254 design read). */
+  font-weight: var(--ig-weight-medium);
   color: var(--ig-text);
 }
 

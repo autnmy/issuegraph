@@ -42,7 +42,9 @@ export const auditStylesheet = `
   align-items: center;
   display: inline-flex;
   font-family: var(--ig-font-ui);
-  font-size: var(--ig-font-size-small);
+  /* The body size, so the problems word reads at the size of its count (#254
+     design read): the export draws "2 problems to fix" at one size. */
+  font-size: var(--ig-font-size);
   gap: var(--ig-space-tight);
 }
 
