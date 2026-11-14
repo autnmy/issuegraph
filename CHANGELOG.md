@@ -4,7 +4,7 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
-- **`@issuegraph/viewer` `0.16.1`: an issue-number link is underlined at rest.** **No API change.** `.ig-link` sat in its row's line in the line's own ink with the underline on hover only, so colour alone told it apart, and a host's enforced accessibility audit (axe `link-in-text-block`) refused it on the grooming tree rows. It now draws `text-decoration: underline` at rest, offset by `--ig-space-micro`, and keeps the accent on hover. The board draws the rule on hover only; the audit wins, as the host's own in-text links already do. Pinned in the viewer sheet test.
+- **`@issuegraph/viewer` `0.16.1`: an issue-number link is underlined at rest.** **No API change.** `.ig-link` sat in its row's line in the line's own ink with the underline on hover only, so colour alone told it apart, and a host's enforced accessibility audit (axe `link-in-text-block`) refused it on the grooming tree rows. It now draws `text-decoration: underline` at rest in the hairline colour (`--ig-line`), offset by `--ig-space-micro`, and on hover takes the accent with the rule in the link's own ink, as the board's inline link does. The board draws the rule on hover only; the audit wins, as the host's own in-text links already do. Pinned in the viewer sheet test.
 
 ### Released: store `0.3.0`, viewer `0.16.0`, editor `0.29.0` (2026-11-14)
 

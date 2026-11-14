@@ -1135,11 +1135,15 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 .ig-link {
   color: inherit;
   text-decoration: underline;
+  text-decoration-color: var(--ig-line);
   text-underline-offset: var(--ig-space-micro);
 }
 
+/* The rule takes the line's own ink under the pointer, as the board's inline
+   link does; at rest it is the hairline colour. */
 .ig-link:hover {
   color: var(--ig-accent);
+  text-decoration-color: currentColor;
 }
 
 /* THE PROVENANCE LINE IS NOT MUTED. It is the answer to "why is this here",

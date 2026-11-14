@@ -1505,5 +1505,8 @@ describe('an issue-number link in running text', () => {
     assert.match(rest[1] ?? '', /text-decoration: underline;/);
     assert.match(rest[1] ?? '', /text-underline-offset: var\(--ig-space-micro\);/);
     assert.equal(/text-decoration: none/.test(rest[1] ?? ''), false, 'the link lost its rest underline');
+    // The rule is the hairline at rest and the link's own ink on hover, as the board draws it.
+    assert.match(rest[1] ?? '', /text-decoration-color: var\(--ig-line\);/);
+    assert.match(viewerStylesheet, /\.ig-link:hover \{[^}]*text-decoration-color: currentColor;/);
   });
 });
