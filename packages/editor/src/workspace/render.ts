@@ -612,6 +612,16 @@ export interface NarrowWords {
   readonly closeSheet: string;
   /** What the Related groups list says while nothing is selected. */
   readonly noSelection: string;
+  /** Labels the Related groups search field. */
+  readonly searchRelated: string;
+  /**
+   * Says how many matches the Related groups list left out past its 60-row
+   * cut: *"12 more — narrow the search"*. A function for the reason
+   * `filteredDenominator` is one: the count sits inside the sentence.
+   */
+  readonly omitted: (count: number) => string;
+  /** What the Related groups list says when a search matched nothing. */
+  readonly noMatch: string;
 }
 
 export interface RecoveryWords {
@@ -1103,7 +1113,9 @@ function zoneIds(surfaceId: string | undefined): Readonly<Record<Zone, string>> 
 }
 
 /** The zone each narrow tab shows, and the word that names it. */
-const NARROW_TAB_PARTS: Readonly<Record<NarrowTab, { readonly zone: Zone; readonly word: keyof NarrowWords }>> =
+const NARROW_TAB_PARTS: Readonly<
+  Record<NarrowTab, { readonly zone: Zone; readonly word: 'order' | 'related' | 'subIssues' }>
+> =
   Object.freeze({
     order: { zone: 'rail', word: 'order' },
     related: { zone: 'canvas', word: 'related' },
@@ -1807,11 +1819,11 @@ function relatedRowsSpec(rows: readonly InspectorRelationship[], subject: string
 /**
  * The Related groups search. The input sits inside its label, so the two are
  * associated without an `id`, for the reason `scale/render.ts`'s `searchSpec`
- * gives. Named by the tab's own word: the host words hold no search label.
+ * gives. Named by the host's own search label.
  */
 function relatedSearchSpec(query: string, words: NarrowWords): ElementSpec {
   return element('label', { class: 'ig-related-search' }, [
-    words.related,
+    words.searchRelated,
     element('input', {
       type: 'search',
       'data-ig-command': 'related-query',
@@ -1835,6 +1847,18 @@ function relatedGroupSpec(field: EdgeField, count: number, open: boolean): Eleme
     },
     [...glyphAndLabel(treatment.glyph, labelFrom(treatment, true)), ' ', element('span', {}, [String(count)])],
   );
+}
+
+/**
+ * What the list says under its rows: that a search matched nothing, or how
+ * many matches the 60-row cut left out. A live status, so a reader using a
+ * screen reader hears the count change as they type. `null` when neither
+ * holds, so a list that shows everything says nothing extra.
+ */
+function relatedNoticeSpec(view: Extract<RelatedListView, { kind: 'grouped' }>, words: NarrowWords): ElementSpec | null {
+  if (view.noMatch) return element('p', { class: 'ig-related-empty', role: 'status' }, [words.noMatch]);
+  if (view.omitted > 0) return element('p', { class: 'ig-related-omitted', role: 'status' }, [words.omitted(view.omitted)]);
+  return null;
 }
 
 /**
@@ -1888,11 +1912,14 @@ function relatedListParts(
             relatedGroupSpec(group.field, group.count, group.open),
             group.open ? search : null,
             group.open ? relatedRowsSpec(view.rows, subject) : null,
+            group.open ? relatedNoticeSpec(view, words.narrow) : null,
           ]),
         ),
       );
       if (open) return [groups];
-      return [search, view.groups.length > 0 ? groups : relatedRowsSpec(view.rows, subject)];
+      return view.groups.length > 0
+        ? [search, groups]
+        : [search, relatedRowsSpec(view.rows, subject), relatedNoticeSpec(view, words.narrow)];
     }
   }
 }

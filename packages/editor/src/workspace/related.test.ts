@@ -265,3 +265,19 @@ it('R13 relatedListView: an end whose title is empty is still found by its key',
   assert.ok(view.kind === 'grouped', `expected the grouped list, got ${view.kind}`);
   assert.deepEqual(view.rows.map(drawnEnd), ['i0200']);
 });
+
+it('says a search matched nothing in the open group and in place of the closed groups, and nothing otherwise', () => {
+  const inGroup = relatedListView(hub(240), SUBJECT, { group: 'serialize-with', query: 'no-such-issue' });
+  assert.ok(inGroup.kind === 'grouped');
+  assert.equal(inGroup.noMatch, true);
+  assert.deepEqual(inGroup.rows, []);
+  const top = relatedListView(hub(301), SUBJECT, { group: null, query: 'no-such-issue' });
+  assert.ok(top.kind === 'grouped');
+  assert.equal(top.noMatch, true);
+  // No query, a matching query, and closed groups with no query all say nothing.
+  for (const state of [{ group: null, query: '' }, { group: null, query: 'issue' }, { group: 'serialize-with' as const, query: '' }]) {
+    const view = relatedListView(hub(301), SUBJECT, state);
+    assert.ok(view.kind === 'grouped');
+    assert.equal(view.noMatch, false, JSON.stringify(state));
+  }
+});

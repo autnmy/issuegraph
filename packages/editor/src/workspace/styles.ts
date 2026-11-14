@@ -1680,7 +1680,10 @@ ${heldRailDeclarations}
   font-size: var(--ig-font-size-small);
 }
 
-.ig-related-empty {
+/* The list's own sentences: nothing matched, or how many the 60-row cut left
+   out. Both are muted, at the size of the group counts. */
+.ig-related-empty,
+.ig-related-omitted {
   margin: 0;
   color: var(--ig-text-muted);
   font-size: var(--ig-font-size-small);
