@@ -195,6 +195,9 @@ describe('the refresh control reaches the host', () => {
     // own chrome, `Element` for the click target test — so the double supplies them.
     const previous = { document: globalThis.document, window: globalThis.window, Element: globalThis.Element };
     Object.assign(globalThis, { document: win.document, window: win, Element: win.Element });
+    // TORN DOWN EVEN WHEN AN ASSERTION FAILS: the sandbox runs a clock timer,
+    // and a failure that skipped the teardown left the process running forever.
+    let teardown: (() => void) | undefined;
     try {
       const byId = <T extends HTMLElement>(id: string, kind: new () => T): T => {
         const found = win.document.getElementById(id);
@@ -237,6 +240,7 @@ describe('the refresh control reaches the host', () => {
         // A fast tick, so the clock-only redraw is observable within the test.
         { clock: () => current, tickMs: 5 },
       );
+      teardown = () => handle.destroy();
       const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
       await settle();
       await settle();
@@ -253,7 +257,8 @@ describe('the refresh control reaches the host', () => {
       // notifies its subscribers before `hydrate()` resolves, so without the
       // mount's own redraw the drawn stamp was one read behind.
       assert.equal(stamp(), stampOf(OBSERVED));
-      assert.equal(elapsed(), '499 · Review · 12m');
+      // The identity carries its "#" since #296.
+      assert.equal(elapsed(), '#499 · Review · 12m');
 
       // RE-QUERIED PER CLICK: every redraw rebuilds the control, so a reference
       // taken once would dispatch into a detached node after the first read.
@@ -269,7 +274,7 @@ describe('the refresh control reaches the host', () => {
       assert.equal(hydrations, 2, 'the click did not re-read the mirror');
       assert.equal(stamp(), stampOf(current), 'the drawn stamp is not the newest read');
       // The job started once, at mount; a refresh does not wind it back.
-      assert.equal(elapsed(), '499 · Review · 22m');
+      assert.equal(elapsed(), '#499 · Review · 22m');
       const landed = current;
 
       // A READ THAT FAILED IS NOT A READ. The store keeps the last good document
@@ -315,13 +320,15 @@ describe('the refresh control reaches the host', () => {
       await settle();
       assert.equal(win.document.querySelector('#workspace .ig-workspace-freshness')?.getAttribute('data-stale'), 'true', 'the stamp never went stale on its own');
       assert.equal(stamp(), fresh, 'a clock tick re-stamped the read');
-      handle.destroy();
+      teardown?.();
+      teardown = undefined;
       // TORN DOWN, NO TIMER: a later tick draws nothing.
       const after = win.document.querySelector('#workspace .ig-workspace-freshness')?.textContent;
       current = new Date(current.getTime() + 60_000);
       await new Promise((resolve) => setTimeout(resolve, 20));
       assert.equal(win.document.querySelector('#workspace .ig-workspace-freshness')?.textContent, after);
     } finally {
+      teardown?.();
       Object.assign(globalThis, previous);
       win.close();
     }
