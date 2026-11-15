@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import { EDGE_FIELDS } from '@issuegraph/core';
 
-import { EDGE_TREATMENTS, dashArrayFor, labelFrom, treatmentFor } from './vocabulary.ts';
+import { EDGE_TREATMENTS, dashArrayFor, labelFrom, phraseFrom, treatmentFor } from './vocabulary.ts';
 
 describe('the edge vocabulary', () => {
   it('treats every relationship the format declares', () => {
@@ -73,8 +73,23 @@ describe('labelFrom words an edge from the end the reader stands at', () => {
       const treatment = treatmentFor(field);
       assert.equal(labelFrom(treatment, true), treatment.label);
       assert.notEqual(labelFrom(treatment, false), treatment.label);
-      assert.equal(labelFrom(treatment, false), treatment.reverseLabel);
+      assert.equal(labelFrom(treatment, false), treatment.reverseLabel ?? null);
     }
+  });
+
+  it('#308 speaks RULES words everywhere, one set for rows, the Inspector and the legend', () => {
+    const phrases = EDGE_FIELDS.map((field) => {
+      const treatment = treatmentFor(field);
+      return [field, phraseFrom(treatment, true, '#2240'), phraseFrom(treatment, false, '#2250')];
+    });
+    assert.deepEqual(phrases, [
+      ['blocked-by', 'is blocked by #2240', 'blocks #2250'],
+      // Read from the parent, a sub-issue is the Sub-issues tree's, never a relationship.
+      ['decomposed-from', 'was decomposed from #2240', null],
+      ['duplicate-of', 'is a duplicate of #2240', '#2250 is a duplicate of this'],
+      ['serialize-with', 'serializes with #2240', 'serializes with #2250'],
+      ['together-with', 'goes together with #2240', 'goes together with #2250'],
+    ]);
   });
 
   it('gives a symmetric edge one word at both ends', () => {

@@ -113,7 +113,7 @@ export type { EdgeDash, EdgeTerminal, EdgeTreatment, OrderingEffect } from './vo
 // the duplicate when the other issue is. Publishing the treatment's fields and
 // withholding the rule that reads them is what put two copies of it here once
 // already.
-export { EDGE_TREATMENTS, dashArrayFor, labelFrom, legendLabelFrom, treatmentFor } from './vocabulary.ts';
+export { EDGE_TREATMENTS, dashArrayFor, labelFrom, otherFirst, phraseFrom, treatmentFor } from './vocabulary.ts';
 
 // `relatedKeys` IS WHAT THOSE TWO NUMBERS COUNT, and it travels with them: the
 // editor's scale ladder decides the same tiers against the same constants, so it

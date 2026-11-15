@@ -72,7 +72,7 @@ import {
   identity,
   issueNumber,
   labelFrom,
-  legendLabelFrom,
+  otherFirst,
   listedRowsScene,
   normalizeDocument,
   renderMarkup,
@@ -1901,21 +1901,20 @@ function relationshipDescription(
   // are not always the same one.
   const reference = (ref: string, role?: 'from' | 'to'): ElementSpec =>
     element('span', { class: 'ig-relationship-ref', 'data-ig-role': role }, [ref]);
-  return [
-    element(
-      'span',
-      { class: 'ig-relationship-kind' },
-      // LAYER 1's PAIRING, not a second one. The glyph is one of the four
-      // channels the colour-blind-safety claim rests on and is
-      // `aria-hidden` because it announces as a character description;
-      // the word beside it is what a reader hears. A local copy of that
-      // arrangement is free to drop the second half.
-      glyphAndLabel(treatment.glyph, labelFrom(treatment, outgoing)),
-    ),
-    ...(subject === null
-      ? [reference(relationship.from, 'from'), reference(relationship.to, 'to')]
-      : [reference(outgoing ? relationship.to : relationship.from)]),
-  ];
+  // LAYER 1's PAIRING, not a second one. The glyph is one of the four
+  // channels the colour-blind-safety claim rests on and is `aria-hidden`
+  // because it announces as a character description; the word beside it is
+  // what a reader hears. `inspector.ts` leaves out the one end that reads no
+  // relationship (a parent's sub-issue), so the label is always there.
+  const kind = element(
+    'span',
+    { class: 'ig-relationship-kind' },
+    glyphAndLabel(treatment.glyph, labelFrom(treatment, outgoing) ?? treatment.label),
+  );
+  if (subject === null) return [kind, reference(relationship.from, 'from'), reference(relationship.to, 'to')];
+  const other = reference(outgoing ? relationship.to : relationship.from);
+  // "#2250 is a duplicate of this" names the other issue first (#308).
+  return otherFirst(treatment, outgoing) ? [other, kind] : [kind, other];
 }
 
 /**
@@ -2695,7 +2694,7 @@ function diffEdgeSpec(edge: StoredEdge): ElementSpec {
     // OUTGOING, because a diff row names the edge as the document stores it —
     // `from` then `to` — rather than from the point of view of a subject. There
     // is no subject here: the list is about the document, not about one issue.
-    element('span', { class: 'ig-relationship-kind' }, [labelFrom(treatmentFor(edge.kind), true)]),
+    element('span', { class: 'ig-relationship-kind' }, [treatmentFor(edge.kind).label]),
     element('span', { class: 'ig-id' }, [edge.from]),
     element('span', { class: 'ig-id' }, [edge.to]),
   ]);
@@ -3167,14 +3166,16 @@ function relationshipGroupSpec(
 }
 
 /**
- * A group's head words: the legend's phrase read from the subject's end, "Is
+ * A group's head words: the kind's phrase read from the subject's end, "Is
  * blocked by" and "Was decomposed from" as the key says them, and the reverse
  * phrase ("Blocks", "Is a duplicate of this") for a kind the subject receives
  * (RULES, Graphs, Dense neighbourhoods). One vocabulary, so never "Duplicated
  * by", and one spelling for the Inspector and the Related groups list.
  */
 function groupHeading(group: InspectorGroup): string {
-  const phrase = legendLabelFrom(treatmentFor(group.field), group.direction !== 'incoming');
+  const treatment = treatmentFor(group.field);
+  // `inspector.ts` groups no parent's sub-issues, the one end with no phrase.
+  const phrase = labelFrom(treatment, group.direction !== 'incoming') ?? treatment.label;
   return `${phrase.charAt(0).toUpperCase()}${phrase.slice(1)}`;
 }
 

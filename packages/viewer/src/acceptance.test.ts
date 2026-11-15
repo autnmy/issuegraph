@@ -274,8 +274,6 @@ describe('the public surface', () => {
       // failure is an INVERTED word rather than a missing one: an inbound
       // `duplicate-of` worded forwards asserts the reverse of the fact.
       'labelFrom',
-      // The legend's phrase from either end, which heads the Inspector's groups (#303).
-      'legendLabelFrom',
       // The order's rows for a list that stands in for the graph: the editor's
       // Related groups list draws a selection's neighbours with the rail's own
       // row rather than a second spelling of one (#303).
@@ -284,6 +282,10 @@ describe('the public surface', () => {
       'navigate',
       'nextSelection',
       'normalizeDocument',
+      // A phrase about one other issue and where its number goes ("#2250 is a
+      // duplicate of this"), for the Inspector row beside the order row (#308).
+      'otherFirst',
+      'phraseFrom',
       'provenanceClause',
       'recedingOf',
       'reconcile',
