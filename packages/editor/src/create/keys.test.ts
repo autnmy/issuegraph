@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
 import { EDGE_FIELDS } from '@issuegraph/core';
@@ -6,6 +7,28 @@ import { makeEdge } from '@issuegraph/store';
 
 import { type CreateInteraction, KIND_KEYS, type KeyboardContext, keyIntent } from './keys.ts';
 import { OBJECT, SUBJECT } from '../testing/picker.ts';
+
+/**
+ * Every {@link CreateInteraction}, exactly once (#180).
+ *
+ * `satisfies Record<CreateInteraction, true>` IS THE POINT. A list annotated
+ * `CreateInteraction[]` proves each entry is a state and nothing proves each
+ * state is an entry, so a sixth state left out of it would leave the reach
+ * matrix a column short with a green board. Here a missing state, or one the
+ * type does not have, is a compile error.
+ */
+const INTERACTION_SET = {
+  canvas: true,
+  'kind-chooser': true,
+  'target-search': true,
+  'add-control': true,
+  elsewhere: true,
+} satisfies Record<CreateInteraction, true>;
+
+const isInteraction = (key: string): key is CreateInteraction => key in INTERACTION_SET;
+
+/** The states, in the type's own order, for the matrix and the README pin. */
+const ALL_INTERACTIONS: readonly CreateInteraction[] = Object.keys(INTERACTION_SET).filter(isInteraction);
 
 const EMPTY: KeyboardContext = Object.freeze({
   focused: null,
@@ -471,13 +494,7 @@ describe('a control that draws a key is its own interaction, and the table says 
     ['Escape', ['canvas', 'kind-chooser', 'target-search']],
   ] as readonly (readonly [string, readonly CreateInteraction[]])[]);
 
-  const INTERACTIONS: readonly CreateInteraction[] = [
-    'canvas',
-    'kind-chooser',
-    'target-search',
-    'add-control',
-    'elsewhere',
-  ];
+  const INTERACTIONS = ALL_INTERACTIONS;
 
   /**
    * Every guard satisfied at once, so a `none` in the matrix below is always the
@@ -559,5 +576,28 @@ describe('a control that draws a key is its own interaction, and the table says 
     assert.deepEqual(keyIntent({ key: 'r' }, context({ interaction: 'add-control' })), {
       kind: 'none',
     });
+  });
+});
+
+describe('the editor README documents the interaction set the code has (#180)', () => {
+  // The integration guide is a hand-written copy of the set, and it went stale
+  // once (#179): a host wired from it kept reporting `elsewhere` for a state
+  // the code had added. Read against the compile-time-complete set above.
+  const readme = readFileSync(new URL('../../README.md', import.meta.url), 'utf8');
+
+  it("lists exactly the code's states in the state table", () => {
+    const start = readme.indexOf('| state | what reaches the map |');
+    assert.notEqual(start, -1, 'the README has no state table');
+    const end = readme.indexOf('\n\n', start);
+    const table = readme.slice(start, end === -1 ? undefined : end);
+    const rows = [...table.matchAll(/^\| `([a-z-]+)` \|/gm)].map((match) => match[1]);
+    assert.deepEqual([...rows].sort(), [...ALL_INTERACTIONS].sort());
+  });
+
+  it("names exactly the code's states in the activeInteraction() example", () => {
+    const comment = /\/\/ ('[a-z-]+'(?: \| '[a-z-]+')*)\s*\n\s*interaction: activeInteraction\(\)/.exec(readme);
+    assert.ok(comment !== null, 'the README example lists no states above activeInteraction()');
+    const named = [...(comment[1] ?? '').matchAll(/'([a-z-]+)'/g)].map((match) => match[1]);
+    assert.deepEqual([...named].sort(), [...ALL_INTERACTIONS].sort());
   });
 });
