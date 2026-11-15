@@ -4,6 +4,9 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/editor` `0.43.1`: the open work-order panel and the audit overlay stand on the card's ground, `--ig-bg` (#340).** **No API change.** Both painted `--ig-surface`, which is also the ground of a filled control and a selected tab, and a host may map that one to a translucent fill (Descant's `fill-strong` is 8% ink), so the graph's legend and the canvas zone's tabs read through the open panel. The board draws an overlay opaque, on card. `--ig-surface` keeps every filled-control use.
+  - **Pinned** in `workspace/overlay-ground.test.ts`. Also released as `0.42.1` from the `0.42` line for Descant's pin.
+
 - **`@issuegraph/editor` `0.43.0`: the workspace zones are fixed at 336 and 320 px and no longer follow `--ig-char-width` (#253; the redesign tracker #248).** Additive: `ZONE_WIDTHS`, `ZONES_FIT` and `GRAPH_FOLDS_BELOW` are exported from the workspace styles.
   - **Fixed zones.** The order track is `336px` and the Inspector `320px` in every band, the folded panel and the fallback grid, where they were 43 and 41 times `--ig-char-width`. A theme with wider characters used to widen both and squeeze the graph between them.
   - **Thresholds from the zones.** The wide band starts at `ZONES_FIT` (336 + 480 + 320 + the two hairlines = 1138), read from the constants rather than written twice. Below `GRAPH_FOLDS_BELOW` (800, Design's number from #313) the graph folds.
