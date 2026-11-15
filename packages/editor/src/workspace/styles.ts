@@ -686,8 +686,8 @@ export const workspaceStylesheet = `
   max-height: calc(100% - var(--ig-space-tight) * 2);
   /* AN OVERLAY STANDS ON THE CARD'S OWN GROUND, --ig-bg (#340). It was
      --ig-surface, which is also the ground of a filled control and a selected
-     tab, and a host may map that one to a translucent fill (Descant's
-     fill-strong is 8% ink), so the panel showed the graph through it. The
+     tab, and a host may map that one to a translucent fill (one host's is 8%
+     ink), so the panel showed the graph through it. The
      board draws an overlay opaque, on card; the elevation sets it apart. */
   background: var(--ig-bg);
   border: var(--ig-stroke) solid var(--ig-line);
