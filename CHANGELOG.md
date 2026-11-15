@@ -4,6 +4,12 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/editor` `0.39.0`: a log row reads as the relationship it leaves, in the board's words (#304; the redesign lead's ruling q322, and build-136 on delete, flip and retype).** **Breaking for a host: `LogWords.ops`, `LogWords.kinds` and `LogWords.becomes` are removed; `notSaved`, `removing` and `notRemoved` are new required words.**
+  - **No operation word.** A saving write reads "#2252 is blocked by #2240 saving": the two ends through `issueNumber`, with their "#", and the relationship in the viewer's own phrase (`treatmentFor(kind).label`, the Inspector's), so the log and the graph never word one edge two ways. The state word follows the relationship.
+  - **The relationship it leaves.** A flip reads as the edge turned round; a retype as the edge under its new kind. A delete leaves none, so it names the edge it takes out, then "removing".
+  - **A write that did not save** reads the same line with "not saved" (a delete: "not removed") in the failed state's colour, above its card.
+  - **Pinned** in the editor's render and log tests.
+
 - **`@issuegraph/editor` `0.38.0`: the board's zones, and the order folds instead of the Inspector covering the graph (#313; Claude Design 7b8fcbc, RULES "The workspace"; build-136's ruling).** **Breaking for a host: `WorkspaceWords.workOrder`, `showWorkOrder` and `closeWorkOrder` are new required words.** Additive: `WorkspaceOptions.orderPanel`, `HostState.orderPanel`, the controls `order-open` and `order-close`, the root's `data-order-panel`.
   - **The board's zones.** The order is 336 (43 characters), the graph at least 480, the Inspector 320 (41), where they were 390 and 328. The three zones need 1138 (with their hairlines), so the layouts move from 1360 and 1120 to 1138 and 800.
   - **The order folds.** Narrower than 1138 and with something selected, the order folds into a 40 strip (40 | minmax(0, 1fr) | 320), so the graph keeps its room and nothing runs under the Inspector, which no longer lies over the canvas at any width. With nothing selected, or the Inspector dismissed, nothing folds: the order at 336, the graph the rest, no Inspector.

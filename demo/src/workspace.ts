@@ -256,22 +256,16 @@ export const WORKSPACE_WORDS: MountWords = {
     dismiss: 'Dismiss',
     direction: { up: 'up', down: 'down' },
   },
-  // THE LOG UNDER THE HEAD names each write still saving: what it does, then
-  // the issue that declares the edge, the kind in this host's words, and the
-  // issue at its other end.
+  // THE LOG UNDER THE HEAD names each unsettled write as the relationship it
+  // leaves, in the package's own phrase, then its state (#304): "#2252 is
+  // blocked by #2240 saving". A delete names the edge it takes out.
   log: {
     label: 'Saves',
-    saving: 'Saving',
+    saving: 'saving',
+    notSaved: 'not saved',
+    removing: 'removing',
+    notRemoved: 'not removed',
     show: 'Show',
-    ops: { create: 'adding', delete: 'removing', flip: 'reversing', retype: 'changing' },
-    becomes: 'to',
-    kinds: {
-      'blocked-by': 'blocked by',
-      'decomposed-from': 'split from',
-      'duplicate-of': 'duplicate of',
-      'serialize-with': 'one at a time with',
-      'together-with': 'together with',
-    },
   },
   // §17a's header: `312 open · 64 encoded` and `as of 14:32 ↻`. The numbers are
   // the package's and these are the nouns beside them.
