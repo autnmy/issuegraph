@@ -402,7 +402,7 @@ export const viewerStylesheet = `
 }
 
 /* THE ROW'S DENSITY IS READ FROM THIS BOX, AND THAT IS §17j's CLOSING RULE
-   RATHER THAN A PREFERENCE. The same row renders at 390px in the workspace
+   RATHER THAN A PREFERENCE. The same row renders at 336px in the workspace
    rail and at 330px in §18's settings rail, so it *"must take its width from
    its container and pick its drop step from that — not from a viewport media
    query, and not from a prop the host sets. A package that reads the window
@@ -861,7 +861,7 @@ export const viewerStylesheet = `
    CAN TAKE IT OVER. That is the whole posture of this package — sensible
    defaults, everything overridable — and it is why this number needed no
    ruling in the end. '17j' gives two anchors and no crossover: the workspace
-   rail is 390, §18's settings rail is 330 where steps 1-3 apply "by default",
+   rail is 336, §18's settings rail is 330,
    and §16a's panel, which keeps provenance inline, is wider than either and
    carries no published figure anywhere. 430 sits above the rail and below that
    panel. A host that does nothing gets it and gets correct behaviour; a host
@@ -869,7 +869,7 @@ export const viewerStylesheet = `
    deciding for them.
 
    SO THE OPEN QUESTION IS CLOSED RATHER THAN WAITING. An earlier revision of
-   this comment filed the distance between 390 and 430 as needing a width for
+   this comment filed the distance between the rail and 430 as needing a width for
    §16a's panel. It does not: a DEFAULT only has to be reasonable, and the
    figure would only have mattered if this were the single crossover every
    consumer had to live with. It is not, so it is not blocking.
@@ -885,11 +885,9 @@ export const viewerStylesheet = `
    a CSS limitation rather than a decision, and it is why the escape hatch below
    is a selector rather than a property.
 
-   '17k' MAKES THE LOWER ANCHOR EXACT, which is worth keeping. It fixes the
-   three workspace layouts under one rule — "the rail never yields" — so the
-   workspace draws its rail at 390 at every width it supports and no amount of
-   resizing moves it across this threshold. Before that it fell to 312 below
-   1360, so 430 had to clear two numbers and only one was '17j's. The editor's
+   THE LOWER ANCHOR IS EXACT, which is worth keeping. The editor fixes its
+   order zone at 336px at every width it is a zone (issue 253), so no amount of
+   resizing or theming moves the workspace rail across this threshold. The editor's
    sheet pins that relationship rather than restating it: see its test "keeps
    the workspace rail on the dense side of layer 1's crossover". */
 @container ig-rail (max-width: 430px) {

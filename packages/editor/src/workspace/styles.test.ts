@@ -23,7 +23,7 @@ import { ZONES, renderWorkspace } from './render.ts';
 import { reevaluateStylesheet } from '../reevaluate/styles.ts';
 import { renderScaleLadder } from '../scale/render.ts';
 import { scaleLadderStylesheet } from '../scale/styles.ts';
-import { workspaceStylesheet } from './styles.ts';
+import { GRAPH_FOLDS_BELOW, ZONES_FIT, ZONE_WIDTHS, workspaceStylesheet } from './styles.ts';
 import {
   ISSUE_NUMBER_BASE,
   ISSUE_NUMBER_TYPE,
@@ -109,7 +109,7 @@ function containerBlock(css: string, condition: string): string {
  * layout.
  */
 function layoutBands(css: string): { condition: string; tracks: string[] }[] {
-  return ['width >= 1138px', 'width < 1138px', 'width < 800px'].map((condition) => {
+  return [`width >= ${ZONES_FIT}px`, `width < ${ZONES_FIT}px`, `width < ${GRAPH_FOLDS_BELOW}px`].map((condition) => {
     const block = containerBlock(css, condition);
     // The base rule, alone or grouped with the selection's variant that a
     // narrower band has to answer on the same declaration (#313).
@@ -710,7 +710,14 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     //
     // Scoped to the parenthesised CONDITION only. A px in any declaration still
     // fails, which is the half that protects the theme contract.
-    const declarations = css.replaceAll(/@container[^{]*\{/g, '@container {');
+    // AND A SECOND, FOR EXACTLY THE ZONE WIDTHS (issue 253): the order and the
+    // Inspector tracks are fixed px so a theme's character width cannot move
+    // them, and only those values inside a track or inline-size declaration
+    // are exempt. Any other px still fails.
+    const zone = new RegExp(`\\b(?:${String(ZONE_WIDTHS.order)}|${String(ZONE_WIDTHS.inspector)})px\\b`, 'g');
+    const declarations = css
+      .replaceAll(/@container[^{]*\{/g, '@container {')
+      .replaceAll(/(grid-template-columns|inline-size):[^;]*;/g, (declaration) => declaration.replaceAll(zone, 'ZONE'));
     assert.equal(
       /\b\d+(\.\d+)?(px|rem|em|pt)\b/.test(declarations),
       false,
@@ -982,6 +989,25 @@ describe('the workspace stylesheet carries structure, never a value', () => {
    * built clean, looked right, and was found only by comparing the tracks
    * either side of a breakpoint. So the comparison is the test.
    */
+  it('fixes the zones in px and starts the wide band where they fit (issue 253)', () => {
+    // The board's zones, as exported constants, and the band thresholds read
+    // from them rather than written twice.
+    assert.deepEqual({ ...ZONE_WIDTHS }, { order: 336, graphMin: 480, inspector: 320 });
+    assert.equal(ZONES_FIT, 336 + 480 + 320 + 2, 'the wide band does not start where the three zones and two hairlines fit');
+    assert.ok(css.includes(`@container ig-workspace (width >= ${String(ZONES_FIT)}px)`));
+    assert.ok(css.includes(`@container ig-workspace (width < ${String(GRAPH_FOLDS_BELOW)}px)`));
+    // NO ZONE TRACK FOLLOWS THE CHARACTER WIDTH, so a theme with wider
+    // characters cannot widen the order or the Inspector and squeeze the graph.
+    const tracks = [...css.matchAll(/(grid-template-columns|inline-size):([^;]*);/g)].map((match) => match[2] ?? '');
+    assert.ok(tracks.some((track) => track.includes('336px')), 'no track draws the order at 336');
+    assert.ok(tracks.some((track) => track.includes('320px')), 'no track draws the Inspector at 320');
+    assert.equal(
+      tracks.some((track) => /--ig-char-width\)\s*\*\s*4[13]\b/.test(track)),
+      false,
+      'a zone track still follows the character width',
+    );
+  });
+
   it('folds the order to a 40 strip only where the zones do not fit and something is selected (#313)', () => {
     const bands = layoutBands(css);
     assert.equal(bands.length, 3, 'the sheet no longer declares three layouts');
@@ -992,9 +1018,9 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     }
     const [wide, middle, narrow] = bands;
     // THE BOARD'S ZONES: the order 336 (43 characters), the Inspector 320 (41).
-    assert.deepEqual(wide?.tracks, ['calc(var(--ig-char-width) * 43)', '1fr', 'calc(var(--ig-char-width) * 41)']);
+    assert.deepEqual(wide?.tracks, ['336px', '1fr', '320px']);
     // Below 1138 with nothing selected: the order at 336, the graph the rest, no Inspector.
-    assert.deepEqual(middle?.tracks, ['calc(var(--ig-char-width) * 43)', '1fr']);
+    assert.deepEqual(middle?.tracks, ['336px', '1fr']);
     // With a selection the order folds: 40 | minmax(0, 1fr) | 320.
     const folded = containerBlock(css, 'width < 1138px').match(
       /\.ig-workspace\[data-inspector='lifted'\]\s*\{[^}]*grid-template-columns:([^;]*);/,
@@ -1002,10 +1028,10 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     assert.ok(folded !== undefined, 'nothing folds the order around a selection');
     assert.deepEqual(
       folded.split('\n').map((line) => line.trim()).filter((line) => line !== ''),
-      ['calc(var(--ig-space-wide) * 2)', 'minmax(0, 1fr)', 'calc(var(--ig-char-width) * 41)'],
+      ['calc(var(--ig-space-wide) * 2)', 'minmax(0, 1fr)', '320px'],
     );
     // Below 800 the graph is the zone that folds, into its own 40 strip, and the order is 336 again.
-    assert.deepEqual(narrow?.tracks, ['calc(var(--ig-char-width) * 43)', 'calc(var(--ig-space-wide) * 2)', '1fr']);
+    assert.deepEqual(narrow?.tracks, ['336px', 'calc(var(--ig-space-wide) * 2)', '1fr']);
   });
 
   /**
@@ -1038,15 +1064,11 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     );
     assert.ok(Number.isFinite(crossover), 'layer 1 no longer steps the rail down at a threshold');
 
-    const charWidth = defaultTheme.metrics['--ig-char-width'];
-    assert.equal(typeof charWidth, 'number');
+    // THE RAIL IS FIXED IN PX (issue 253), so the check reads the track itself.
     for (const band of layoutBands(css)) {
-      const characters = Number(band.tracks[0]?.match(/\*\s*(\d+(?:\.\d+)?)\s*\)/)?.[1] ?? Number.NaN);
-      assert.ok(Number.isFinite(characters), `(${band.condition}) sizes the rail in something else`);
-      assert.ok(
-        characters * charWidth <= crossover,
-        `(${band.condition}) draws the rail at ${String(characters * charWidth)}, past layer 1's ${String(crossover)} crossover`,
-      );
+      const width = Number(band.tracks[0]?.match(/^(\d+(?:\.\d+)?)px$/)?.[1] ?? Number.NaN);
+      assert.ok(Number.isFinite(width), `(${band.condition}) sizes the rail in something else`);
+      assert.ok(width <= crossover, `(${band.condition}) draws the rail at ${String(width)}, past layer 1's ${String(crossover)} crossover`);
     }
   });
 
@@ -1092,7 +1114,7 @@ describe('the workspace stylesheet carries structure, never a value', () => {
   it('gives the wide layout two columns and no Inspector when nothing is selected (#330, the board\u2019s .no-insp)', () => {
     const wide = containerBlock(css, 'width >= 1138px');
     const tracks = wide.match(/\.ig-workspace\[data-inspector='empty'\]\s*\{[^}]*grid-template-columns:([^;]*);/)?.[1];
-    assert.equal(tracks?.trim(), 'calc(var(--ig-char-width) * 43) 1fr');
+    assert.equal(tracks?.trim(), '336px 1fr');
     assert.match(wide, /\.ig-workspace\[data-inspector='empty'\] \.ig-zone\[data-zone='inspector'\]\s*\{\s*display:\s*none;/);
     // A dismissed selection keeps its Inspector here (review-41, PR 333).
     assert.equal(/data-inspector='dismissed'/.test(wide), false, 'the wide layout hides a selected issue\u2019s Inspector');
@@ -1816,7 +1838,7 @@ describe('the layout under 640', () => {
     assert.equal(tracks.length, 1, `the under-640 layout draws ${String(tracks.length)} columns: ${tracks.join(' ')}`);
     assert.deepEqual(
       layoutBands(css).map((band) => band.condition),
-      ['width >= 1138px', 'width < 1138px', 'width < 800px'],
+      [`width >= ${ZONES_FIT}px`, `width < ${ZONES_FIT}px`, `width < ${GRAPH_FOLDS_BELOW}px`],
     );
   });
 
@@ -2291,7 +2313,7 @@ describe('the Inspector never lies over the graph (#313)', () => {
     assert.ok(panel !== undefined, 'the folded order has no panel');
     assert.match(panel, /grid-area: canvas;/);
     assert.match(panel, /justify-self: start;/);
-    assert.match(panel, /inline-size: calc\(var\(--ig-char-width\) \* 43\);/);
+    assert.match(panel, /inline-size: 336px;/);
     assert.match(panel, /box-shadow: var\(--ig-elevation-overlay\);/);
   });
 });
