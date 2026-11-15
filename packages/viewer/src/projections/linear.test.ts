@@ -841,7 +841,8 @@ describe('the order rows a list draws in place of the graph (#303)', () => {
 
 describe('a tracker hold that names who it is held on (#305)', () => {
   // Design q321 (issue-graph-states e1d0445, content.md f58baed): an issue assigned on the tracker keeps the
-  // plain tag "Assigned", followed by the assignee in muted text: "#2261 · Assigned · to maya-chen".
+  // plain tag "Assigned", followed by the assignee in muted text with no separator, as the board draws
+  // `<span class="tag plain">Assigned</span><span>to maya-chen</span>` (review-219 on PR 337).
   const assigned = {
     issues: [
       { key: '2261', title: 'Assigned work', open: true, priority: 2 as const },
@@ -878,10 +879,10 @@ describe('a tracker hold that names who it is held on (#305)', () => {
     cycles: [],
   };
 
-  it('draws the detail muted straight after the tag, as "· to maya-chen"', () => {
+  it('draws the detail muted straight after the tag, with no separator, as the board does', () => {
     assert.match(
       row(render(assigned), '2261'),
-      /<span class="ig-badge" data-hold="Assigned">Assigned<\/span><span class="ig-hold-detail">· to maya-chen<\/span>/,
+      /<span class="ig-badge" data-hold="Assigned">Assigned<\/span><span class="ig-hold-detail">to maya-chen<\/span>/,
     );
   });
 

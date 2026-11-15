@@ -2159,7 +2159,7 @@ describe('lines into and out of the selection share a trunk per kind and directi
 });
 
 describe('the graph footer, with a tracker hold that names who it is held on (#305)', () => {
-  // The graph draws its footer with the list's own row, so the board's "#2261 · Assigned · to maya-chen"
+  // The graph draws its footer with the list's own row, so the tag "Assigned" and its muted "to maya-chen"
   // reads the same under the canvas.
   const assigned: ViewerDocument = {
     issues: [
@@ -2189,7 +2189,7 @@ describe('the graph footer, with a tracker hold that names who it is held on (#3
       .split('<li ')
       .find((piece) => piece.includes('class="ig-footer-row"') && piece.includes('data-ig-key="2261"'));
     assert.ok(entry !== undefined, 'the held issue has no footer row');
-    assert.match(entry, /<span class="ig-badge" data-hold="Assigned">Assigned<\/span><span class="ig-hold-detail">· to maya-chen<\/span>/);
+    assert.match(entry, /<span class="ig-badge" data-hold="Assigned">Assigned<\/span><span class="ig-hold-detail">to maya-chen<\/span>/);
     assert.match(entry, /aria-label="[^"]* — Assigned on the tracker · to maya-chen"/);
   });
 });

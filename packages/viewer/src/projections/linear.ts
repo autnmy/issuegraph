@@ -504,10 +504,11 @@ export function footerRow(
     (hold): hold is Extract<ViewerHold, { family: 'tracker' }> =>
       hold.family === 'tracker' && hold.label !== undefined && hold.label !== '',
   );
-  // THE TAG'S CONTINUATION (#305): the host's words after the tag, "Assigned · to maya-chen". Only a
-  // labelled hold carries one, and a blank detail is no detail, as a blank label is no label.
+  // THE TAG'S CONTINUATION (#305): the host's words after the tag, drawn as the board draws them, a plain
+  // span with no separator (content.md: `<span class="tag plain">Assigned</span><span>to maya-chen</span>`).
+  // Only a labelled hold carries one, and a blank detail is no detail, as a blank label is no label.
   const detail = labelled?.detail === undefined || labelled.detail.trim() === '' ? null : labelled.detail;
-  // The name reads what the row draws: the reason, then the tag's continuation.
+  // The name reads the reason, then the tag's continuation, joined by " · " so a listener hears two phrases.
   const spoken = [because, detail].filter((part): part is string => part !== null && part !== '').join(' · ');
   return element(
     'li',
@@ -525,7 +526,7 @@ export function footerRow(
         ? null
         : element('span', { class: 'ig-badge', 'data-hold': labelled.label }, [labelled.label]),
       footerRelationships(document, slot.members, relationships),
-      detail === null ? null : element('span', { class: 'ig-hold-detail' }, [`· ${detail}`]),
+      detail === null ? null : element('span', { class: 'ig-hold-detail' }, [detail]),
     ),
   );
 }
