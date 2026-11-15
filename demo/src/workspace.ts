@@ -262,6 +262,7 @@ export const WORKSPACE_WORDS: MountWords = {
   log: {
     label: 'Saves',
     saving: 'Saving',
+    show: 'Show',
     ops: { create: 'adding', delete: 'removing', flip: 'reversing', retype: 'changing' },
     becomes: 'to',
     kinds: {

@@ -2043,6 +2043,19 @@
     {
       "zone": "header",
       "channel": "data-ig-command",
+      "control": "reveal-issue",
+      "target": "3",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {}
+    },
+    {
+      "zone": "header",
+      "channel": "data-ig-command",
       "control": "view-diff",
       "target": "m1",
       "value": null,

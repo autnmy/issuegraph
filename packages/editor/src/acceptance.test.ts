@@ -819,6 +819,7 @@ const WORKSPACE_WORDS: surface.WorkspaceWords = {
   log: {
     label: 'writes not yet settled',
     saving: 'still being written',
+    show: 'show',
     ops: { create: 'putting in place', delete: 'taking out', flip: 'turning around', retype: 'swapping the kind of' },
     becomes: 'so that it reads as',
     kinds: {
