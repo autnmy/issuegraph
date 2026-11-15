@@ -169,6 +169,7 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
     // hard-coded the frame's copy. The demo carries §17d's actual labels.
     remedies: {
       pickEdge: 'choose an edge',
+      openIssue: 'visit',
       removeEdge: 'drop it',
       keepAsHistory: 'leave it be',
       repoint: 'point it somewhere',

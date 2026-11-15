@@ -28,6 +28,7 @@
  */
 
 import type { EdgeId, GraphDocument, IssueRef, StoredEdge } from '@issuegraph/store';
+import { issueNumber } from '@issuegraph/viewer';
 
 /**
  * The four classes, in the order §17d states them — which is also the order
@@ -648,7 +649,7 @@ function cycleFindings(graph: AuditGraph): AuditFinding[] {
       finding(
         'cycle',
         members,
-        `${members.join(', ')} block each other in a loop, so none of them can start.`,
+        `${members.map(issueNumber).join(', ')} block each other in a loop, so none of them can start.`,
         // ASKED PER COMPONENT AND STILL A PASS-THROUGH. The reader decides
         // whether there IS a walk; this module neither computes nor
         // second-guesses that. Asking by KEY rather than by position is what
@@ -700,7 +701,7 @@ function staleBlockerFindings(
     // the field.
     if (!verdict.declarerEdgesRead) continue;
     const effective = verdict.effective;
-    const via = effective === edge.to ? '' : ` (via ${edge.to}, which duplicates it)`;
+    const via = effective === edge.to ? '' : ` (via ${issueNumber(edge.to)}, which duplicates it)`;
     // THE TWO ENDS ONLY — the effective canonical is named in `detail` and
     // deliberately NOT in `members`, which is the opposite of what
     // `deadDuplicateFindings` does, and the asymmetry is decided rather than
@@ -716,7 +717,7 @@ function staleBlockerFindings(
       finding(
         'stale-blocker',
         [edge.from, edge.to].sort(),
-        `${edge.from} is blocked by ${effective}${via}, which is closed, so it no longer blocks anything.`,
+        `${issueNumber(edge.from)} is blocked by ${issueNumber(effective)}${via}, which is closed, so it no longer blocks anything.`,
         null,
         // THE DECLARER'S EDGE, which is what the paragraph above already says
         // this finding's remedy sits on. Now it is carried rather than only
@@ -780,13 +781,13 @@ function deadDuplicateFindings(
     // `declarerLive`, and the asymmetry with the stale-blocker case above.
     if (!verdict.declarerLive || !verdict.knowable || !verdict.effectiveClosed) continue;
     const canonical = verdict.effective;
-    const via = canonical === edge.to ? '' : ` (through ${edge.to})`;
+    const via = canonical === edge.to ? '' : ` (through ${issueNumber(edge.to)})`;
     // `finding` deduplicates, so the same-spelling case stays two members.
     findings.push(
       finding(
         'dead-duplicate-ref',
         [edge.from, edge.to, canonical].sort(),
-        `${edge.from} is a duplicate of ${canonical}${via}, which is closed. Nothing tracks this work now.`,
+        `${issueNumber(edge.from)} is a duplicate of ${issueNumber(canonical)}${via}, which is closed. Nothing tracks this work now.`,
         null,
         // THE DECLARED `duplicate-of`, NOT the chain's end. `Repoint or clear`
         // acts on the edge the reader wrote; `canonical` may be several hops
@@ -825,7 +826,7 @@ function encodingRefusedFindings(refusals: readonly EncodingRefusal[]): AuditFin
       finding(
         'encoding-refused',
         [refusal.ref],
-        `${refusal.ref} has relationships that could not be read${because}. Fix them so they count.`,
+        `${issueNumber(refusal.ref)} has relationships that could not be read${because}. Fix them so they count.`,
       ),
     );
   }

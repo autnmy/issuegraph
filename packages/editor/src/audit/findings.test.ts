@@ -459,7 +459,8 @@ describe('a dead duplicate ref names the closed canonical it is about', () => {
     // it is the ref the author wrote. Without `2` the only carried member was
     // `a`, and the closed target's own row went unmarked.
     assert.deepEqual(found[0]?.members, ['2', 'a', 'acme/app#2']);
-    assert.match(found[0]?.detail ?? '', /a is a duplicate of 2 \(through acme\/app#2\)/);
+    // #300: a number carries its "#"; a cross-repo ref is printed as written.
+    assert.match(found[0]?.detail ?? '', /a is a duplicate of #2 \(through acme\/app#2\)/);
   });
 
   it('leaves the ordinary same-spelling case at two members — the control', () => {
