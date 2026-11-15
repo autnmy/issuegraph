@@ -222,8 +222,12 @@ export interface WorkspaceWords {
    * the word supplied here reads as a word.
    */
   readonly inspector: string;
-  /** The order's panel title where it folds, RULES' "Work order" (#313). */
+  /** The order zone's head title at every width, RULES' "Work order" (#313, #330). */
   readonly workOrder: string;
+  /** Follows the count of issues the order ranks in its head: "16 ranked" (#330). */
+  readonly workOrderRanked: string;
+  /** Follows the host's run cap in the order's head: "2 at a time" (#330). */
+  readonly workOrderAtATime: string;
   /** The folded order's strip button, "Show the work order": its name and title. */
   readonly showWorkOrder: string;
   /** The order panel's close button, "Close the work order": its name and title. */
@@ -1058,6 +1062,13 @@ export interface WorkspaceOptions {
    */
   readonly orderPanel?: boolean | undefined;
   /**
+   * How many runs the host works on at once in this repository, for the order
+   * head's "2 at a time" (#330): the repository's own limit, else the
+   * account's. `null` or absent when there is no limit at all, and the head
+   * then leaves that part out.
+   */
+  readonly runCap?: number | null | undefined;
+  /**
    * Take over §17j's rail density, instead of letting the rail's own box decide.
    *
    * FORWARDED, NOT INVENTED. `@issuegraph/viewer` owns the rule and the
@@ -1269,13 +1280,15 @@ function orderStripSpec(words: WorkspaceWords, open: boolean, railId: string): E
 }
 
 /**
- * The order panel's head where the order folds: "Work order", its count, and
- * a ghost close button, "Close the work order" (#313).
+ * The order zone's head at every width (#330): "Work order", then "16 ranked
+ * · 2 at a time", and a ghost close button, "Close the work order", which the
+ * sheet shows only on the folded panel (#313).
  */
-function orderHeadSpec(words: WorkspaceWords, ranked: number): ElementSpec {
+function orderHeadSpec(words: WorkspaceWords, ranked: number, runCap: number | null): ElementSpec {
+  const counts = [`${ranked} ${words.workOrderRanked}`, ...(runCap === null ? [] : [`${runCap} ${words.workOrderAtATime}`])];
   return element('div', { class: 'ig-order-head' }, [
     element('h2', { class: 'ig-order-title' }, [words.workOrder]),
-    element('span', { class: 'ig-order-count' }, [String(ranked)]),
+    element('span', { class: 'ig-order-count' }, [counts.join(' \u00b7 ')]),
     element(
       'button',
       {
@@ -4344,7 +4357,13 @@ export function renderWorkspace(
       'rail',
       ids.rail,
       [
-        renderMarkup(orderHeadSpec(options.words, document.order.slots.filter((slot) => slot.rank !== null).length)),
+        // THE ISSUES THE ORDER RANKS, every member of a ranked unit counted
+        // (Design, #330: "16 ranked counts the issues the order ranks").
+        renderMarkup(orderHeadSpec(
+          options.words,
+          document.order.slots.reduce((sum, slot) => sum + (slot.rank === null ? 0 : slot.members.length), 0),
+          options.runCap ?? null,
+        )),
         railSpacer(rail.before, 'before'),
         renderMarkup(markRailRows(railRender.scene.root)),
         railSpacer(rail.after, 'after'),

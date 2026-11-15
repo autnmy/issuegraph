@@ -280,3 +280,50 @@ describe('under 640 the workspace selection is one issue', () => {
     assert.equal(watch.disconnects, 1);
   });
 });
+
+describe('the order panel shuts when the order stops folding (#330; review-41 on PR 328)', () => {
+  // jsdom applies the sheet but no container query, so the strip computes to
+  // the base `display: none`: the order does not fold, as past 1138.
+  it('shuts an open panel on a resize to a width where the order no longer folds', async () => {
+    const { handle, click, rootWatches } = await mountNarrowRule({ box: { width: 1440, height: 900 } });
+    try {
+      click('1');
+      await flush();
+      handle.dispatch({ kind: 'control', name: 'order-open' });
+      await flush();
+      assert.equal(handle.state.orderPanel, true, 'the strip command did not open the panel');
+      soleRootWatch(rootWatches()).callback();
+      await flush();
+      assert.equal(handle.state.orderPanel, false, 'the panel stayed open where the order does not fold');
+      assert.deepEqual(handle.state.selection, { kind: 'issue', key: '1' }, 'shutting the panel moved the selection');
+    } finally {
+      handle.destroy();
+    }
+  });
+
+  it('keeps the panel open on a resize while the order still folds', async () => {
+    const { handle, click, rootWatches } = await mountNarrowRule({
+      box: { width: 1000, height: 900 },
+      // The fold block's answer, which jsdom cannot compute: the strip is drawn.
+      onWindow: (win) => {
+        const computed = win.getComputedStyle.bind(win);
+        Object.defineProperty(win, 'getComputedStyle', {
+          configurable: true,
+          value: (target: Element) =>
+            target.classList.contains('ig-order-strip') ? { ...computed(target), display: 'flex' } : computed(target),
+        });
+      },
+    });
+    try {
+      click('1');
+      await flush();
+      handle.dispatch({ kind: 'control', name: 'order-open' });
+      await flush();
+      soleRootWatch(rootWatches()).callback();
+      await flush();
+      assert.equal(handle.state.orderPanel, true, 'a resize inside the fold shut the panel');
+    } finally {
+      handle.destroy();
+    }
+  });
+});

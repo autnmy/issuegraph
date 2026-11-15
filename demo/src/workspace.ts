@@ -279,6 +279,9 @@ export const WORKSPACE_WORDS: MountWords = {
   workOrder: 'Work order',
   showWorkOrder: 'Show the work order',
   closeWorkOrder: 'Close the work order',
+  // #330's head counts: "16 ranked · 2 at a time".
+  workOrderRanked: 'ranked',
+  workOrderAtATime: 'at a time',
   nothingSelected: 'Select an issue or a relationship to see its details.',
   issuesSelected: (count) => `${String(count)} issues selected`,
   clearSelection: 'Clear selection',
@@ -886,6 +889,9 @@ export function mountSandbox(
       words: WORKSPACE_WORDS,
       theme: themeFor(theme),
       canvas: seed,
+      // THE ORDER HEAD'S "2 at a time" (#330): how many runs the host works on
+      // at once. The sandbox has no runner, so it shows the board's number.
+      runCap: 2,
       // THE HOST'S HALF OF THE FIRST PASS: a detector the package refuses to
       // ship, and the five words it refuses to invent. Read against the store's
       // CURRENT document, not the one this closure was built with.
