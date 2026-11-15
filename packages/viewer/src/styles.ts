@@ -268,19 +268,6 @@ ${scope} .ig-slot[aria-expanded='true'] {
 ${scope} .ig-slot[aria-expanded='true'] .ig-provenance {
   display: block;
 }
-
-/* THE QUERY CHIP COMES BACK WHERE ITS LINE GOES (#131). At this density the
-   provenance line is hidden, so the chip is the only mark on the row naming
-   WHICH ordered query placed it — and step 3 below keeps it for exactly that
-   reason. A row the reader opened draws the line again, and the chip leaves
-   with it: one fact, said once, at every density. */
-${scope} .ig-slot .ig-badge[data-priority='query'] {
-  display: inline-flex;
-}
-
-${scope} .ig-slot[aria-expanded='true'] .ig-badge[data-priority='query'] {
-  display: none;
-}
 `;
 }
 
@@ -900,45 +887,12 @@ ${railDensity('.ig-viewer:not([data-density])')}
    above, at any container width. */
 ${railDensity(".ig-viewer[data-density='dense']")}
 
-/* STEPS 1-3 OF THE DROP ORDER, AT §18's 330px SETTINGS RAIL, which '17j'
-   names as the width where they apply by default.
-
-   THE SELECTORS ARE THE MARKUP'S OWN ATTRIBUTES, not class guesses: evidence
-   is 'data-evidence', a relationship is 'data-edge', a priority is
-   'data-priority' with 'query' / 'tier' / 'promoted'. Three of these were
-   written from memory first and two were wrong — the parts publish
-   'data-evidence="verified"', never a 'data-ig-badge'. */
-
-/* STEP 1 — evidence and verification chips. '17j': *"Reassurance, not an
-   answer to any question the rail is asked."* */
-@container ig-rail (max-width: 360px) {
-  .ig-slot .ig-badge[data-evidence] {
-    display: none;
-  }
-}
-
-/* STEP 2 — relationship badges past the FIRST, which is kept because it is
-   the one causing the hold. Scoped to 'data-edge' so it counts relationships
-   and not the priority, evidence and readiness chips that share '.ig-badge';
-   a positional 'nth-of-type' would have hidden whichever chip happened to sit
-   second, which is not what the rule says at all. The '+n more' chip carries
-   what left, and it already exists — 'data-omitted'. */
-@container ig-rail (max-width: 345px) {
-  .ig-slot .ig-badge[data-edge] ~ .ig-badge[data-edge] {
-    display: none;
-  }
-}
-
-/* STEP 3 — the priority token. A DECLARED TIER goes, because '17j' says it is
-   *"recoverable from the rank itself"*. A PROMOTION stays: 'P3 → 0' is the
-   one form the rank cannot give back, and it is rank provenance rather than a
-   restatement. A matched query stays for the same reason — it names WHICH
-   query, which no rank encodes. */
-@container ig-rail (max-width: 335px) {
-  .ig-slot .ig-badge[data-priority='tier'] {
-    display: none;
-  }
-}
+/* NO DROP ORDER ON THE ROW (issue 252). An order row is the priority tag, one
+   fact and "+N", with evidence and caveats as muted words after them, so there
+   is nothing left for a narrow rail to drop: the 360, 345 and 335 rules that
+   hid evidence, relationships past the first and a declared tier are gone, and
+   every part of the row shows at the 336 workspace rail and the 330 settings
+   rail alike. */
 
 /* THE ONE ROW GROUND THE FRAME DRAWS, and it is not a stripe. A together unit
    is the compound station, and the tint says so; the other ranked rows carry
@@ -1249,20 +1203,6 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   font-weight: var(--ig-weight-medium);
   gap: var(--ig-space-tight);
   padding: 0 var(--ig-space-snug);
-}
-
-/* A MATCHED QUERY IS SAID ONCE ON A LIST ROW, BY ITS LINE (#131). The row's
-   provenance line already reads "Matched ordering query 1, label:P0", so a chip
-   carrying "label:P0" above it printed the same label twice on every row a
-   query placed — and no §16 frame draws that chip; §16h gives a row "a single
-   provenance line". Hidden by CSS rather than dropped from the markup, for the
-   reason the dense rail hides the line instead: the markup stays whole, and
-   at the dense density, where the LINE is the one hidden, the rail block
-   brings the chip back. A graph card is not an .ig-slot and draws no line; it
-   carries no query chip at all (cardPriorityBadge). A declared tier and a promotion keep their chips:
-   those are the scanning read §16a draws beside the sentence. */
-.ig-slot .ig-badge[data-priority='query'] {
-  display: none;
 }
 
 /* A SECOND CONDITION IS MUTED TEXT AFTER THE TAG, NOT A SECOND TAG (issue

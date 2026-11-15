@@ -65,6 +65,20 @@ describe('the linear projection', () => {
     assert.deepEqual([...positions].sort((a, b) => a - b), positions);
   });
 
+  it('names one fact after the tag: the not-ready mark on a held row, counting every relationship (issue 252)', () => {
+    // 101 is held by the graph, blocked by 102. The mark is its one fact, so
+    // the relationship is not named but counted.
+    const held = row(render(), '101');
+    assert.match(held, /data-not-ready="true"/);
+    assert.equal(edgeBadgesIn(held).length, 0, 'a held row named a relationship beside its not-ready mark');
+    assert.match(held, /data-omitted="1"[^>]*><span aria-hidden="true">\+1</);
+    // 102 is ready: its one fact is its first relationship, and the other is counted.
+    const ready = row(render(), '102');
+    assert.equal(ready.includes('data-not-ready'), false);
+    assert.equal(edgeBadgesIn(ready).length, ROW_RELATIONSHIPS);
+    assert.match(ready, /data-omitted="1"[^>]*><span aria-hidden="true">\+1</);
+  });
+
   it('prints a rank for a ranked slot', () => {
     assert.match(row(render(), '102'), /class="ig-rank"[^>]*>1</);
   });
@@ -154,25 +168,27 @@ describe('the linear projection', () => {
   it("carries a partner's relationships onto the unit's one row", () => {
     // A together unit is ONE row and its partners get no row of their own, so
     // reading only the lead's edges dropped every relationship a partner owned.
-    // Here the unit is held and what holds it is the PARTNER's `blocked-by`:
-    // the row said "held" and silently withheld the reason.
+    // Here the unit is held and what holds it is the PARTNER's `blocked-by`.
+    // Since issue 252 a held row's one fact is its not-ready mark, so the
+    // partner's relationship is counted beside the unit edge ("+2"), and the
+    // hold line under the row still names the reason.
     const markup = render(heldTogetherDocument);
     const unit = row(markup, '1');
-
-    // The other issue carries its "#" (#296).
-    assert.match(unit, /data-edge="blocked-by"[^>]*aria-label="is blocked by #3"/);
+    assert.match(unit, /data-not-ready="true"/);
+    assert.match(unit, /data-omitted="2"/);
+    assert.match(unit, /class="ig-hold" data-family="graph"><span class="ig-turn" aria-hidden="true">↳<\/span><span>blocked by 3, which is open/);
   });
 
   it('counts an edge internal to a unit once, not once per member', () => {
     // Both endpoints of `1 together-with 2` are members, so the edge is in TWO
     // `edgesOf` entries — the failure mode of aggregating across members, and
-    // the reason the fix dedupes on the edge rather than on the member. The row
-    // names the partner's `blocked-by` and counts the unit edge, once.
+    // the reason the fix dedupes on the edge rather than on the member. The
+    // held row counts the partner's `blocked-by` and the unit edge, the unit
+    // edge once: two, not three.
     const unit = row(render(heldTogetherDocument), '1');
 
-    assert.equal(edgeBadgesIn(unit).length, ROW_RELATIONSHIPS);
-    assert.match(unit, /data-edge="blocked-by"/);
-    assert.match(unit, /data-omitted="1"/);
+    assert.equal(edgeBadgesIn(unit).length, 0);
+    assert.match(unit, /data-omitted="2"/);
   });
 
   it('draws a dense row as one relationship and a chip counting the rest', () => {
