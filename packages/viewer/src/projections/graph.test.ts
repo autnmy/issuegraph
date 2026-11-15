@@ -2157,3 +2157,39 @@ describe('lines into and out of the selection share a trunk per kind and directi
     assert.equal(trunkX(line(switched, 'duplicate-of', 'd1', 'h')), spineRight + wide * 3);
   });
 });
+
+describe('the graph footer, with a tracker hold that names who it is held on (#305)', () => {
+  // The graph draws its footer with the list's own row, so the board's "#2261 · Assigned · to maya-chen"
+  // reads the same under the canvas.
+  const assigned: ViewerDocument = {
+    issues: [
+      { key: '2261', title: 'Assigned work', open: true, priority: 2 },
+      { key: '2264', title: 'Ranked work', open: true, priority: 1 },
+    ],
+    edges: [],
+    order: {
+      slots: [
+        {
+          rank: null,
+          lead: '2261',
+          members: ['2261'],
+          ready: false,
+          holds: [{ family: 'tracker', reason: 'Assigned on the tracker', label: 'Assigned', detail: 'to maya-chen' }],
+        },
+        { rank: 1, lead: '2264', members: ['2264'], ready: true, holds: [] },
+      ],
+      excluded: [],
+    },
+    cycles: [],
+  };
+
+  it('draws the detail after the tag and reads it in the footer row’s name', () => {
+    const markup = render(assigned);
+    const entry = markup
+      .split('<li ')
+      .find((piece) => piece.includes('class="ig-footer-row"') && piece.includes('data-ig-key="2261"'));
+    assert.ok(entry !== undefined, 'the held issue has no footer row');
+    assert.match(entry, /<span class="ig-badge" data-hold="Assigned">Assigned<\/span><span class="ig-hold-detail">· to maya-chen<\/span>/);
+    assert.match(entry, /aria-label="[^"]* — Assigned on the tracker · to maya-chen"/);
+  });
+});

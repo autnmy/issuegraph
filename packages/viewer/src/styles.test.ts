@@ -1097,6 +1097,20 @@ describe('every count and every issue number is body text, and the keys line is 
     const later = withLaterRule(viewerStylesheet, '.ig-id', 'font-family', 'var(--ig-font-mono)');
     assert.notDeepEqual(typeMisses(later, ['.ig-id'], ISSUE_NUMBER_TYPE), [], 'an issue number passed in the mono face');
   });
+
+  it('draws a hold’s detail after its tag in the meta line’s muted ink, at the number’s size, unwrapped (#305)', () => {
+    // Design q321: "#2261 · Assigned · to maya-chen", the assignee in text-muted, one run with the number.
+    const base = declaredRules(viewerStylesheet).filter((rule) => rule.selector === '.ig-hold-detail');
+    assert.deepEqual(
+      Object.fromEntries(base.flatMap((rule) => rule.declarations.map(({ name, value }) => [name, value]))),
+      {
+        color: 'var(--ig-text-muted)',
+        'font-family': 'var(--ig-font-ui)',
+        'font-size': 'var(--ig-font-size)',
+        'white-space': 'nowrap',
+      },
+    );
+  });
 });
 
 describe('one face and one size per explanation line, and a copied key is mono at it (#254)', () => {
