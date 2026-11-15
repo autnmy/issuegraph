@@ -2995,16 +2995,16 @@ function loggedWriteSpecs(write: WorkspaceLoggedWrite, words: LogWords): readonl
 /**
  * "Show #2239" on a log row whose line the graph is not drawing (Design, #308):
  * it selects the issue that carries the write, so the graph redraws around it
- * with the line and its mark. `drawn` is `null` while the graph draws every
- * line (nothing selected), and a row the graph already draws gets nothing.
+ * with the line and its mark. `drawn` is every line the canvas draws; a row
+ * whose line is among them gets nothing.
  */
 function showSpec(
   carrier: string | null,
   edgeId: EdgeId | null,
-  drawn: ReadonlySet<string> | null,
+  drawn: ReadonlySet<string>,
   words: LogWords,
 ): ElementSpec | null {
-  if (carrier === null || edgeId === null || drawn === null || drawn.has(edgeId)) return null;
+  if (carrier === null || edgeId === null || drawn.has(edgeId)) return null;
   return element(
     'button',
     { type: 'button', class: 'ig-log-show', 'data-ig-command': 'reveal-issue', 'data-ig-target': carrier },
@@ -3015,7 +3015,7 @@ function showSpec(
 /** A write still saving: the saving word, then what the write does. */
 function savingEntrySpec(
   entry: Extract<WorkspaceLogEntry, { readonly kind: 'pending' }>,
-  drawn: ReadonlySet<string> | null,
+  drawn: ReadonlySet<string>,
   words: LogWords,
 ): ElementSpec {
   return element('li', { class: 'ig-log-entry', 'data-ig-state': 'pending', 'data-mutation': entry.mutationId }, [
@@ -3039,7 +3039,7 @@ function recoveryEntrySpec(
   words: WorkspaceWords,
   diffOpen: MutationId | null,
   scope: PanelScope,
-  drawn: ReadonlySet<string> | null,
+  drawn: ReadonlySet<string>,
 ): ElementSpec {
   return element('li', {
     class: 'ig-log-recovery',
@@ -3085,7 +3085,7 @@ function logSpec(
   words: WorkspaceWords,
   diffOpen: MutationId | null,
   scope: PanelScope,
-  drawn: ReadonlySet<string> | null,
+  drawn: ReadonlySet<string>,
 ): ElementSpec {
   return element('div', { class: 'ig-workspace-log' }, [
     changeLine,
@@ -3932,10 +3932,6 @@ export function renderWorkspace(
     options.surfaceId === undefined ? undefined : `ig-isolated-list-${options.surfaceId}`;
 
   const drawing = canvasDrawing(document, selection, options.switchedKinds ?? [], options.words);
-  // THE LINES THE GRAPH DRAWS, for the log's "Show #n": every line with
-  // nothing selected (`null`), else the selection's own (#308).
-  const drawnLines: ReadonlySet<string> | null =
-    drawing.around === null ? null : new Set(drawing.around.edges.map((edge) => edgeIdentity(edge.field, edge.from, edge.to)));
   const canvas = renderScaleLadder(document, {
     state: options.scale ?? INITIAL_SCALE_STATE,
     theme,
@@ -3973,6 +3969,13 @@ export function renderWorkspace(
     // (RULES, Graphs, Dense neighbourhoods). See `canvasDrawing`.
     ...drawing,
   });
+  // THE LINES THE CANVAS ACTUALLY DRAWS, for the log's "Show #n" (#308): read
+  // off the ladder's own drawn document, so the list that stands in for the
+  // graph past 60 draws none and a pending line drawn as a mark counts as
+  // drawn (review-41, PR 327).
+  const drawnLines: ReadonlySet<string> = new Set(
+    canvas.ladder.canvas.edges.map((edge) => edgeIdentity(edge.field, edge.from, edge.to)),
+  );
 
   const inspector = inspectorView(document, selection);
   const relatedView = relatedListView(document, selection);

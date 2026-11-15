@@ -1018,9 +1018,17 @@ export const workspaceStylesheet = `
   border: 0;
   padding: 0;
   font: inherit;
-  color: var(--ig-accent);
-  text-decoration: underline;
+  color: var(--ig-link);
+  text-decoration: none;
   cursor: pointer;
+}
+
+/* The board's '.link': no underline at rest; hovered, a 1 underline 3 below. */
+.ig-log-show:hover {
+  color: var(--ig-link-hover);
+  text-decoration: underline;
+  text-decoration-thickness: var(--ig-hairline-width);
+  text-underline-offset: calc(var(--ig-space-micro) * 1.5);
 }
 
 .ig-log-show:focus-visible {

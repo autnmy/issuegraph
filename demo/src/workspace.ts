@@ -468,6 +468,8 @@ export const PAPER_THEME: Theme = extendTheme(defaultTheme, {
     '--ig-text-body': '#3B3A35',
     '--ig-text-muted': '#5E5B52',
     '--ig-accent': '#0A5B8A',
+    '--ig-link': '#0A5B8A',
+    '--ig-link-hover': '#084A70',
     '--ig-focus': '#0A5B8A',
     '--ig-station-ready': '#0A5B8A',
     '--ig-station-pending': '#5E5B52',
