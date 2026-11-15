@@ -3655,6 +3655,20 @@ describe('the log offers "Show #n" for a write the graph is not drawing (#308, D
 
 
 
+describe('the workspace rail is always at rail density (#343)', () => {
+  it('asks the rail for dense rows whatever the width, and leaves the canvas to its own box', () => {
+    // The rail is virtualized on one pitch, a dense row and its hairline, so a
+    // wide row would name the wrong rank on scroll. Under 640 the order is the
+    // view and wider than the 430 crossover, so the container alone would have
+    // drawn wide rows; the rail asks for dense ones outright.
+    const markup = renderWorkspace(backlogOf(6, { edges: [['blocked-by', 'i0001', 'i0002']] }), { ...WORDS, selection: { kind: 'issue', key: 'i0001' } }).markup;
+    const rail = markup.slice(markup.indexOf('data-zone="rail"'), markup.indexOf('data-zone="canvas"'));
+    assert.match(rail, /<section class="ig-viewer ig-linear"[^>]*data-density="dense"/);
+    const canvas = markup.slice(markup.indexOf('data-zone="canvas"'), markup.indexOf('data-zone="inspector"'));
+    assert.equal(canvas.includes('data-density'), false, 'the canvas viewer was handed the rail density');
+  });
+});
+
 describe('the folded order\u2019s strip and panel head (#313, Design 7b8fcbc)', () => {
   const document = backlogOf(3);
   const markupOf = (orderPanel: boolean): string =>

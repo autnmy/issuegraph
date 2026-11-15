@@ -1075,21 +1075,6 @@ export interface WorkspaceOptions {
    */
   readonly runCap?: number | null | undefined;
   /**
-   * Take over §17j's rail density, instead of letting the rail's own box decide.
-   *
-   * FORWARDED, NOT INVENTED. `@issuegraph/viewer` owns the rule and the
-   * default: the rail reads its density off the column it was given, and the
-   * crossover it uses — `430px` — is that package's default rather than a
-   * figure Design published. This exists so a consumer of the EDITOR can reach
-   * the same escape hatch without rendering the rail themselves.
-   *
-   * THE WORKSPACE ITSELF NEEDS IT FOR NOTHING. §17k holds the rail at one
-   * measure now — 390 at every width, which is the rule §17k states outright —
-   * so this surface never crosses the threshold and never has an opinion. It is
-   * threaded for the host's sake, and absent it changes nothing.
-   */
-  readonly railDensity?: 'dense' | 'wide' | undefined;
-  /**
    * Where an issue lives in the host's own world, for §17d's refused block.
    *
    * THE HOST'S ANSWER BECAUSE IT IS THE ONLY PARTY THAT HAS ONE. A store ref is
@@ -4024,11 +4009,14 @@ export function renderWorkspace(
     // who opened a row, scrolled past it and came back should find it open.
     // A key the window does not draw costs one `includes` miss and nothing else.
     ...(options.expanded === undefined ? {} : { expanded: options.expanded }),
-    // §17j'S DENSITY ESCAPE HATCH, FORWARDED TO THE RAIL AND ONLY THE RAIL.
-    // The canvas draws a second viewer in this surface, and the density block
-    // is about the ORDER's rows — so handing both the same value would change a
-    // projection the option says nothing about. See `ViewerOptions.density`.
-    ...(options.railDensity === undefined ? {} : { density: options.railDensity }),
+    // THE WORKSPACE RAIL IS ALWAYS AT RAIL DENSITY (#343). It is virtualized on
+    // one pitch, a dense row and its hairline (the mount's railRowAt and the
+    // spacer), so a wide row would name the wrong rank on scroll: and wide rows
+    // came not only from a host's railDensity option but from the container
+    // itself, under 640, where the order is the view and wider than the 430
+    // crossover. So the rail asks for dense rows outright, and the option is
+    // gone. The canvas's viewer is left to its own box.
+    density: 'dense',
   });
   // Built once, over the slots the viewer draws, so a rail of 312 costs one pass
   // rather than one scan of `overlay.rows` per drawn row. THE DRAWN SLOTS, NOT

@@ -4,6 +4,11 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/editor` `0.46.0`: the workspace rail is always at rail density, so its scroll position names the right rank at every width (#343; review-41's P2 on PR 341).** **Breaking for a host: `WorkspaceOptions.railDensity` and `MountWorkspaceOptions.railDensity` are removed.**
+  - The rail is virtualized on one pitch, a dense row and its hairline (the mount's `railRowAt` and the spacer, since #295). A wide row broke it: from a host's `railDensity: 'wide'`, and from the container itself under 640, where the order is the view and wider than the viewer's 430 crossover. The rail now asks the viewer for dense rows outright; the canvas's viewer is left to its own box.
+  - The workspace itself never needed the option (its rail is a 336 zone); a host that rendered a wide order can still render the viewer's linear projection with `density` directly.
+  - **Pinned** in the editor's render tests.
+
 - **`@issuegraph/editor` `0.45.0`: the narrow Related list words its two empty cases apart (#315; Design content.md 82b78fd, relayed by build-136).** **Breaking for a host: `NarrowWords.nothingRelated` is a new required word.**
   - **A picked group the canvas draws** keeps `noSelection` ("Select an issue to see its relationships."): its issues are what the reader picks from, so the line names the next step.
   - **No issue has a relationship yet** takes `nothingRelated` ("No issue has relationships yet. Select an issue to add one."), echoing the order preview's foot.
