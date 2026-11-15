@@ -4,6 +4,8 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/editor` `0.42.2` (patch line from `0.42.1`): under the fold, a selection that hides the rail hands its focus to the selected issue in the graph (#346).** **No API change.** A focused rail row dropped its focus to the page when the selection folded the rail, and the keyboard loop stopped. Main carries the same fix as `0.46.1` (PR 347).
+
 - **`@issuegraph/editor` `0.42.1` (patch line from `0.42.0`): the open work-order panel and the audit overlay stand on the card's ground, `--ig-bg` (#340).** **No API change.** They painted `--ig-surface`, which a host may map to a translucent fill, so the graph read through the open panel. Main carries the same fix as `0.43.1` (PR 342).
 
 - **`@issuegraph/viewer` `0.26.0`: a tracker hold can name who it is held on, after its tag (#305; Design q321, issue-graph-states e1d0445, content.md f58baed, RULES a38612c).** Additive: `TrackerHold.detail`.

@@ -1282,6 +1282,10 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   const scopeOf = (name: string | null): Element =>
     (name === null ? null : name === RELATED_SCOPE ? surface.querySelector(RELATED_LIST) : zone(name)) ?? surface;
 
+  /** Whether a zone is drawn at all: the fold hides the rail with `display: none` (#313, #346). */
+  const folded = (element: Element | null): boolean =>
+    element !== null && doc.defaultView?.getComputedStyle(element).display === 'none';
+
   /** Focus the element carrying `key`, inside one zone when named, without scrolling the page. */
   const focusIn = (zoneName: string | null, key: string): void => {
     const scope = scopeOf(zoneName);
@@ -1690,6 +1694,9 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       (selector) => [selector, surface.querySelector<HTMLElement>(selector)?.scrollTop ?? 0] as const,
     );
     const active = doc.activeElement;
+    // WHETHER THE RAIL WAS FOLDED AWAY BEFORE THIS DRAW (#346), so a draw that
+    // brings it back can hand the focus back to it.
+    const railFoldedBefore = folded(zone('rail'));
     const activeInput = isElement(active) && isInput(active) && surface.contains(active) ? active : null;
     const activeCommand = activeInput?.getAttribute(COMMAND_ATTRIBUTE) ?? null;
     // THE CARET AS IT WAS, not the end of the value: a reader editing in the
@@ -1911,7 +1918,15 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const search = surface.querySelector<HTMLInputElement>(`input[${COMMAND_ATTRIBUTE}="target-query"]`);
     const focusRow = (key: string | null, within: string | null = focusedZone): void => {
       if (key === null) return;
-      focusIn(within, key);
+      // THE FOCUS FOLLOWS THE FOLD (#346, the design lead's call). Under the
+      // fold a selection hides the rail, and a row that held the focus there
+      // would drop it to the page, where no key reaches the workspace; the
+      // selection now lives in the graph, so its node takes the focus. Only a
+      // focus the fold is hiding moves, and without scrolling. When the rail
+      // comes back, a focus in the graph returns to the row.
+      const railFolded = folded(zone('rail'));
+      const target = within === 'rail' && railFolded ? 'canvas' : within === 'canvas' && railFoldedBefore && !railFolded ? 'rail' : within;
+      focusIn(target, key);
     };
     if (overlay !== null) {
       // FOCUS IS TAKEN BACK ON EVERY RENDER WHILE THE OVERLAY IS UP, not only on
