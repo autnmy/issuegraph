@@ -174,7 +174,7 @@ export const workspaceStylesheet = `
   flex-wrap: wrap;
   gap: var(--ig-space);
   padding: var(--ig-space-tight) var(--ig-space);
-  border-bottom: var(--ig-stroke) solid var(--ig-line);
+  border-bottom: var(--ig-hairline-width) solid var(--ig-hairline);
 }
 
 /* THE LOG UNDER THE HEAD: the change line, the writes still saving, and the
@@ -191,7 +191,7 @@ export const workspaceStylesheet = `
   max-height: calc(var(--ig-font-size) * var(--ig-line-height) * 12);
   overflow-y: auto;
   padding: 0 var(--ig-space) var(--ig-space-tight);
-  border-bottom: var(--ig-stroke) solid var(--ig-line);
+  border-bottom: var(--ig-hairline-width) solid var(--ig-hairline);
 }
 
 /* A write named on one line: the saving word for one still saving, then the
@@ -308,7 +308,7 @@ export const workspaceStylesheet = `
   grid-area: rail;
   /* The rail scrolls; the window slides underneath. */
   overflow-y: auto;
-  border-right: var(--ig-stroke) solid var(--ig-line);
+  border-right: var(--ig-hairline-width) solid var(--ig-hairline);
   /* A COLUMN, SO THE FOOTER CAN TAKE THE SPACE A SHORT ORDER LEAVES. See
      .ig-rail-footer for why sticky alone never did. */
   display: flex;
@@ -361,7 +361,7 @@ export const workspaceStylesheet = `
   justify-content: space-between;
   gap: var(--ig-space-tight);
   padding: var(--ig-space-tight) var(--ig-space);
-  border-top: var(--ig-stroke) solid var(--ig-line);
+  border-top: var(--ig-hairline-width) solid var(--ig-hairline);
   background: var(--ig-bg);
   /* A COUNT AND ITS WORDS, SO BODY TEXT. '5 with no relationships' is read as a
      number, and the mono face it was set in is for keys; tabular figures keep
@@ -437,7 +437,7 @@ export const workspaceStylesheet = `
   min-block-size: calc(var(--ig-space-loose) * 3);
   box-sizing: border-box;
   padding: 0 var(--ig-space-loose);
-  border-bottom: var(--ig-stroke) solid var(--ig-line);
+  border-bottom: var(--ig-hairline-width) solid var(--ig-hairline);
   position: sticky;
   top: 0;
   background: var(--ig-bg);
@@ -558,7 +558,7 @@ export const workspaceStylesheet = `
 .ig-zone[data-zone='inspector'] {
   grid-area: inspector;
   overflow-y: auto;
-  border-left: var(--ig-stroke) solid var(--ig-line);
+  border-left: var(--ig-hairline-width) solid var(--ig-hairline);
 }
 
 
@@ -1445,7 +1445,7 @@ export const workspaceStylesheet = `
   flex-direction: column;
   gap: var(--ig-space-tight);
   padding-top: var(--ig-space-tight);
-  border-top: var(--ig-stroke) solid var(--ig-line);
+  border-top: var(--ig-hairline-width) solid var(--ig-hairline);
 }
 
 /* ONE SIDE OF THE DIFFERENCE. Stacked rather than columned: at a panel's width
@@ -1497,7 +1497,7 @@ export const workspaceStylesheet = `
 .ig-recovery-diff-empty {
   margin: 0;
   padding-top: var(--ig-space-tight);
-  border-top: var(--ig-stroke) solid var(--ig-line);
+  border-top: var(--ig-hairline-width) solid var(--ig-hairline);
   font-size: var(--ig-font-size-small);
   color: var(--ig-text-muted);
 }
@@ -1726,7 +1726,7 @@ ${heldRailDeclarations}
   display: none;
   gap: calc(var(--ig-space-micro) * 2);
   padding: var(--ig-space-tight) var(--ig-space);
-  border-bottom: var(--ig-stroke) solid var(--ig-line);
+  border-bottom: var(--ig-hairline-width) solid var(--ig-hairline);
 }
 
 .ig-workspace .ig-narrow-tab {
@@ -1817,7 +1817,7 @@ ${heldRailDeclarations}
   min-block-size: calc(var(--ig-space-snug) * 5);
   padding: 0 var(--ig-space-loose);
   gap: var(--ig-space);
-  border-top: var(--ig-stroke) solid var(--ig-line);
+  border-top: var(--ig-hairline-width) solid var(--ig-hairline);
 }
 
 .ig-related > .ig-relationship-group-head:first-child {
@@ -1857,7 +1857,7 @@ ${heldRailDeclarations}
   padding: var(--ig-space) var(--ig-space-loose);
   color: var(--ig-text-muted);
   font-size: var(--ig-font-size-small);
-  border-bottom: var(--ig-stroke) solid var(--ig-line);
+  border-bottom: var(--ig-hairline-width) solid var(--ig-hairline);
 }
 
 /* A KIND'S HEAD IN THE LIST: its icon beside its words, as one phrase. The

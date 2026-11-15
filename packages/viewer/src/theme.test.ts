@@ -286,6 +286,8 @@ describe('a theme built against an earlier version', () => {
  * cannot see a token that is missing from it.
  */
 const EXPANSION: readonly string[] = Object.freeze([
+  // A separator's 1px, beside the graph's 1.5 stroke (#308, q352).
+  '--ig-hairline-width',
   '--ig-font-size-micro',
   '--ig-font-size-pill',
   '--ig-weight-regular',

@@ -431,7 +431,7 @@ export const viewerStylesheet = `
    header at all, which is what keeps the pure-graph markup unchanged. */
 .ig-header {
   background: var(--ig-surface-2);
-  border-bottom: var(--ig-stroke) solid var(--ig-line);
+  border-bottom: var(--ig-hairline-width) solid var(--ig-hairline);
   display: flex;
   flex-direction: column;
   gap: var(--ig-space);
@@ -772,7 +772,7 @@ export const viewerStylesheet = `
    as the first row of the order. */
 .ig-now-row {
   background: color-mix(in srgb, var(--ig-accent) var(--ig-tint-wash), transparent);
-  border-bottom: var(--ig-stroke) solid var(--ig-line);
+  border-bottom: var(--ig-hairline-width) solid var(--ig-hairline);
   box-shadow: inset var(--ig-band-rail) 0 0 var(--ig-accent);
   column-gap: var(--ig-space);
   display: grid;
@@ -825,7 +825,7 @@ export const viewerStylesheet = `
    relationship badge left unplaced widened the rank column for the whole list
    and squeezed every title to pay for it. */
 .ig-slot {
-  border-bottom: var(--ig-stroke) solid var(--ig-line);
+  border-bottom: var(--ig-hairline-width) solid var(--ig-hairline);
   column-gap: var(--ig-space);
   display: grid;
   grid-template-columns: var(--ig-rank-column) 1fr;
@@ -1371,7 +1371,7 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 }
 
 .ig-unit-member + .ig-unit-member {
-  border-top: var(--ig-stroke) solid var(--ig-line);
+  border-top: var(--ig-hairline-width) solid var(--ig-hairline);
 }
 
 .ig-unit-member .ig-title {
@@ -1419,7 +1419,7 @@ ${railDensity(".ig-viewer[data-density='dense']")}
    group used to sit on --ig-surface-2 with every row at 0.72 opacity, which
    read as disabled — on the rows whose whole purpose is "open me to see why". */
 .ig-footer-row {
-  border-top: var(--ig-stroke) solid var(--ig-line);
+  border-top: var(--ig-hairline-width) solid var(--ig-hairline);
   column-gap: var(--ig-space);
   cursor: pointer;
   display: grid;
@@ -2019,7 +2019,7 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 .ig-legend {
   align-items: center;
   border: 0;
-  border-top: var(--ig-stroke) solid var(--ig-line);
+  border-top: var(--ig-hairline-width) solid var(--ig-hairline);
   display: flex;
   flex-wrap: wrap;
   gap: var(--ig-space-wide);

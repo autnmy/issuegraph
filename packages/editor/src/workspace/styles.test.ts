@@ -1253,6 +1253,16 @@ describe('the zone rules reach their corners', () => {
       assert.match(block[1] as string, new RegExp(`${side}:`), `${selector} no longer draws its seam`);
     }
   });
+
+  it('#308 q352 draws every separator as the 1px hairline role, and keeps the 1.5 stroke for what is not a separator', () => {
+    // A one-sided border is a separator: a seam between zones, a head over a
+    // list, a line between rows. The boards draw each as a 1px border-hairline.
+    const sided = [...withoutComments(css).matchAll(/border-(?:top|right|bottom|left):\s*var\(--ig-[a-z-]+\) solid var\(--ig-[a-z-]+\);/g)].map(
+      ([declaration]) => declaration,
+    );
+    assert.ok(sided.length >= 10, 'the separators went missing');
+    for (const declaration of sided) assert.match(declaration, /var\(--ig-hairline-width\) solid var\(--ig-hairline\)/, declaration);
+  });
 });
 
 describe('the tint tokens are only used where they mean something', () => {
@@ -1668,7 +1678,7 @@ describe('the layout under 640', () => {
     const over = withoutComments(workspaceStylesheet).match(/(?:^|\n)\.ig-related-over\s*\{([^}]*)\}/)?.[1] ?? assert.fail('no rule for the line');
     assert.match(over, /color:\s*var\(--ig-text-muted\);/);
     assert.match(over, /font-size:\s*var\(--ig-font-size-small\);/);
-    assert.match(over, /border-bottom:\s*var\(--ig-stroke\) solid var\(--ig-line\);/);
+    assert.match(over, /border-bottom:\s*var\(--ig-hairline-width\) solid var\(--ig-hairline\);/);
   });
 
   it('R1 under 640px the Sub-issues tab draws the tree and the toolbar the mount puts in the canvas zone', () => {
@@ -2306,7 +2316,7 @@ describe('the Related list heads are the board’s .ig-sub (#303, q348)', () => 
     const head = body('.ig-related .ig-relationship-group-head');
     assert.match(head, /min-block-size: calc\(var\(--ig-space-snug\) \* 5\);/);
     assert.match(head, /padding: 0 var\(--ig-space-loose\);/);
-    assert.match(head, /border-top: var\(--ig-stroke\) solid var\(--ig-line\);/);
+    assert.match(head, /border-top: var\(--ig-hairline-width\) solid var\(--ig-hairline\);/);
     assert.match(body('.ig-related > .ig-relationship-group-head:first-child'), /border-top: 0;/);
   });
 

@@ -66,7 +66,10 @@ function project(snapshot: StoreSnapshot, held = false, audited = false): Worksp
       edges: snapshot.landed.map((edge) => ({ field: edge.kind, from: edge.from, to: edge.to })),
       order: {
         slots: snapshot.order.rows.map((row) => ({
-          rank: row.rank + 1,
+          // THE HELD SLOT IS PLACED NOWHERE, the one slot whose Inspector still
+          // draws its holds ("Why it is held"; a placed issue's sentence names
+          // what it waits on instead, #308).
+          rank: held && row.ref === '3' ? null : row.rank + 1,
           lead: row.ref,
           members: [row.ref],
           ready: held && row.ref === '3' ? false : row.ready,

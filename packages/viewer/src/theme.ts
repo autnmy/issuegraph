@@ -26,6 +26,10 @@ export const COLOR_TOKENS = Object.freeze([
   '--ig-surface',
   '--ig-surface-2',
   '--ig-line',
+  // THE SEPARATOR'S COLOUR, apart from the line a graph draws: the boards
+  // split zones, heads and rows with a 1px hairline (a host maps it to its own
+  // hairline role) and keep the 1.5 stroke for graph lines (#308, q352).
+  '--ig-hairline',
   '--ig-text',
   '--ig-text-body',
   '--ig-text-muted',
@@ -158,6 +162,8 @@ export const METRIC_TOKENS = Object.freeze([
   '--ig-station-halo',
   '--ig-stroke',
   '--ig-stroke-connector',
+  // A separator's width, 1, beside `--ig-stroke`'s 1.5 for graph lines (#308).
+  '--ig-hairline-width',
   '--ig-stroke-audit',
   '--ig-terminal-length',
   '--ig-terminal-width',
@@ -300,6 +306,7 @@ export const defaultTheme: Theme = Object.freeze({
     '--ig-surface': '#11181C',
     '--ig-surface-2': '#0E1519',
     '--ig-line': '#232D34',
+    '--ig-hairline': '#232D34',
     '--ig-text': '#E8EDF0',
     '--ig-text-body': '#AEB9C0',
     '--ig-text-muted': '#75848E',
@@ -405,6 +412,7 @@ export const defaultTheme: Theme = Object.freeze({
     // station rather than through it.
     '--ig-station-halo': 4,
     '--ig-stroke': 1.5,
+    '--ig-hairline-width': 1,
     // The `together-with` hairline connector, which is deliberately finer than
     // an ordinary edge so the enclosure stays the primary read.
     '--ig-stroke-connector': 1.6,
