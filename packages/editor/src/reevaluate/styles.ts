@@ -34,6 +34,7 @@ const NEUTRAL_TOKENS: ReadonlySet<ColorToken> = new Set<ColorToken>([
   // A ground for a placeholder, an ink with no hue of its own (#293).
   '--ig-fill-strong',
   '--ig-line',
+  '--ig-hairline',
   '--ig-text',
   '--ig-text-body',
   '--ig-text-muted',

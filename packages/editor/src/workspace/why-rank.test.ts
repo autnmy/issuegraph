@@ -90,6 +90,7 @@ describe('the inspector states why the issue sits where it does', () => {
       false,
       'an unplaced slot was given a rank it does not have',
     );
+    assert.match(markup, /class="ig-inspector-holds"/, 'an issue held and placed nowhere lost what it waits on');
   });
 
   /**
@@ -123,7 +124,9 @@ describe('the inspector states why the issue sits where it does', () => {
       '2 of 3. Matched ordering query 1, label:P0. Worked with i0003 as one unit, after i0001 closes.',
     );
     assert.match(markup, /data-held="true"/, 'a held slot was drawn as unheld');
-    assert.match(markup, /class="ig-inspector-holds"/, 'the hold went missing with the em dash');
+    // A placed issue's sentence names what it waits on, and the board draws no
+    // hold list under it (review-219, PR 320): the list is "Why it is held" only.
+    assert.equal(/class="ig-inspector-holds"/.test(markup), false, 'a placed issue repeated its blocker in a hold list');
   });
 
   /**

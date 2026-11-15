@@ -462,6 +462,7 @@ export const PAPER_THEME: Theme = extendTheme(defaultTheme, {
     '--ig-surface': '#FFFFFF',
     '--ig-surface-2': '#F2F0EA',
     '--ig-line': '#D9D4C7',
+    '--ig-hairline': '#D9D4C7',
     '--ig-text': '#1B1A17',
     '--ig-text-body': '#3B3A35',
     '--ig-text-muted': '#5E5B52',

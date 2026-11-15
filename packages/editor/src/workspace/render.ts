@@ -2317,16 +2317,13 @@ function whyRankSpec(
     clauses.length === 0
       ? null
       : element('p', { class: 'ig-why-rank-sentence' }, clauses.flatMap((clause, index) => (index === 0 ? [clause] : [' ', clause]))),
-    // THE HOLDS BELONG TO THE EXPLANATION, so they live inside this block
-    // rather than beside it. They were briefly stated twice — once worded into
-    // this sentence and once in the list below it — which is the panel telling
-    // a reader the same cause in two voices.
-    //
-    // The LIST is what survived, because it is the half that carries the
-    // holder as a control: `holdRow` publishes `select-issue` on the blocker,
-    // under rules about when that control is withheld which a sentence could
-    // not express. A reason inline would have discarded them.
-    holds.length === 0 ? null : element('ul', { class: 'ig-inspector-holds' }, holds),
+    // THE HOLDS ARE "WHY IT IS HELD" ONLY, for a slot the order places
+    // nowhere (RULES: "Under Why it is held, a held issue says what it waits
+    // on"). A placed issue's sentence already ends on what it waits on ("after
+    // #2240 closes"), and the board draws no list under it; the control that
+    // reaches the blocker is its "is blocked by #2240" Relationships row
+    // (review-219's ruling on #308, PR 320).
+    why.rank !== null || holds.length === 0 ? null : element('ul', { class: 'ig-inspector-holds' }, holds),
   ]);
 }
 
