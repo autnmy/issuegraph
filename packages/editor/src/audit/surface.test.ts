@@ -335,9 +335,12 @@ describe('the header count', () => {
 
   it('counts every finding, unreadable relationships included, the number the panel title shows (#296)', () => {
     const one = overlayOf([issue('a'), issue('gone', 'closed')], [['blocked-by', 'a', 'gone']]);
-    assert.match(renderAuditHeader(one), /<span class="ig-audit-count">1<\/span><span class="ig-audit-label">problem<\/span>/);
+    // THE HOST'S WORDS AFTER THE COUNT (issue 295), and none without them.
+    const label = { one: 'thing to mend', other: 'things to mend' };
+    assert.match(renderAuditHeader(one, { label }), /<span class="ig-audit-count">1<\/span><span class="ig-audit-label">thing to mend<\/span>/);
+    assert.equal(renderAuditHeader(one).includes('ig-audit-label'), false, 'the package wrote its own words');
     const refusedToo = overlayOf([issue('a'), issue('gone', 'closed')], [['blocked-by', 'a', 'gone']], [{ ref: 'a' }]);
-    assert.match(renderAuditHeader(refusedToo), /<span class="ig-audit-count">2<\/span><span class="ig-audit-label">problems<\/span>/);
+    assert.match(renderAuditHeader(refusedToo, { label }), /<span class="ig-audit-count">2<\/span><span class="ig-audit-label">things to mend<\/span>/);
   });
 
   it('renders no host-supplied text at all', () => {

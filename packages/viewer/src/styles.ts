@@ -90,7 +90,7 @@ ${scope} .ig-slot .ig-row-meta {
   align-items: center;
   display: flex;
   flex-wrap: nowrap;
-  gap: var(--ig-space-tight);
+  gap: var(--ig-space-snug);
   line-height: var(--ig-row-meta-line);
   min-width: 0;
   overflow: hidden;
@@ -114,8 +114,42 @@ ${scope} .ig-slot .ig-row-meta .ig-badges > .ig-badge {
 
 ${scope} .ig-slot .ig-row-meta .ig-badges > .ig-badge[data-caveat],
 ${scope} .ig-slot .ig-row-meta .ig-badges > .ig-badge[data-evidence] {
+  /* SHRINKS FIRST (issue 295, the redesign lead's ruling): its weight dwarfs
+     the fact's, so the caveat gives its words up before the fact's verb does. */
+  flex: 0 1000 auto;
+  /* ROOM FOR THE GLYPH AND THE ELLIPSIS, and the chip clips its own words:
+     shrunk past its words it ends "◆ …", never a cut letter painted outside a
+     chip narrower than its glyph (review-219 on PR 341). */
+  min-width: calc(var(--ig-char-width) * 4);
+  overflow: hidden;
+}
+
+/* THEN THE FACT'S VERB, NEVER ITS ISSUE (issue 295): "⇄ seri… #503". The
+   chip's words are the verb and the other issue's number; the verb ellipsizes,
+   the number and the glyph never shrink, and the chip clips past them. Its
+   full words stay as its title and its accessible name. */
+${scope} .ig-slot .ig-row-meta .ig-badges > .ig-badge[data-edge] {
   flex: 0 1 auto;
   min-width: 0;
+  overflow: hidden;
+}
+
+${scope} .ig-slot .ig-row-meta .ig-badge[data-edge] > .ig-badge-words {
+  display: inline-flex;
+  gap: var(--ig-space-tight);
+  min-width: 0;
+}
+
+${scope} .ig-slot .ig-row-meta .ig-badge[data-edge] .ig-badge-verb {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+${scope} .ig-slot .ig-row-meta .ig-badge[data-edge] .ig-badge-ref,
+${scope} .ig-slot .ig-row-meta .ig-badge[data-edge] > .ig-glyph {
+  flex: none;
 }
 
 ${scope} .ig-slot .ig-row-meta .ig-badges > .ig-badge[data-caveat] > span:last-child,
@@ -133,8 +167,10 @@ ${scope} .ig-slot .ig-row-meta .ig-id {
   flex: none;
 }
 
-/* AT RAIL DENSITY LINE 2 IS TEXT, NOT PILLS — and this is read off the frame
-   rather than inferred from the height. '17j' draws the meta line as a single
+/* AT RAIL DENSITY LINE 2 IS TEXT, NOT PILLS, EXCEPT THE PRIORITY TAG (issue
+   295): the board draws "tag plain" P0 on every order row in its 336 column,
+   so the tag keeps its pill and the line is the pill's 20 tall. Read off the
+   frame rather than inferred from the height. '17j' draws the meta line as a single
    mono run, '#512 . P0 . blocked-by #488': no outlines, no fills, just the
    glyph and the words. §16a's wider panel is where they are chips.
 
@@ -148,7 +184,7 @@ ${scope} .ig-slot .ig-row-meta .ig-id {
    chip carries a relationship hue at any density, so there is none to move.
    '17j' names the hold GLYPH among the five things never dropped, and it is
    still drawn. */
-${scope} .ig-slot .ig-row-meta .ig-badge {
+${scope} .ig-slot .ig-row-meta .ig-badge:not([data-priority]) {
   background: none;
   block-size: auto;
   border: 0;
@@ -1015,7 +1051,7 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   align-items: center;
   display: flex;
   flex-wrap: wrap;
-  gap: var(--ig-space-tight);
+  gap: var(--ig-space-snug);
   min-width: 0;
 }
 

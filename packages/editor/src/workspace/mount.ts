@@ -941,7 +941,12 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
 
   const zone = (name: string): HTMLElement | null => surface.querySelector<HTMLElement>(`.ig-zone[data-zone="${name}"]`);
 
-  const pitch = (): number => theme().metrics['--ig-row-height'] + theme().metrics['--ig-space-tight'];
+  // THE PITCH THE RAIL ACTUALLY DRAWS (review-41 on PR 341): the workspace rail
+  // is always at rail density, so a row is --ig-row-height-dense plus the
+  // hairline under it, the same two tokens the spacer multiplies in the
+  // workspace sheet. It was --ig-row-height + --ig-space-tight, a third number
+  // that drifted from both, and a scroll past the window named the wrong rank.
+  const pitch = (): number => theme().metrics['--ig-row-height-dense'] + theme().metrics['--ig-hairline-width'];
 
   const kindChooser = (source: string, target: string | null): HTMLElement => {
     const { words } = current;

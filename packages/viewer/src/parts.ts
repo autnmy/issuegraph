@@ -19,7 +19,7 @@ import type {
 } from './document.ts';
 import { type ElementSpec, type SpecChild, element, svg } from './element.ts';
 import { GROUP_ATTRIBUTE } from './scene.ts';
-import { EDGE_ORDER, type EdgeTerminal, dashArrayFor, phraseFrom, treatmentFor } from './vocabulary.ts';
+import { EDGE_ORDER, type EdgeTerminal, dashArrayFor, labelFrom, otherFirst, phraseFrom, treatmentFor } from './vocabulary.ts';
 
 /**
  * The attribute a control the viewer publishes but does not wire carries. The
@@ -1026,7 +1026,26 @@ export function caveatText(issue: ViewerIssue | undefined): string {
  * `keyAt` walks target-upward. That is the intended half of "an edge is pointable
  * in every projection", and it is what the canvas already does for an arc.
  */
-function edgeBadge(field: EdgeField, edgeId: string, phrase: string): ElementSpec {
+/**
+ * A relationship chip's words as two spans, the verb and the other issue
+ * (issue 295, the redesign lead's ruling): at a narrow rail the verb may
+ * ellipsize ("⇄ seri…") but the issue it relates to never does, because the
+ * number says which issue and the glyph already names the kind. In the order
+ * the vocabulary reads them.
+ */
+interface EdgeWords {
+  readonly verb: string;
+  readonly reference: string;
+  readonly referenceFirst: boolean;
+}
+
+function edgeWordSpecs(words: EdgeWords): readonly (ElementSpec | string)[] {
+  const verb = element('span', { class: 'ig-badge-verb' }, [words.verb]);
+  const reference = element('span', { class: 'ig-badge-ref' }, [words.reference]);
+  return words.referenceFirst ? [reference, ' ', verb] : [verb, ' ', reference];
+}
+
+function edgeBadge(field: EdgeField, edgeId: string, phrase: string, words: EdgeWords): ElementSpec {
   const treatment = treatmentFor(field);
   return element(
     'span',
@@ -1043,7 +1062,7 @@ function edgeBadge(field: EdgeField, edgeId: string, phrase: string): ElementSpe
     // one of the four channels the colour-blind-safety claim rests on — and the
     // label it now shows is the same string the accessible name already used,
     // so what is announced and what is drawn cannot drift.
-    glyphAndLabel(treatment.glyph, phrase),
+    [hiddenGlyph(treatment.glyph), element('span', { class: 'ig-badge-words' }, edgeWordSpecs(words))],
   );
 }
 
@@ -1177,13 +1196,15 @@ export function edgeBadgeList(
         // same edge from `phraseFrom` one zone away. `null` is a relationship
         // this end does not read (a parent's sub-issue), so it is no badge and
         // spends nothing of the budget.
-        const phrase = phraseFrom(treatment, outgoing, issueNumber(outgoing ? edge.to : edge.from));
-        if (phrase === null) continue;
+        const reference = issueNumber(outgoing ? edge.to : edge.from);
+        const phrase = phraseFrom(treatment, outgoing, reference);
+        const verb = labelFrom(treatment, outgoing);
+        if (phrase === null || verb === null) continue;
         if (badges.length >= budget) {
           omitted += 1;
           continue;
         }
-        badges.push(edgeBadge(field, edgeId, phrase));
+        badges.push(edgeBadge(field, edgeId, phrase, { verb, reference, referenceFirst: otherFirst(treatment, outgoing) }));
       }
     }
   }

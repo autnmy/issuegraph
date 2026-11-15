@@ -186,8 +186,11 @@ export function clusterReachLabel(reach: ClusterReach): string {
       return reach.held === reach.of
         ? 'Nothing can start'
         : `${String(reach.held)} of ${String(reach.of)} in a loop`;
+    // ISSUES, NOT EDGES (issue 295, the redesign lead's ruling): a reader
+    // counts the issues in a chain, and the label reads as a number of them.
+    // `depth` is the walk's edge count, so a chain of n issues is depth n - 1.
     case 'chain':
-      return `Longest chain ${String(reach.depth)}`;
+      return `Longest chain ${String(reach.depth + 1)}`;
     // NAMES THE EDGES, so the sentence cannot contradict the count drawn beside
     // it: something blocks, and none of it puts the work in an order. It does
     // not name a loop either, for the reason the arm's own note gives.

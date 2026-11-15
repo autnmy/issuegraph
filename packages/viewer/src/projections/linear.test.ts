@@ -79,6 +79,14 @@ describe('the linear projection', () => {
     assert.match(ready, /data-omitted="1"[^>]*><span aria-hidden="true">\+1</);
   });
 
+  it('draws a relationship chip as its verb and the other issue, so only the verb can shorten (issue 295)', () => {
+    const ready = row(render(), '102');
+    assert.match(
+      ready,
+      /data-edge="blocked-by"[^>]*title="blocks #101" aria-label="blocks #101"><span class="ig-glyph" aria-hidden="true">⊘<\/span><span class="ig-badge-words"><span class="ig-badge-verb">blocks<\/span> <span class="ig-badge-ref">#101<\/span><\/span>/,
+    );
+  });
+
   it('prints a rank for a ranked slot', () => {
     assert.match(row(render(), '102'), /class="ig-rank"[^>]*>1</);
   });

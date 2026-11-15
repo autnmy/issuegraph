@@ -315,6 +315,13 @@ export interface AuditHeaderOptions {
    */
   readonly controls?: string | undefined;
   /**
+   * The words after the count, the host's (issue 295; RULES "2 problems to
+   * fix"): the panel's own heading words, so the head and the panel name the
+   * problems alike. Absent, the count is drawn alone: the package writes no
+   * English of its own here.
+   */
+  readonly label?: Readonly<{ one: string; other: string }> | undefined;
+  /**
    * Whether §17d's overlay is open. Defaults to `false`.
    *
    * WAS `filtered`, AND THE SWAP IS THE RULING. This button used to toggle the
@@ -381,7 +388,7 @@ export function renderAuditHeader(overlay: AuditOverlay, options: AuditHeaderOpt
     ` ${AUDIT_PANEL_ATTRIBUTE}>`,
     dot,
     `<span class="ig-audit-count">${count}</span>`,
-    `<span class="ig-audit-label">${overlay.count === 1 ? 'problem' : 'problems'}</span>`,
+    options.label === undefined ? '' : renderMarkup(element('span', { class: 'ig-audit-label' }, [overlay.count === 1 ? options.label.one : options.label.other])),
     `</button>`,
     `</div>`,
   ].join('');

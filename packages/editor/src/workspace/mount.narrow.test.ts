@@ -13,6 +13,7 @@ import { describe, it } from 'node:test';
 
 import type { GraphDocument, StoreSnapshot, DataSource } from '@issuegraph/store';
 import { createScriptedSource, createStore, makeEdge } from '@issuegraph/store';
+import { defaultTheme } from '@issuegraph/viewer';
 import { JSDOM } from 'jsdom';
 
 import { RELATE_KEY } from '../create/keys.ts';
@@ -238,6 +239,32 @@ describe('the narrow tabs and the Related groups list, mounted', () => {
       assert.equal(dataTabOf(page), 'related');
       page.handle.destroy();
     } finally {
+      page.dom.window.close();
+    }
+  });
+
+  it('scrolls a 200-row order to rank 150 and re-cuts the window around it (review-41 on PR 341)', async () => {
+    // The pitch is a dense row and its hairline, the same tokens the spacer
+    // multiplies. With the old pitch (row height + the small step, 48) a scroll
+    // to rank 150 named rank 178.
+    const many: GraphDocument = {
+      issues: Array.from({ length: 200 }, (_, index) => ({ ref: String(index + 1), title: `Issue ${String(index + 1)}`, state: 'open' as const })),
+      edges: [],
+    };
+    const page = await mounted(many, { railCount: 50 });
+    try {
+      const rail = page.zone('rail') ?? assert.fail('no rail zone');
+      const pitch = defaultTheme.metrics['--ig-row-height-dense'] + defaultTheme.metrics['--ig-hairline-width'];
+      // jsdom lays nothing out, so the chrome above the rows measures 0.
+      rail.scrollTop = 150 * pitch;
+      rail.dispatchEvent(new page.win.Event('scroll'));
+      await flush();
+      // The window is re-cut its slack above the reader: a 50-row window's
+      // slack is 12 (RAIL_SLACK bounded to a quarter of the window), so 138.
+      // The old pitch named rank 178 and pinned the window to its end, 150.
+      assert.equal(page.handle.state.railStart, 150 - 12, 'the scroll named the wrong rank');
+    } finally {
+      page.handle.destroy();
       page.dom.window.close();
     }
   });

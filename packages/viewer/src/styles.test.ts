@@ -486,9 +486,19 @@ describe('the density escape hatch overrides the crossover it is an escape from'
       assert.match(body(scope, '.ig-slot .ig-row-meta'), /flex-wrap:\s*nowrap/, `${scope}: the meta line wraps`);
       assert.match(body(scope, '.ig-slot .ig-row-meta .ig-badges > .ig-badge'), /flex:\s*none/, `${scope}: a chip can shrink`);
       for (const kind of ['caveat', 'evidence']) {
-        assert.match(body(scope, `.ig-slot .ig-row-meta .ig-badges > .ig-badge[data-${kind}]`), /flex:\s*0 1 auto/, `${scope}: ${kind} cannot give way`);
+        assert.match(body(scope, `.ig-slot .ig-row-meta .ig-badges > .ig-badge[data-${kind}]`), /flex:\s*0 1000 auto/, `${scope}: ${kind} does not give way first`);
         assert.match(body(scope, `.ig-slot .ig-row-meta .ig-badges > .ig-badge[data-${kind}] > span:last-child`), /text-overflow:\s*ellipsis/, `${scope}: ${kind} is cut, not ellipsized`);
       }
+    }
+  });
+
+  it('shrinks the fact\u2019s verb after the caveat and never its issue (issue 295, the lead\u2019s ruling)', () => {
+    const body = (scope: string, tail: string): string =>
+      rules().filter((rule) => rule.selector.split(',').map((one) => one.trim()).includes(`${scope} ${tail}`)).map((rule) => rule.body).join(';');
+    for (const scope of [CONTAINER_SCOPE, ATTRIBUTE_SCOPE]) {
+      assert.match(body(scope, '.ig-slot .ig-row-meta .ig-badges > .ig-badge[data-edge]'), /flex:\s*0 1 auto/, `${scope}: the fact cannot shrink`);
+      assert.match(body(scope, '.ig-slot .ig-row-meta .ig-badge[data-edge] .ig-badge-verb'), /text-overflow:\s*ellipsis/, `${scope}: the verb is cut, not ellipsized`);
+      assert.match(body(scope, '.ig-slot .ig-row-meta .ig-badge[data-edge] .ig-badge-ref'), /flex:\s*none/, `${scope}: the issue number can shrink`);
     }
   });
 
