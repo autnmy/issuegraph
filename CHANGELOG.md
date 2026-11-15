@@ -4,6 +4,11 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/editor` `0.34.0`: a selected relationship lists around the issue it was picked from, and a move that keeps that issue keeps its opened groups (#303, seventh part; the lead's q354 on Design's q349 intent).** **No breaking change.** Additive: `WorkspaceSelection`'s edge arm gains an optional `pickedFrom`.
+  - **The issue it was picked from.** A relationship picked with one issue selected carries that issue as `pickedFrom`, beside `edgeId`; a relationship picked from a selected relationship keeps that one's. The Related list reads around it when it is one of the relationship's two ends, so a relationship picked from #2283's "Blocks" stays around #2283, where 0.33.0 moved the list to the relationship's stored `from` end. Picked with nothing or a set selected, the list reads around the stored `from` end, as before.
+  - **Opened groups.** A selection move that keeps the list around the same issue (an issue to one of its relationships, and back) keeps the groups the reader opened; a move to a different issue starts folded, as does a set. The legend's switched kinds still start over on every move.
+  - **Pinned** in the editor's selection, related and host tests. No accessibility baseline moved.
+
 - **`@issuegraph/viewer` `0.21.1`: the gutter lines take the board's look, rounded at their ends, and meet the selection 10 above and below its centre (#303, sixth part; the lead's q353, design head `755dc46`).** **No API change**; a markup change for a host that reads the canvas's paths.
   - **Rounded ends.** Where a line turns at an end of its trunk, the turn is a quarter curve of `--ig-space-snug` (8); a turn mid-trunk, where the group's other lines carry on past it, stays a square T, as the board draws its middle stubs. The radius never runs past half the trunk or past its own stub. Each relationship is still one path.
   - **Where the stubs meet the cards.** The selection's stub for what comes in sits 10 above its centre and the stub for what goes out 10 below (half `--ig-space-wide`), and a kind that reads the same both ways meets it at the centre; every neighbour's stub meets its card's centre. This replaces the per-group fraction of the card's height that 0.20.0 drew.

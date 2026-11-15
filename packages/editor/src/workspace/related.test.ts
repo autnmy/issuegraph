@@ -57,7 +57,7 @@ it('#303 relatedListView says nothing is selected, and that an unrelated issue h
 it('#303 q349: a selected relationship leaves the list as it was around the issue it was picked from, its row the selected row', () => {
   // "The list stays as it was, around the issue the relationship was picked from: 'Around #2290 · 17',
   // every group with its count. The relationship's row is the selected row, under the head that names
-  // its kind." The selection names only the edge, so the issue is its stored `from` end.
+  // its kind." Picked with nothing selected, the issue is its stored `from` end (q354 for the picked-from issue).
   const document = hub(13);
   const around = onlyBlock(relatedListView(document, SUBJECT));
   const relationships = inspectorView(document, SUBJECT).relationships;
