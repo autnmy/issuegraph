@@ -4,6 +4,11 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/viewer` `0.23.3` / `@issuegraph/editor` `0.36.1`: selecting a unit keeps its partners' lines (#308, part D2a; build-136's ruling).** **No API change.**
+  - **The canvas and legend read the whole unit when the unit is selected.** Selecting a together-with unit (its lead, the card) makes the editor's canvas and its legend counts and switches read every member's relationships, each once (a partner's blocker draws into the unit's card). Selecting one member reads that member's own relationships, the same rule as the viewer's recede (review-41 and review-219, PR 326). The Inspector still lists the selected issue's own relationships.
+  - **The viewer keeps the whole card for the unit.** Selecting a unit's lead (the card the order and the canvas draw) no longer recedes a partner's lines or its neighbours. Selecting one member still reads that member alone, as before.
+  - **Pinned** in the editor's neighbourhood test and the viewer's recede tests.
+
 - **`@issuegraph/editor` `0.36.0` / `@issuegraph/viewer` `0.23.2`: the Inspector's relationship rows are the board's unboxed two-line rows, a placed issue drops only the graph holds its sentence names, and the group card's reach words take content.md's edits (#308, part D1; q359).** Additive: `InspectorRelationship.titles` (`{ from, to }`, each end's title or `null`).
   - **Two-line rows** (RULES, Relationships; the board's `.ig-rel`). Line one is the glyph in a 16 column in text-muted, then the phrase and number in text; line two is the other issue's title in text-muted, and for a relationship set on the other issue " · set on the other issue" (the host's `inbound` word), which moves there from the row's right-hand slot. No box and no hue edge: hover takes the secondary fill and the selected row the strong fill (`data-ig-selected`), with the "selected" word kept for a screen reader only. The remove and the flip sit on the right across both lines. A refused row keeps its dotted outline.
   - **Holds.** A placed slot drops only a graph hold whose subject is one of the open blockers its sentence names; a graph hold on a serialized peer or an unready member stays (review-41 and review-219 on PR 324).

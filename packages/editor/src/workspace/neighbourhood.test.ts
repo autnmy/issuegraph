@@ -83,6 +83,41 @@ function held(counts: Partial<Record<EdgeField, number>>): readonly EdgeField[] 
   return LEGEND_ORDER.flatMap((field) => Array.from({ length: counts[field] ?? 0 }, () => field));
 }
 
+describe('a unit draws whole (#308)', () => {
+  // i0002 goes together with i0001 (one slot, i0001 the lead) and is blocked
+  // by i0004; i0001 is blocked by i0003.
+  const unitDocument = backlogOf(5, {
+    unitOf: { i0002: 'i0001' },
+    edges: [['blocked-by', 'i0002', 'i0004'], ['blocked-by', 'i0001', 'i0003']],
+  });
+  const drawnAround = (key: string): readonly string[] =>
+    (canvasNeighbourhood(unitDocument, { kind: 'issue', key }, []).around?.edges ?? []).map(
+      (edge) => `${edge.field} ${edge.from} ${edge.to}`,
+    );
+
+  it('draws every member\u2019s lines when the unit, its lead, is selected', () => {
+    const drawn = drawnAround('i0001');
+    assert.ok(drawn.includes('blocked-by i0002 i0004'), `the partner's line went undrawn (${drawn.join(', ')})`);
+    assert.ok(drawn.includes('blocked-by i0001 i0003'), "the lead's line went undrawn");
+  });
+
+  it('draws one member\u2019s own lines when that member is selected, as the viewer recedes them (review-41, PR 326)', () => {
+    const drawn = drawnAround('i0002');
+    assert.ok(drawn.includes('blocked-by i0002 i0004'), "the member's line went undrawn");
+    assert.equal(drawn.includes('blocked-by i0001 i0003'), false, "a line only the lead has was counted for a member");
+  });
+
+  it('agrees with the canvas the viewer draws, for the lead and for a member', () => {
+    const canvasOf = (key: string): string =>
+      renderWorkspace(unitDocument, { words: WORKSPACE_WORDS, selection: { kind: 'issue', key } }).markup;
+    const lineOf = (from: string, to: string): RegExp => new RegExp(`<path class="ig-edge"[^>]*data-ig-group="blocked-by\\|${from}\\|${to}"`);
+    assert.match(canvasOf('i0001'), lineOf('i0002', 'i0004'), "the unit's partner line was not drawn");
+    assert.match(canvasOf('i0001'), lineOf('i0001', 'i0003'));
+    assert.match(canvasOf('i0002'), lineOf('i0002', 'i0004'));
+    assert.doesNotMatch(canvasOf('i0002'), lineOf('i0001', 'i0003'), 'a member drew a line only the lead has');
+  });
+});
+
 describe('which kinds draw', () => {
   it('draws blocked-by first past 8 relationships, and every kind, decomposed-from too, at 8 or fewer', () => {
     assert.equal(DENSE_RELATIONSHIPS, 8);

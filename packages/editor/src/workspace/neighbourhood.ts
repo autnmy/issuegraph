@@ -133,14 +133,16 @@ function kindsOf(relationships: readonly InspectorRelationship[], on: ReadonlySe
 }
 
 /**
- * Every relationship a set's members hold, each once: the lines between two
- * members too, since both ends are the selection, but no member's sub-issues.
+ * Every relationship these issues hold, each once: the lines between two of
+ * them too, since both ends are drawn, but no one's sub-issues. A selected set
+ * reads its members; a selected unit reads its members too (#308: "selecting a
+ * unit keeps its partner's lines").
  */
-function setEdges(document: ViewerDocument, keys: readonly string[]): readonly ViewerEdge[] {
+function relationshipsAround(document: ViewerDocument, keys: readonly string[]): readonly InspectorRelationship[] {
   const byId = new Map(
     keys.flatMap((key) => issueRelationships(document, key)).map((relationship) => [relationship.edgeId, relationship]),
   );
-  return [...byId.values()].map(edgeOf);
+  return [...byId.values()];
 }
 
 /**
@@ -171,11 +173,22 @@ export function canvasNeighbourhood(
     }
     case 'issues': {
       const keys = subject.issues.map((issue) => issue.key);
-      const edges = setEdges(normalizeDocument(document).document, keys);
+      const edges = relationshipsAround(normalizeDocument(document).document, keys).map(edgeOf);
       return { around: { centre: keys, edges, reach: edges }, kinds: null };
     }
     case 'issue': {
-      const relationships = inspected.relationships;
+      // ONE RULE WITH THE VIEWER'S RECEDE (review-41, PR 326): selecting the
+      // unit (its lead, the card) draws every member's lines; selecting one
+      // member draws that member's alone.
+      const normalized = normalizeDocument(document).document;
+      const selectedKey = selection.kind === 'issue' ? selection.key : subject.issue.key;
+      const unit = [subject.issue.key, ...(subject.whyRank?.unitPartners ?? [])];
+      const relationships =
+        selectedKey === subject.issue.key
+          ? unit.length > 1
+            ? relationshipsAround(normalized, unit)
+            : inspected.relationships
+          : issueRelationships(normalized, selectedKey);
       const on = drawnKinds(
         relationships.map((relationship) => relationship.field),
         switched,
