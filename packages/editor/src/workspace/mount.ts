@@ -1610,6 +1610,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       // that reopened itself on every landed write would be unusable.
       canvasOpen: state.canvasOpen,
       inspectorDismissed: state.inspectorDismissed,
+      orderPanel: state.orderPanel,
       // The layout under 640's tab, the groups opened past five and the
       // legend's switched kinds, for the same reason: the renderer keeps
       // nothing across a redraw.

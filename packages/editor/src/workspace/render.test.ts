@@ -113,10 +113,10 @@ describe('the three zones render at their fixed positions', () => {
     // exhaustive list below is still exact — a further attribute added later
     // still fails here. What is no longer claimed is that the root carries
     // NOTHING. The layout under 640 adds `data-tab`, the tab its container
-    // block reads.
+    // block reads, and the folded order its panel's state (#313).
     assert.match(
       result.markup,
-      /^<div class="ig-workspace" data-order="settled" data-canvas="strip" data-canvas-legend="[a-z]+" data-inspector="dismissed" data-tab="order">/,
+      /^<div class="ig-workspace" data-order="settled" data-canvas="strip" data-canvas-legend="[a-z]+" data-inspector="dismissed" data-order-panel="shut" data-tab="order">/,
     );
     assert.match(result.markup, /<\/div>$/);
   });
@@ -3643,6 +3643,29 @@ describe('the log offers "Show #n" for a write the graph is not drawing (#308, D
   it('offers Show with nothing selected, where the graph draws the groups and no line', () => {
     const groups = header({ kind: 'none' }, [entry('serialize-with|i0003|i0004', 'i0003')]);
     assert.match(groups, /class="ig-log-show"[^>]*data-ig-target="i0003"/);
+  });
+});
+
+
+
+describe('the folded order\u2019s strip and panel head (#313, Design 7b8fcbc)', () => {
+  const document = backlogOf(3);
+  const markupOf = (orderPanel: boolean): string =>
+    renderWorkspace(document, { ...WORDS, selection: { kind: 'issue', key: 'i0001' }, orderPanel }).markup;
+
+  it('draws the strip\u2019s one button, named and titled by the host, pressed while the panel is open', () => {
+    const shut = markupOf(false);
+    assert.match(shut, /<div class="ig-order-strip"><button type="button" class="ig-order-toggle" data-ig-command="order-open" aria-label="show the order" title="show the order" aria-expanded="false"/);
+    assert.match(markupOf(true), /class="ig-order-toggle"[^>]*aria-expanded="true"/);
+    assert.match(shut, / data-order-panel="shut"/);
+    assert.match(markupOf(true), / data-order-panel="open"/);
+  });
+
+  it('heads the panel with its title, the order\u2019s count and a close button', () => {
+    assert.match(
+      markupOf(true),
+      /<div class="ig-order-head"><span class="ig-order-title">the order<\/span><span class="ig-order-count">3<\/span><button type="button" class="ig-order-close" data-ig-command="order-close" aria-label="close the order" title="close the order">/,
+    );
   });
 });
 
