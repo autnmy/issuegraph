@@ -3614,11 +3614,35 @@ describe('the log offers "Show #n" for a write the graph is not drawing (#308, D
     assert.match(away, /<button type="button" class="ig-log-show" data-ig-command="reveal-issue" data-ig-target="i0003">show i0003<\/button>/);
   });
 
-  it('offers nothing on a row the graph already draws, or with nothing selected', () => {
+  it('offers Show on every row past 60, where the list stands in for the graph and draws no line (review-41, PR 327)', () => {
+    // i0001 with 61 neighbours: the listed tier.
+    const big = backlogOf(62, { edges: relatedHubEdges(61) });
+    const [first] = big.edges;
+    assert.ok(first !== undefined);
+    const markup = renderWorkspace(big, {
+      ...WORDS,
+      selection: { kind: 'issue', key: 'i0001' },
+      log: [
+        {
+          kind: 'pending',
+          mutationId: 'm-near',
+          carrier: 'i0001',
+          edgeId: edgeIdentity(first.field, first.from, first.to),
+          write: { op: 'delete', edge: edgeIdentity(first.field, first.from, first.to) },
+        },
+      ],
+    }).markup;
+    assert.match(markup, /class="ig-log-show"[^>]*data-ig-target="i0001"/);
+  });
+
+  it('offers nothing on a row the graph already draws', () => {
     const drawn = header({ kind: 'issue', key: 'i0001' }, [entry('blocked-by|i0001|i0002', 'i0001')]);
     assert.doesNotMatch(drawn, /ig-log-show/);
-    const all = header({ kind: 'none' }, [entry('serialize-with|i0003|i0004', 'i0003')]);
-    assert.doesNotMatch(all, /ig-log-show/);
+  });
+
+  it('offers Show with nothing selected, where the graph draws the groups and no line', () => {
+    const groups = header({ kind: 'none' }, [entry('serialize-with|i0003|i0004', 'i0003')]);
+    assert.match(groups, /class="ig-log-show"[^>]*data-ig-target="i0003"/);
   });
 });
 

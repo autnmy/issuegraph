@@ -3969,12 +3969,15 @@ export function renderWorkspace(
     // (RULES, Graphs, Dense neighbourhoods). See `canvasDrawing`.
     ...drawing,
   });
-  // THE LINES THE CANVAS ACTUALLY DRAWS, for the log's "Show #n" (#308): read
-  // off the ladder's own drawn document, so the list that stands in for the
-  // graph past 60 draws none and a pending line drawn as a mark counts as
-  // drawn (review-41, PR 327).
+  // THE LINES THE CANVAS ACTUALLY DRAWS, for the log's "Show #n" (#308). Only
+  // the direct tier draws a graph: past 60 the list stands in for it and draws
+  // no line, though the ladder's document still holds them, so no line counts
+  // as drawn there (review-41, PR 327). A write's mark attaches only to a line
+  // in that same document (`overlaysFor`), so a marked line is among these.
   const drawnLines: ReadonlySet<string> = new Set(
-    canvas.ladder.canvas.edges.map((edge) => edgeIdentity(edge.field, edge.from, edge.to)),
+    canvas.ladder.tier === 'direct'
+      ? canvas.ladder.canvas.edges.map((edge) => edgeIdentity(edge.field, edge.from, edge.to))
+      : [],
   );
 
   const inspector = inspectorView(document, selection);
