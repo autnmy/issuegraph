@@ -317,7 +317,15 @@ export const WORKSPACE_WORDS: MountWords = {
     // The plural is why the package hands over a count instead of a template.
     ranked === 1 ? '1 issue is ranked' : `${String(ranked)} issues are ranked`,
   filteredClear: 'Clear filter',
-  workedAsOneUnit: 'worked together with',
+  positionOf: (rank: number, total: number): string => `${String(rank)} of ${String(total)}`,
+  positionTail: ({ partners, blockers }: { readonly partners: readonly string[]; readonly blockers: readonly string[] }): string => {
+    const unit = partners.length === 0 ? null : `Worked with ${partners.join(', ')} as one unit`;
+    const [only] = blockers;
+    const after = blockers.length > 1 ? `after the ${String(blockers.length)} issues that block it close` : only === undefined ? null : `after ${only} closes`;
+    if (unit !== null && after !== null) return `${unit}, ${after}`;
+    const clause = unit ?? after ?? '';
+    return `${clause.charAt(0).toUpperCase()}${clause.slice(1)}`;
+  },
   noRelationships: 'Nothing is related to this issue yet.',
   showMore: (count: number): string => `Show ${String(count)} more`,
   relationshipsToDraw: 'Relationships to draw',

@@ -4,6 +4,12 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/editor` `0.35.0`: the Inspector's Position block in RULES' words: "11 of 16. Matched ordering query 1, label:P0. After the 9 issues that block it close." (#308, part B).** **Breaking for a host: `WorkspaceWords.workedAsOneUnit` is gone and `positionOf(rank, total)` and `positionTail({ partners, blockers })` are new required words.**
+  - **The heading is the host's `whyRank` alone** ("Position"); the rank opens the sentence instead ("11 of 16."). A held slot the order places nowhere keeps the host's `whyHeld` heading and its holds.
+  - **The sentence is three clauses, each ending on its full stop and joined by a real space:** the rank against the order's length, the provenance layer 1 words, then the host's tail from the unit's partners and the open issues it waits on ("Worked with #2246 as one unit, after #2240 closes", "After the 9 issues that block it close"). The clauses no longer run together for a screen reader ("…P0worked together with…"): the CSS margin that faked the space is gone.
+  - `InspectorWhyRank` gains `total` and `openBlockers`.
+  - **Pinned** in the editor's why-rank tests.
+
 - **`@issuegraph/viewer` `0.22.1`: a second kind in one direction takes its own stub on the selection, and a second kind on a neighbour its own stub on that card (#303, q355; Design 382ce04).** **No API change.**
   - At the selection, the first kind in still arrives 10 above centre and the first out leaves 10 below; a second kind in the same direction steps a further half step, 20 above or 20 below, since different line styles cannot share one stub. Each kind keeps its own gutter line.
   - A neighbour with two kinds takes the first, in the legend's order, at its centre and the second 10 below.

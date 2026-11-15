@@ -154,6 +154,13 @@ export interface InspectorWhyRank {
    * the slot can answer — and it is the clause the frame ends on.
    */
   readonly unitPartners: readonly string[];
+  /** How many slots the order ranks: the "of 16" in "11 of 16" (#308). */
+  readonly total: number;
+  /**
+   * The open issues the subject's unit is blocked by, outside the unit, each
+   * once: the "after #2240 closes" the Position sentence ends on (#308).
+   */
+  readonly openBlockers: readonly string[];
 }
 
 export interface InspectorView {
@@ -230,6 +237,19 @@ function relationshipsOf(
  */
 function isSubIssue(relationship: InspectorRelationship): boolean {
   return relationship.field === 'decomposed-from' && relationship.direction === 'incoming';
+}
+
+/**
+ * The open issues a unit is blocked by, outside the unit, each once, in the
+ * document's order: what it waits on before it is worked.
+ */
+function openBlockersOf(document: ViewerDocument, members: readonly string[]): readonly string[] {
+  const open = new Set(document.issues.filter((issue) => issue.open).map((issue) => issue.key));
+  const blockers = document.edges
+    .filter((edge) => edge.field === 'blocked-by' && members.includes(edge.from) && !members.includes(edge.to))
+    .map((edge) => edge.to)
+    .filter((key) => open.has(key));
+  return blockers.filter((key, index) => blockers.indexOf(key) === index);
 }
 
 /**
@@ -342,6 +362,8 @@ export function inspectorView(
                 // the panel's heading, and a unit clause that named it back
                 // would read as it being worked with itself.
                 unitPartners: slot.members.filter((member) => member !== subject),
+                total: document.order.slots.filter((ranked) => ranked.rank !== null).length,
+                openBlockers: openBlockersOf(document, slot.members),
               },
         // NULL RATHER THAN A FABRICATED POSITION. An issue the order excludes —
         // a duplicate — genuinely has no position, and inventing `rank: null,

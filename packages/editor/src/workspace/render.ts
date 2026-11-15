@@ -302,22 +302,28 @@ export interface WorkspaceWords {
    */
   readonly listedAroundSelected: (count: number, selected: number) => string;
   /**
-   * §17a's `WHY RANK n` heading, without the number.
-   *
-   * THE NUMBER IS APPENDED, NOT INTERPOLATED INTO A HOST TEMPLATE. A rank is
-   * the one part of this heading the package knows and the host does not, and
-   * a `{n}` placeholder would make every host reimplement the substitution —
-   * which is how a package that refuses to invent English ends up shipping a
-   * tiny template language instead.
+   * The Position block's heading, RULES' "Position" (#308). The rank now opens
+   * the sentence under it ({@link WorkspaceWords.positionOf}) rather than
+   * trailing the heading.
    */
   readonly whyRank: string;
   /**
-   * The same heading for a HELD slot, which has no rank to name.
-   *
-   * A held slot's rank is `null` by construction (`@issuegraph/derive` assigns
-   * `ready ? (rank += 1) : null`), so "why rank —" would be a heading about a
-   * position that does not exist. The design's own §16d ruling is the same one:
-   * a held unit prints the em dash rather than a number.
+   * The rank against the order's length, the Position sentence's opening:
+   * "11 of 16" (#308). The package appends the full stop.
+   */
+  readonly positionOf: (rank: number, total: number) => string;
+  /**
+   * The clause the Position sentence ends on, from the rest of a together unit
+   * and the open issues it waits on, each an issue number ("#2246"): "Worked
+   * with #2246 as one unit, after #2240 closes", "After the 9 issues that block
+   * it close" (RULES 5b5f1cc, #308). The empty string when there is nothing
+   * to say; the package appends the full stop.
+   */
+  readonly positionTail: (facts: { readonly partners: readonly string[]; readonly blockers: readonly string[] }) => string;
+  /**
+   * The heading for a HELD slot the order places nowhere, RULES' "Why it is
+   * held": there is no rank to open the sentence with, and the holds below say
+   * what it waits on.
    */
   readonly whyHeld: string;
   /**
@@ -354,11 +360,6 @@ export interface WorkspaceWords {
    * false statement §2 wrote its ruling about.
    */
   readonly filteredActive: string;
-  /**
-   * Joins the rest of a together unit: §17a ends *"then worked with #514 as one
-   * unit"*, and this is that phrase minus the members, which the package names.
-   */
-  readonly workedAsOneUnit: string;
   /**
    * Stated when the subject has no relationships at all.
    *
@@ -421,7 +422,7 @@ export interface WorkspaceWords {
    * the kind step live under a panel headed by a different issue. The step is
    * drawn anyway — it carries the only pointer cancel there is — so it has to
    * say whose it is, and the package invents that phrase no more readily than
-   * it invents {@link WorkspaceWords.workedAsOneUnit}. The REFERENCE is the
+   * it invents {@link WorkspaceWords.positionTail}. The REFERENCE is the
    * package's, appended as its own element, so a host writes a phrase and never
    * a template.
    */
@@ -547,11 +548,10 @@ export interface WorkspaceWords {
  * every word in it is the host's.
  *
  * NUMBERS ARE APPENDED, NEVER INTERPOLATED, which is why this is four words
- * rather than one sentence with two `{n}` holes in it. {@link
- * WorkspaceWords.whyRank} states the doctrine and the reason: a template makes
- * every host reimplement the substitution. The row is assembled as spans —
+ * rather than one sentence with two `{n}` holes in it: a template makes every
+ * host reimplement the substitution. The row is assembled as spans —
  * `<focus> <key> · <n> <of> <total> <shown>` — so a host whose language orders
- * those differently is no worse off than it is with `whyRank`, and no host has
+ * those differently is no worse off than with spans anywhere else, and no host has
  * to parse a format string.
  *
  * THE DOCTRINE IS THIS INTERFACE'S, NOT THE WHOLE PACKAGE'S, and saying
@@ -628,7 +628,7 @@ export interface CanvasWords {
  * word in it is the host's.
  *
  * NUMBERS ARE APPENDED, NEVER INTERPOLATED — {@link CanvasWords} states the
- * doctrine and {@link WorkspaceWords.whyRank} the reason. The row is assembled
+ * doctrine and the reason. The row is assembled
  * as spans, `<count> <isolated>`, so a host is never handed a format string.
  *
  * `IsolatedChip.label` IS NOT REUSED, and the reason is the one `CanvasWords`
@@ -2285,21 +2285,12 @@ function kindListSpec(words: WorkspaceWords, source: string | null): ElementSpec
  * SO THE TWO CHANNELS ARE READ FROM DIFFERENT FIELDS, AND NEITHER IS `rank`.
  * `data-held` is READINESS — `ready` is the slot's own verdict and the only
  * field that answers "may this start", exactly as layer 1's `slotPosition`
- * now reads it for the row's accessible name. The HEADING is the rank: a
- * number when the order stated a position, and otherwise a word for what is
- * missing.
+ * reads it for the row's accessible name.
  *
- * THREE HEADINGS, NOT TWO, because `rank === null` and "held" came apart. A
- * placed slot names its number, held or not. An unplaced HELD slot says so —
- * PR #126's em dash, in words. An unplaced READY slot is the case the old
- * one-field expression got flatly wrong: it was told "why held" while having
- * no hold to show. `@issuegraph/derive` cannot emit one, but `ViewerDocument`
- * is a public port and a host composes one by hand, so it is reachable from
- * outside this repo — and leaving the inference here would ship the defect
- * this change exists to retire in the package next door. It reuses the rank
- * word with the rail's own em dash rather than taking a new `WorkspaceWords`
- * entry: the fact is "there is no number", which is what the rank cell says
- * with the same character, and a required word would break every host.
+ * THE HEADING IS RULES' "Position" (#308), and the rank opens the sentence:
+ * "11 of 16." A slot the order places nowhere has no such clause; when it is
+ * held its heading is the host's "Why it is held" instead, and the holds below
+ * say what it waits on.
  */
 function whyRankSpec(
   why: InspectorWhyRank,
@@ -2307,23 +2298,25 @@ function whyRankSpec(
   holds: readonly ElementSpec[],
 ): ElementSpec {
   const held = !why.ready;
+  // RULES' sentence (#308): "11 of 16. Matched ordering query 1, label:P0.
+  // After the 9 issues that block it close." Each clause ends on its full stop
+  // and the clauses are joined by a real space, so the text a reader hears
+  // never runs two clauses together.
+  const provenance = provenanceClause(why.provenance);
+  const tail = words.positionTail({
+    partners: why.unitPartners.map(issueNumber),
+    blockers: why.openBlockers.map(issueNumber),
+  });
+  const clauses: readonly (ElementSpec | string)[] = [
+    ...(why.rank === null ? [] : [`${words.positionOf(why.rank, why.total)}.`]),
+    ...(provenance === null ? [] : [element('span', {}, [provenance, '.'])]),
+    ...(tail === '' ? [] : [`${tail}.`]),
+  ];
   return element('div', { class: 'ig-why-rank', 'data-held': held ? 'true' : 'false' }, [
-    element('h3', { class: 'ig-why-rank-heading' }, [
-      why.rank !== null
-        ? `${words.whyRank} ${String(why.rank)}`
-        : held
-          ? words.whyHeld
-          : `${words.whyRank} —`,
-    ]),
-    element('p', { class: 'ig-why-rank-sentence' }, [
-      provenanceClause(why.provenance),
-      why.unitPartners.length === 0
-        ? null
-        : element('span', { class: 'ig-why-rank-unit' }, [
-            `${words.workedAsOneUnit} `,
-            element('span', { class: 'ig-id' }, [why.unitPartners.join(', ')]),
-          ]),
-    ]),
+    element('h3', { class: 'ig-why-rank-heading' }, [why.rank === null && held ? words.whyHeld : words.whyRank]),
+    clauses.length === 0
+      ? null
+      : element('p', { class: 'ig-why-rank-sentence' }, clauses.flatMap((clause, index) => (index === 0 ? [clause] : [' ', clause]))),
     // THE HOLDS BELONG TO THE EXPLANATION, so they live inside this block
     // rather than beside it. They were briefly stated twice — once worded into
     // this sentence and once in the list below it — which is the panel telling

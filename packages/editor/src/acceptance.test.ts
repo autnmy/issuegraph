@@ -854,7 +854,15 @@ const WORKSPACE_WORDS: surface.WorkspaceWords = {
   filteredActive: 'narrowed to flagged rows',
   filteredDenominator: (ranked) => `${String(ranked)} issues are ranked`,
   filteredClear: 'clear the filter',
-  workedAsOneUnit: 'worked as one unit with',
+  positionOf: (rank: number, total: number): string => `${String(rank)} of ${String(total)}`,
+  positionTail: ({ partners, blockers }: { readonly partners: readonly string[]; readonly blockers: readonly string[] }): string => {
+    const unit = partners.length === 0 ? null : `Worked with ${partners.join(', ')} as one unit`;
+    const [only] = blockers;
+    const after = blockers.length > 1 ? `after the ${String(blockers.length)} issues that block it close` : only === undefined ? null : `after ${only} closes`;
+    if (unit !== null && after !== null) return `${unit}, ${after}`;
+    const clause = unit ?? after ?? '';
+    return `${clause.charAt(0).toUpperCase()}${clause.slice(1)}`;
+  },
   noRelationships: 'nothing is related to this',
   showMore: (count: number): string => `Show ${String(count)} more`,
   relationshipsToDraw: 'kinds to draw',
