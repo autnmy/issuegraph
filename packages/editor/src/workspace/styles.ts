@@ -201,8 +201,13 @@ export const workspaceStylesheet = `
 .ig-log-write {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--ig-space-tight);
+  gap: var(--ig-space-snug);
   align-items: baseline;
+  color: var(--ig-text);
+}
+
+/* The board mutes only the state word; the relationship reads in text. */
+.ig-log-status {
   color: var(--ig-text-muted);
 }
 
