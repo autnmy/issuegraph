@@ -887,9 +887,9 @@ describe('the cycle walk, composed rather than derived', () => {
     assert.equal(found[0]?.walk, undefined);
   });
 
-  it('leaves detail and members byte-identical to a walk-free reading', () => {
-    // The walk is drawn as its own line, so nothing about the sentence or the
-    // member set may move when one arrives. `panel.ts` records why.
+  it('reads the walk in the sentence where there is one, and keeps the members either way (#300)', () => {
+    // Design (#300): the loop note's body is the walk, as the board draws it;
+    // with no walk it names the members. The member set never moves.
     const document = documentOf(
       [issue('a'), issue('b'), issue('c')],
       [
@@ -903,7 +903,8 @@ describe('the cycle walk, composed rather than derived', () => {
     const withWalk = only(auditDocument({ document, graph }), 'cycle')[0];
     const without = only(auditDocument({ document, graph: withoutWalk }), 'cycle')[0];
     assert.ok(withWalk?.walk !== undefined);
-    assert.equal(withWalk?.detail, without?.detail);
+    assert.equal(withWalk?.detail, 'a is blocked by b, b is blocked by c, and c is blocked by a.');
+    assert.equal(without?.detail, 'a, b, c block each other in a loop, so none of them can start.');
     assert.deepEqual(withWalk?.members, without?.members);
   });
 

@@ -7,6 +7,7 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 - **`@issuegraph/editor` `0.41.0`: finding sentences carry "#", and a loop the page draws none of keeps a way on (#300; review-219 q261, Design 6b8a53e and content.md 70d5ff5 relayed by build-136).** **Breaking for a host: `AuditRemedyWords.openIssue` is a new required word.**
   - **"#" on every number in a finding's sentence**: "#2290 is blocked by #2280, which is closed…", the loop's members, the duplicate chain and the unreadable issue, through `issueNumber` as every other surface since #296.
   - **A loop's remedy.** "Pick one to remove" selects the first of the loop's issues the page draws (the walk's head when drawn, else the next; the members where no walk was named). When the page draws none, the note offers "Open #2301" (the host's `openIssue`, the first issue's number and the `↗`), an outward link to the first issue through the host's `issueUrl`, as the unreadable note's "Open the issue" is. Without an `issueUrl` there is still no control.
+  - **A loop note's body reads the walk** (review-219): "#2263 is blocked by #2264, and #2264 is blocked by #2263.", under the title "These issues block each other in a loop."; with no walk it still names the members.
   - **The unreadable note's title** is the host's `AuditWords.titles['encoding-refused']`; the demo now passes Design's "Some relationships could not be read.".
   - Badges and Inspector rows already read the RULES words and "#" (#296, #303, #304).
   - **Pinned** in the editor's audit panel and findings tests.

@@ -174,9 +174,9 @@ export interface AuditFinding {
    * conforming walk names no ref twice either, so the set's other rule is not
    * what keeps them apart.)
    *
-   * NOT FOLDED INTO `detail` either, which is left byte-identical by this
-   * field's arrival. `./panel.ts` records why the card draws the walk as its own
-   * line rather than composing it into the sentence.
+   * `detail` READS THE WALK where there is one (Design, #300): "#2263 is
+   * blocked by #2264, and #2264 is blocked by #2263.", as the board draws the
+   * loop note's body under its title. With no walk it names the members.
    */
   readonly walk?: readonly IssueRef[] | undefined;
   /**
@@ -640,16 +640,32 @@ function walkOfComponent(
   return null;
 }
 
+/**
+ * A loop note's body (#300): the walk as the board draws it, each issue
+ * blocked by the next and the last by the head ("#2263 is blocked by #2264,
+ * and #2264 is blocked by #2263."); with no walk, the members, which is all
+ * that is known.
+ */
+function cycleSentence(members: readonly IssueRef[], walk: readonly IssueRef[] | null): string {
+  if (walk === null || walk.length === 0) {
+    return `${members.map(issueNumber).join(', ')} block each other in a loop, so none of them can start.`;
+  }
+  const steps = walk.map((ref, at) => `${issueNumber(ref)} is blocked by ${issueNumber(walk[(at + 1) % walk.length] ?? ref)}`);
+  const last = steps.pop() ?? '';
+  return `${steps.length === 0 ? last : `${steps.join(', ')}, and ${last}`}.`;
+}
+
 function cycleFindings(graph: AuditGraph): AuditFinding[] {
   return graph.cycles
     .filter((members) => members.length > 0)
     .map((members) => [...members].sort())
     .sort((a, b) => compareMembers(a, b))
-    .map((members) =>
+    .map((members) => ({ members, walk: walkOfComponent(graph, members) }))
+    .map(({ members, walk }) =>
       finding(
         'cycle',
         members,
-        `${members.map(issueNumber).join(', ')} block each other in a loop, so none of them can start.`,
+        cycleSentence(members, walk),
         // ASKED PER COMPONENT AND STILL A PASS-THROUGH. The reader decides
         // whether there IS a walk; this module neither computes nor
         // second-guesses that. Asking by KEY rather than by position is what
@@ -660,7 +676,7 @@ function cycleFindings(graph: AuditGraph): AuditFinding[] {
         // answer the same walk, so one would do — but `members` is the HOST's
         // array, and a single ref the reader does not hold would drop the walk
         // for the whole component if it happened to sort first.
-        walkOfComponent(graph, members),
+        walk,
       ),
     );
 }
