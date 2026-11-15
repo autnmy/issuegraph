@@ -16,7 +16,7 @@ import type { ViewerDocument } from '@issuegraph/viewer';
 import { type WorkspaceSelection, selectionReducer } from './selection.ts';
 import type { WorkspaceWords } from '../index.ts';
 import type { WorkspaceLogEntry } from '../index.ts';
-import { WORKSPACE_WORDS, backlogOf, drawnKeys, zonesIn } from '../testing/workspace.ts';
+import { OTHER_WORKSPACE_WORDS, WORKSPACE_WORDS, backlogOf, drawnKeys, zonesIn } from '../testing/workspace.ts';
 import { blockedHub, keysOf, relatedHubEdges } from '../testing/workspace.ts';
 
 /** A graph port built from the reader's own model, as a host would build it. */
@@ -47,6 +47,29 @@ function graphFor(
 }
 
 const WORDS = { words: WORKSPACE_WORDS } as const;
+
+/** Every readable text node, in document order. */
+function textNodes(markup: string): string[] {
+  return [...markup.matchAll(/>([^<>]*)</g)]
+    .map((match) => (match[1] ?? '').trim())
+    .filter((text) => text !== '');
+}
+
+/**
+ * Every attribute value a person reads rather than a machine (#156): a
+ * package-authored word in an `aria-label` or a `title` is as much a language
+ * choice as one in a text node, and less visible.
+ */
+function readableAttributes(markup: string): string[] {
+  return [...markup.matchAll(/\b(?:aria-label|title|alt|placeholder)="([^"]*)"/g)].map((match) => match[1] ?? '');
+}
+
+/** Every string a vocabulary holds, at any depth; its sentence functions are the host's too, but have no fixed text. */
+function vocabularyStrings(value: unknown): string[] {
+  if (typeof value === 'string') return [value];
+  if (typeof value !== 'object' || value === null) return [];
+  return Object.values(value).flatMap(vocabularyStrings);
+}
 
 /** The canvas zone alone — from its marker to the inspector's, which follows it. */
 /**
@@ -2445,9 +2468,9 @@ describe("§17b's flip control is published markup, not mount chrome", () => {
       treatmentForState('selected').label,
       WORKSPACE_WORDS.flip,
     ]);
-    const readable = [...rowFor(panel, 'blocked-by').matchAll(/>([^<>]*)</g)]
-      .map((match) => (match[1] ?? '').trim())
-      .filter((text) => text !== '');
+    // TEXT AND READABLE ATTRIBUTES ALIKE (#156), as the picker's total claim.
+    const row = rowFor(panel, 'blocked-by');
+    const readable = [...textNodes(row), ...readableAttributes(row)];
     assert.ok(readable.length > 0, 'the row rendered no readable text at all');
     assert.deepEqual(
       readable.filter((text) => !allowed.has(text)),
@@ -3709,3 +3732,40 @@ describe('the folded order\u2019s strip and panel head (#313, Design 7b8fcbc)', 
   });
 });
 
+describe('every readable byte of the workspace comes from the host (#156)', () => {
+  // THE ANTI-COINCIDENCE HALF of the picker's contract. "Every readable byte is
+  // a host word" passes vacuously on a render that echoes the fixture's words
+  // by coincidence; this holds each document fixed, swaps the WHOLE vocabulary,
+  // and asserts no word of the first one is left, in text or in a readable
+  // attribute. A survivor is the package's own word.
+  const edge = edgeIdentity('blocked-by', 'i0001', 'i0002');
+  const document_ = backlogOf(4, { edges: [['blocked-by', 'i0001', 'i0002']] });
+  const states: readonly (readonly [string, WorkspaceSelection | undefined])[] = [
+    ['nothing selected', undefined],
+    ['an issue selected', { kind: 'issue', key: 'i0001' }],
+    ['a relationship selected', { kind: 'edge', edgeId: edge }],
+  ];
+  const english = new Set(vocabularyStrings(WORKSPACE_WORDS));
+  const other = vocabularyStrings(OTHER_WORKSPACE_WORDS);
+
+  for (const [name, selection] of states) {
+    it(`leaves none of the first vocabulary's words with ${name}`, () => {
+      const { markup } = renderWorkspace(document_, {
+        words: OTHER_WORKSPACE_WORDS,
+        ...(selection === undefined ? {} : { selection }),
+      });
+      const readable = [...textNodes(markup), ...readableAttributes(markup)];
+      assert.deepEqual(
+        readable.filter((text) => english.has(text)),
+        [],
+        'a word survived the vocabulary swap, so the package wrote it',
+      );
+      // AND THE SECOND VOCABULARY IS ACTUALLY DRAWN, so the claim above cannot
+      // pass by the render drawing no host word at all.
+      assert.ok(
+        readable.some((text) => other.includes(text)),
+        'the render drew none of the second vocabulary',
+      );
+    });
+  }
+});

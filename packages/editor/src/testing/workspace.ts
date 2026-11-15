@@ -180,6 +180,151 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
   },
 };
 
+/**
+ * A second, complete vocabulary: every string and every sentence the host
+ * supplies, in other words (#156).
+ *
+ * FOR THE ANTI-COINCIDENCE PIN, as `picker/render.test.ts` has one. "Every
+ * readable byte is a host word" passes vacuously on a render that happens to
+ * echo {@link WORKSPACE_WORDS} by coincidence; rendering the same document
+ * with this vocabulary and finding none of the first one's words left is what
+ * proves each word came from the host. Every entry differs from its
+ * counterpart, and none is an English word the package could write.
+ */
+export const OTHER_WORKSPACE_WORDS: WorkspaceWords = {
+  change: {
+    facets: {
+      moved: 'lignes bougées',
+      promoted: 'remontées',
+      'newly-held': 'nouvellement bloquées',
+      entered: 'arrivées',
+      left: 'parties',
+    },
+    saved: "l'écriture est passée",
+    unchanged: "cette modification n'a rien changé",
+    computing: "écrit, l'ordre se calcule",
+    dismiss: 'fermer le résumé',
+    direction: { up: 'monte', down: 'descend' },
+  },
+  log: {
+    label: 'écritures en cours',
+    saving: "en cours d'écriture",
+    notSaved: 'non enregistrée',
+    removing: 'en cours de retrait',
+    notRemoved: 'toujours là',
+    show: 'montrer',
+  },
+  canvas: {
+    focus: 'autour de',
+    selected: 'choisi',
+    selectedIssues: (count: number): string => `un lot de ${String(count)}`,
+    of: 'sur',
+    shown: 'dessinés ici',
+    related: 'liés à lui',
+    editMode: 'modifiable',
+  },
+  asOf: 'lu à',
+  open: 'dans le carnet',
+  encoded: 'portent des relations',
+  inspector: 'le panneau de détail',
+  workOrder: "l'ordre",
+  showWorkOrder: "montrer l'ordre",
+  closeWorkOrder: "fermer l'ordre",
+  workOrderRanked: 'placés en file',
+  workOrderAtATime: 'menés ensemble',
+  nothingSelected: 'choisissez une ligne à examiner',
+  issuesSelected: (count) => `${String(count)} tickets choisis`,
+  clearSelection: 'vider la sélection',
+  showCanvas: 'déplier le graphe',
+  hideCanvas: 'ranger le graphe',
+  relationships: 'relations',
+  narrow: {
+    order: 'file classée',
+    related: 'tickets liés',
+    subIssues: 'arbre des enfants',
+    view: 'choix de vue',
+    closeSheet: 'replier la feuille',
+    around: 'centré sur',
+    noSelection: 'choisissez un ticket pour voir ses liens',
+    nothingRelated: "rien n'est encore lié ici",
+  },
+  whyRank: 'pourquoi ce rang',
+  whyHeld: 'pourquoi bloqué',
+  filteredEmpty: 'aucune ligne signalée ne correspond',
+  filteredActive: 'réduit aux lignes signalées',
+  filteredDenominator: (ranked) => `${String(ranked)} tickets sont classés`,
+  filteredClear: 'retirer le filtre',
+  positionOf: (rank: number, total: number): string => `${String(rank)} sur ${String(total)}`,
+  positionTail: ({ partners, blockers }: { readonly partners: readonly string[]; readonly blockers: readonly string[] }): string => {
+    const unit = partners.length === 0 ? null : `Mené avec ${partners.join(', ')} comme une seule unité`;
+    const [only] = blockers;
+    const after = blockers.length > 1 ? `après la fermeture des ${String(blockers.length)} tickets qui le bloquent` : only === undefined ? null : `après la fermeture de ${only}`;
+    if (unit !== null && after !== null) return `${unit}, ${after}`;
+    const clause = unit ?? after ?? '';
+    return `${clause.charAt(0).toUpperCase()}${clause.slice(1)}`;
+  },
+  noRelationships: "rien n'est lié à ceci",
+  showMore: (count: number): string => `Montrer ${String(count)} de plus`,
+  relationshipsToDraw: 'genres à dessiner',
+  relationshipsDrawn: (drawn: number, total: number): string => `${String(drawn)} dessinés sur ${String(total)}`,
+  listedByRelationship: (count: number, issue: string): string =>
+    `${String(count)} tickets touchent ${issue}, trop pour une image, donc listés par genre`,
+  listedAroundSelected: (count: number, selected: number): string =>
+    `${String(count)} tickets touchent les ${String(selected)} choisis, trop pour une image, donc listés par genre`,
+  addRelationship: 'commencer une relation',
+  addRelationshipHeading: 'ajouter une relation',
+  cancel: 'abandonner le brouillon',
+  relatingFrom: 'le brouillon part de',
+  remove: 'délier cette ligne',
+  inbound: 'déclaré ailleurs',
+  flip: "la lire dans l'autre sens",
+  refusals: {
+    'self-edge': 'un ticket ne peut se lier à lui-même',
+    'unknown-issue': "ce ticket n'est pas dans ce carnet",
+    'unknown-edge': 'cette relation a déjà disparu',
+    'duplicate-edge': 'cette relation est déjà déclarée',
+    'unchanged-kind': "c'est déjà ce genre",
+    'symmetric-edge': 'ce genre se lit pareil dans les deux sens',
+    'cardinality': 'ce champ tient une seule référence',
+    'would-cycle': 'cela fermerait une boucle',
+    'guard-failed': "la vérification n'a pas pu tourner",
+  },
+  recovery: {
+    failed: 'le suivi a refusé cette écriture',
+    conflict: 'le ticket a bougé pendant la modification',
+    viewDiff: 'comparer les deux versions',
+    retry: 'renvoyer',
+    retryOnLatest: 'lire la plus récente, puis renvoyer',
+    discardMine: 'jeter ma modification',
+    upstreamOnly: 'seulement chez eux',
+    mineOnly: 'seulement chez moi',
+    mineRemoved: 'seulement chez moi, retiré',
+    carrierReversed: "déclaré depuis l'autre bout en amont",
+    issuesChanged: 'tickets qui ont bougé',
+    diffEmpty: 'rien ne diffère sur cette ligne',
+    retryFailed: 'impossible de lire la version la plus récente',
+  },
+  audit: {
+    heading: { one: "problème dans l'encodage", other: "problèmes dans l'encodage" },
+    titles: {
+      cycle: "ces tickets s'attendent pour toujours",
+      'stale-blocker': 'ceci attend une chose déjà finie',
+      'dead-duplicate-ref': 'ceci est rattaché à un ticket disparu',
+      'encoding-refused': "cette déclaration n'a pas pu être lue",
+    },
+    filter: 'réduire la liste',
+    remedies: {
+      pickEdge: 'choisir un lien',
+      openIssue: 'aller voir',
+      removeEdge: 'le retirer',
+      keepAsHistory: 'le laisser',
+      repoint: 'le rediriger',
+    },
+    refusedOpen: 'voir en amont',
+    refusedRewrite: 'corriger ici',
+  },
+};
+
 /** `count` keys, zero-padded so lexical and numeric order agree. */
 export function keysOf(count: number): string[] {
   return Array.from({ length: count }, (_, index) => `i${String(index + 1).padStart(4, '0')}`);
