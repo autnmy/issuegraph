@@ -103,7 +103,7 @@ async function mountNarrowRule(options: {
   };
   /** The observers from the root element's own window that watch the root element. */
   const rootWatches = (): NarrowRuleWatch[] => watches.filter((watch) => watch.observed.includes(element));
-  return { win, element, handle, notices, click, selectOneAndThree, rootWatches };
+  return { win, element, handle, notices, click, selectOneAndThree, rootWatches, watches: (): readonly NarrowRuleWatch[] => watches };
 }
 
 const issue = (key: string): string => JSON.stringify({ kind: 'issue', key });
@@ -278,6 +278,24 @@ describe('under 640 the workspace selection is one issue', () => {
     await flush();
     assert.deepEqual(page.notices.slice(before), [], 'a callback after destroy reached the host');
     assert.equal(watch.disconnects, 1);
+  });
+});
+
+describe("the rail's width watch comes from the root element's document (#290)", () => {
+  it("builds the rail's observer from the jsdom window, with no global ResizeObserver", async () => {
+    assert.equal(typeof globalThis.ResizeObserver, 'undefined', 'this case needs a test runner with no global ResizeObserver');
+    const { element, handle, watches } = await mountNarrowRule({ box: { width: 1440, height: 900 } });
+    try {
+      await flush();
+      const rail = element.querySelector('[data-zone="rail"]');
+      assert.ok(rail !== null, 'no rail zone is drawn');
+      assert.ok(
+        watches().some((watch) => watch.observed.includes(rail)),
+        "no observer from the root element's window watches the rail",
+      );
+    } finally {
+      handle.destroy();
+    }
   });
 });
 

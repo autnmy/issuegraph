@@ -442,11 +442,19 @@ function isInput(node: Element | null | undefined): node is HTMLInputElement {
   return node !== null && node !== undefined && node.tagName === 'INPUT';
 }
 
-/** Whether a key press was typed into a text field. */
+/**
+ * Whether a key press was typed into a text field. Every editable form of
+ * `contenteditable` counts — the empty value and `plaintext-only` as well as
+ * `true` — and only `false` opts out (#280).
+ */
 function typedInField(event: Event): boolean {
   const target = event.target;
   if (!isElement(target)) return false;
-  return target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.closest('[contenteditable="true"]') !== null;
+  return (
+    target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.closest('[contenteditable]:not([contenteditable="false"])') !== null
+  );
 }
 
 function isComposing(event: Event): boolean {
@@ -2735,9 +2743,12 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // the re-cut then focuses, so the set extends across the edge exactly as
     // it does inside the window.
     if (zoneName === 'rail' && drawn !== null) {
-      const across = event.shiftKey ? acrossEdge(drawn.rail, key, event.key) : null;
+      // READ ONCE, BEFORE `dispatch`: it can run a host callback that calls
+      // `destroy()`, which sets `drawn` to null (review-41, PR 349).
+      const rail = drawn.rail;
+      const across = event.shiftKey ? acrossEdge(rail, key, event.key) : null;
       if (across !== null) dispatch({ kind: 'point', key: across, gesture: 'range', order: rankOrder() });
-      if (drawn !== null && advanceRail(drawn.rail, key, event.key)) return true;
+      if (advanceRail(rail, key, event.key)) return true;
     }
     const scene = sceneFor(zoneName);
     if (scene === null) return false;
@@ -3244,9 +3255,14 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
    * rail can narrow because the host resized, because a sibling grew, or
    * because a container query re-tracked the grid, and only the box itself sees
    * all three.
+   *
+   * TAKEN FROM THE ROOT ELEMENT'S OWN DOCUMENT, as `rootResize` is below, so
+   * the mount reaches no global to watch a box and a test supplies one
+   * observer for both (#290).
    */
+  const ElementResizeObserver = doc.defaultView?.ResizeObserver;
   const railResize =
-    typeof ResizeObserver === 'function' ? new ResizeObserver(() => { dockRailLegend(); }) : null;
+    ElementResizeObserver === undefined ? null : new ElementResizeObserver(() => { dockRailLegend(); });
 
   /**
    * The root element's own width, watched so a resize under 640 cuts a live
@@ -3255,16 +3271,14 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
    *
    * ITS OWN OBSERVER, NOT `railResize`, because `dockRailLegend` disconnects
    * and re-observes that one on every redraw, and the root element is never
-   * replaced by a redraw. TAKEN FROM THE ROOT ELEMENT'S OWN DOCUMENT, which in
-   * a browser is the same constructor `railResize` uses, so a test can supply
-   * one with no global. Without one the narrow flag measured at mount still
-   * holds; only the resize watch is lost.
+   * replaced by a redraw. The same constructor as `railResize`, from the root
+   * element's own document. Without one the narrow flag measured at mount
+   * still holds; only the resize watch is lost.
    */
-  const RootResizeObserver = doc.defaultView?.ResizeObserver;
   const rootResize =
-    RootResizeObserver === undefined
+    ElementResizeObserver === undefined
       ? null
-      : new RootResizeObserver(() => {
+      : new ElementResizeObserver(() => {
           // A queued callback can still arrive after `disconnect()`.
           if (destroyed) return;
           narrow = measuresNarrow();

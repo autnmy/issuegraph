@@ -651,16 +651,34 @@ describe('the editor builds and reports a selection set', () => {
       // Dismiss the lifted inspector first (see the Escape test above), so only
       // the field rule decides this press.
       await press(row('2'), 'Escape');
-      // A field inside the mount, standing in for any text field a host or a
-      // part draws there; the press bubbles to the mount's listener. Appended
-      // AFTER the dismissing press, whose redraw would otherwise detach it.
-      const field = page.win.document.createElement('input');
-      page.zone('rail')?.append(field);
-      assert.ok(field.isConnected, 'the field is not in the mount');
-      field.focus();
-      field.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
-      await flush();
-      assert.deepEqual(page.handle.state.selection, { kind: 'issues', keys: ['1', '2'] });
+      // Fields inside the mount, standing in for any text field a host or a
+      // part draws there; each press bubbles to the mount's listener. Appended
+      // AFTER the dismissing press, whose redraw would otherwise detach them.
+      // Every editable form of contenteditable counts, not only "true" (#280).
+      const editable = (value: string): readonly [string, () => HTMLElement] => [
+        `contenteditable="${value}"`,
+        () => {
+          const node = page.win.document.createElement('div');
+          node.setAttribute('contenteditable', value);
+          return node;
+        },
+      ];
+      const fields: ReadonlyArray<readonly [string, () => HTMLElement]> = [
+        ['an input', () => page.win.document.createElement('input')],
+        ['a textarea', () => page.win.document.createElement('textarea')],
+        editable('true'),
+        editable(''),
+        editable('plaintext-only'),
+      ];
+      for (const [name, build] of fields) {
+        const field = build();
+        page.zone('rail')?.append(field);
+        assert.ok(field.isConnected, `${name} is not in the mount`);
+        field.focus();
+        field.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        await flush();
+        assert.deepEqual(page.handle.state.selection, { kind: 'issues', keys: ['1', '2'] }, `Escape typed in ${name} cleared the set`);
+      }
     } finally {
       page.handle.destroy();
     }

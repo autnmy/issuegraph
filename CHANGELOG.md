@@ -4,6 +4,10 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/editor` `0.46.3`: two mount tidies, no API change.**
+  - **An Escape typed into any editable `contenteditable` keeps the selection (#280).** The field test matched only `contenteditable="true"`; the empty value and `plaintext-only` count now, and only `false` opts out. The editor draws only inputs today, so no host was affected. Pinned in `workspace/mount.narrow.test.ts`.
+  - **The rail's width watch takes its `ResizeObserver` from the root element's own document (#290),** as the root watch already did, so the mount reaches no global to watch a box. Pinned in `workspace/mount.2.test.ts`.
+
 - **`@issuegraph/editor` `0.46.2`: a canvas opened from the narrow strip shuts when the strip stops being drawn, so Escape is not spent on a canvas nobody can see (#256).** **No API change.** The strip is drawn only between the phone layout and the graph's fold. A canvas left open there stayed open in state under 640 and past the fold, and Escape's narrow gate closed it there with nothing on screen to close. The mount now shuts it on the resize that hides its strip, as it already did for #313's order panel.
   - **Pinned** in `workspace/mount.2.test.ts`.
 
