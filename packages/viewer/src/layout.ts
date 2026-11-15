@@ -905,6 +905,7 @@ interface TrunkLeg {
   readonly member: NodeBox;
   readonly hubIsEnd: boolean;
   readonly channel: Channel;
+  readonly field: ViewerEdge['field'];
   readonly direction: TrunkDirection;
   readonly group: string;
   /** Sorts a channel's groups: by the legend's kind order, then direction. */
@@ -916,7 +917,8 @@ interface TrunkLeg {
  * its centre: what comes in 10 above it, what goes out 10 below, and a kind
  * that reads the same both ways at the centre (q353, as the board draws it).
  * Half the step between two trunks, so the two stubs sit as far apart as two
- * shared lines do.
+ * shared lines do. A second kind in one direction steps a further half step
+ * out, since different line styles cannot share one stub (q355).
  */
 const HUB_STUB_OFFSET: Readonly<Record<TrunkDirection, number>> = { in: -1, both: 0, out: 1 };
 
@@ -934,6 +936,7 @@ function trunkLeg(layout: GraphLayout, hub: NodeBox, edge: ViewerEdge): TrunkLeg
     member,
     hubIsEnd,
     channel,
+    field: edge.field,
     direction,
     group: `${channel} ${edge.field} ${direction}`,
     order: LEGEND_ORDER.indexOf(edge.field) * DIRECTION_ORDER.length + DIRECTION_ORDER.indexOf(direction),
@@ -1051,16 +1054,21 @@ export function trunkRoutes(
     groups.forEach((group, index) => slots.set(group, { index, count: groups.length }));
   }
 
-  // Each route's two stub points: the selection's at its direction's offset
-  // from the centre, every neighbour's at its centre.
+  // Each route's two stub points (q353, q355). The selection's sits at its
+  // direction's offset from the centre, one further half step out for each
+  // kind before it in that direction; a neighbour's at its centre, one half
+  // step lower for each kind before it on that card. Kinds count in the
+  // legend's order, so the first kind keeps the board's 10 and centre.
   const step = metric(theme, '--ig-space-wide');
+  const kindsAt = rankedKinds(legs);
   const placed = legs.map((leg) => {
     if (leg === null) return null;
     const slot = slots.get(leg.group) ?? { index: 0, count: 1 };
     const channel = channels[leg.channel];
     const x = channel.from + Math.min(step, channel.width / (slot.count + 1)) * (slot.index + 1);
-    const atHub = facingTrunk(hub, x, (HUB_STUB_OFFSET[leg.direction] * step) / 2);
-    const atMember = facingTrunk(leg.member, x, 0);
+    const hubSteps = HUB_STUB_OFFSET[leg.direction] * (1 + kindsAt(`hub ${leg.direction}`, leg.field));
+    const atHub = facingTrunk(hub, x, (hubSteps * step) / 2);
+    const atMember = facingTrunk(leg.member, x, (kindsAt(`card ${leg.member.key}`, leg.field) * step) / 2);
     return { leg, x, atHub, atMember };
   });
 
@@ -1100,6 +1108,24 @@ export function trunkRoutes(
       sharesEnd,
     };
   });
+}
+
+/**
+ * How many kinds come before `field` at one place, in the legend's order: in
+ * one direction at the selection, or on one neighbour's card. Each place
+ * lists every kind its routes carry, once.
+ */
+function rankedKinds(legs: readonly (TrunkLeg | null)[]): (place: string, field: ViewerEdge['field']) => number {
+  const kinds = new Map<string, ViewerEdge['field'][]>();
+  for (const leg of legs) {
+    if (leg === null) continue;
+    for (const place of [`hub ${leg.direction}`, `card ${leg.member.key}`]) {
+      const listed = kinds.get(place) ?? [];
+      if (!listed.includes(leg.field)) kinds.set(place, [...listed, leg.field]);
+    }
+  }
+  const rank = (field: ViewerEdge['field']): number => LEGEND_ORDER.indexOf(field);
+  return (place, field) => (kinds.get(place) ?? []).filter((kind) => rank(kind) < rank(field)).length;
 }
 
 function channelFrom(from: number, centre: number): { readonly from: number; readonly width: number } {

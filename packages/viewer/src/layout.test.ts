@@ -694,6 +694,24 @@ describe('trunkRoutes', () => {
     assert.equal(leaving.geometry.end.y, centre(below));
   });
 
+  it('#303 q355 steps a second kind in one direction a half step further out, and a second kind on a card 10 below its centre', () => {
+    const layout = layoutGraph(document, defaultTheme);
+    const hub = layout.nodes.get('h');
+    const below = layout.nodes.get('a2');
+    assert.ok(hub !== undefined && below !== undefined);
+    const centre = (box: { y: number; height: number }): number => box.y + box.height / 2;
+    // Two kinds in: blocked-by (first in the legend) and a duplicate pointing at h.
+    const [blocked, duplicate] = trunkRoutes(layout, 'h', [into, { field: 'duplicate-of', from: 'd', to: 'h' }], defaultTheme);
+    assert.ok(blocked && duplicate);
+    assert.equal(blocked.geometry.end.y, centre(hub) - 10, 'the first kind in keeps the board\u2019s 10');
+    assert.equal(duplicate.geometry.end.y, centre(hub) - 20, 'the second kind in shared the first\u2019s stub');
+    // a2 carries two kinds: blocked-by at its centre, serializes-with 10 below.
+    const [out, serial] = trunkRoutes(layout, 'h', [outOf, { field: 'serialize-with', from: 'h', to: 'a2' }], defaultTheme);
+    assert.ok(out && serial);
+    assert.equal(out.geometry.end.y, centre(below));
+    assert.equal(serial.geometry.end.y, centre(below) + 10);
+  });
+
   it('meets the selection at its centre for a kind that reads the same both ways', () => {
     const layout = layoutGraph(document, defaultTheme);
     const hub = layout.nodes.get('h');
