@@ -34,6 +34,7 @@ const WORDS: AuditWords = {
   refusedOpen: 'see it upstream',
   remedies: {
     pickEdge: 'choose an edge',
+    openIssue: 'visit',
     removeEdge: 'drop it',
     keepAsHistory: 'leave it be',
     repoint: 'point it somewhere',
@@ -569,25 +570,28 @@ describe('§17d — the remedies, which select and never write', () => {
     }
   });
 
-  it('draws no remedy on a loop whose first issue is not on the page (q301 on #296)', () => {
-    // The loop's remedy names its walk's head, and a button naming an issue
-    // the drawn page does not carry is a button that cannot work.
+  // DESIGN ON #300 (6b8a53e): "Pick one to remove" selects the first of the
+  // loop's issues the page draws; with none drawn, "Open #2301" opens the
+  // first where it lives. No button names an issue the reader cannot reach.
+  const loopCard = (markup: string): string => {
+    const card = markup.split('<li class="ig-audit-card"').find((each) => each.includes('data-ig-audit-kind="cycle"'));
+    assert.ok(card !== undefined, 'the loop note was dropped');
+    return card;
+  };
+
+  it('picks the first drawn issue of a loop whose head is off the page (#300)', () => {
     const overlay = overlayOf(EVERY_CLASS.issues, EVERY_CLASS.edges);
-    const head = overlay.findings.find((found) => found.kind === 'cycle')?.walk?.[0];
-    assert.ok(head !== undefined, 'the fixture names no walk, so this proves nothing');
+    const walk = overlay.findings.find((found) => found.kind === 'cycle')?.walk ?? [];
+    const [head, next] = walk;
+    assert.ok(head !== undefined && next !== undefined, 'the fixture names no walk, so this proves nothing');
     const known = new Set(EVERY_CLASS.issues.map((held) => held.ref).filter((ref) => ref !== head));
     const spec = renderAuditPanel(overlay, { words: WORDS, known, edges: EVERY_EDGE_IDS });
     assert.ok(spec !== null);
-    const loop = renderMarkup(spec)
-      .split('<li class="ig-audit-card"')
-      .find((card) => card.includes('data-ig-audit-kind="cycle"'));
-    assert.ok(loop !== undefined, 'the loop note was dropped with its remedy');
-    assert.equal(loop.includes('<button'), false, 'the loop note offers a button that cannot work');
+    const card = loopCard(renderMarkup(spec));
+    assert.match(card, new RegExp(`data-ig-remedy="pick-edge" data-ig-command="reveal-issue" data-ig-target="${next}"`));
   });
 
-  it('withholds a cycle’s remedy where the reader named no walk', () => {
-    // No walk means no defensible head to select, and §17d will not have this
-    // package choose which edge a reader should drop.
+  it('picks the first drawn member where the reader named no walk (#300)', () => {
     const spec = renderAuditPanel(
       {
         ...overlayOf(EVERY_CLASS.issues, EVERY_CLASS.edges),
@@ -595,16 +599,32 @@ describe('§17d — the remedies, which select and never write', () => {
           finding.kind === 'cycle' ? { ...finding, walk: undefined } : finding,
         ),
       },
-      {
-        words: WORDS,
-        known: new Set(EVERY_CLASS.issues.map((held) => held.ref)),
-        edges: EVERY_EDGE_IDS,
-      },
+      { words: WORDS, known: new Set(EVERY_CLASS.issues.map((held) => held.ref)), edges: EVERY_EDGE_IDS },
     );
     assert.ok(spec !== null);
-    const markup = renderMarkup(spec);
-    assert.equal(/data-ig-remedy="pick-edge"/.test(markup), false);
-    assert.ok(/data-ig-remedy="remove-edge"/.test(markup), 'the other cards are untouched');
+    assert.match(loopCard(renderMarkup(spec)), /data-ig-remedy="pick-edge" data-ig-command="reveal-issue" data-ig-target="a"/);
+  });
+
+  it('opens the loop\u2019s first issue where it lives when the page draws none of it (#300)', () => {
+    const overlay = overlayOf(EVERY_CLASS.issues, EVERY_CLASS.edges);
+    const head = overlay.findings.find((found) => found.kind === 'cycle')?.walk?.[0];
+    assert.ok(head !== undefined);
+    const known = new Set(['d', 'e']);
+    const linked = renderAuditPanel(overlay, {
+      words: WORDS,
+      known,
+      edges: EVERY_EDGE_IDS,
+      issueUrl: (ref) => `https://tracker.example/${ref}`,
+    });
+    assert.ok(linked !== null);
+    const card = loopCard(renderMarkup(linked));
+    assert.match(card, new RegExp(`<a class="ig-audit-remedy" href="https://tracker.example/${head}"[^>]*data-ig-command="open-issue-url"`));
+    assert.match(card, new RegExp(`>visit ${head}<`));
+    assert.equal(card.includes('data-ig-remedy="pick-edge"'), false, 'a pick named an issue off the page');
+    // Without a host link there is nowhere to send the reader, so no control.
+    const bare = renderAuditPanel(overlay, { words: WORDS, known, edges: EVERY_EDGE_IDS });
+    assert.ok(bare !== null);
+    assert.equal(/<a |<button/.test(loopCard(renderMarkup(bare))), false);
   });
 });
 

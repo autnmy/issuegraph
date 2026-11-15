@@ -28,6 +28,7 @@
  */
 
 import type { EdgeId, GraphDocument, IssueRef, StoredEdge } from '@issuegraph/store';
+import { issueNumber } from '@issuegraph/viewer';
 
 /**
  * The four classes, in the order §17d states them — which is also the order
@@ -173,9 +174,9 @@ export interface AuditFinding {
    * conforming walk names no ref twice either, so the set's other rule is not
    * what keeps them apart.)
    *
-   * NOT FOLDED INTO `detail` either, which is left byte-identical by this
-   * field's arrival. `./panel.ts` records why the card draws the walk as its own
-   * line rather than composing it into the sentence.
+   * `detail` READS THE WALK where there is one (Design, #300): "#2263 is
+   * blocked by #2264, and #2264 is blocked by #2263.", as the board draws the
+   * loop note's body under its title. With no walk it names the members.
    */
   readonly walk?: readonly IssueRef[] | undefined;
   /**
@@ -639,16 +640,32 @@ function walkOfComponent(
   return null;
 }
 
+/**
+ * A loop note's body (#300): the walk as the board draws it, each issue
+ * blocked by the next and the last by the head ("#2263 is blocked by #2264,
+ * and #2264 is blocked by #2263."); with no walk, the members, which is all
+ * that is known.
+ */
+function cycleSentence(members: readonly IssueRef[], walk: readonly IssueRef[] | null): string {
+  if (walk === null || walk.length === 0) {
+    return `${members.map(issueNumber).join(', ')} block each other in a loop, so none of them can start.`;
+  }
+  const steps = walk.map((ref, at) => `${issueNumber(ref)} is blocked by ${issueNumber(walk[(at + 1) % walk.length] ?? ref)}`);
+  const last = steps.pop() ?? '';
+  return `${steps.length === 0 ? last : `${steps.join(', ')}, and ${last}`}.`;
+}
+
 function cycleFindings(graph: AuditGraph): AuditFinding[] {
   return graph.cycles
     .filter((members) => members.length > 0)
     .map((members) => [...members].sort())
     .sort((a, b) => compareMembers(a, b))
-    .map((members) =>
+    .map((members) => ({ members, walk: walkOfComponent(graph, members) }))
+    .map(({ members, walk }) =>
       finding(
         'cycle',
         members,
-        `${members.join(', ')} block each other in a loop, so none of them can start.`,
+        cycleSentence(members, walk),
         // ASKED PER COMPONENT AND STILL A PASS-THROUGH. The reader decides
         // whether there IS a walk; this module neither computes nor
         // second-guesses that. Asking by KEY rather than by position is what
@@ -659,7 +676,7 @@ function cycleFindings(graph: AuditGraph): AuditFinding[] {
         // answer the same walk, so one would do — but `members` is the HOST's
         // array, and a single ref the reader does not hold would drop the walk
         // for the whole component if it happened to sort first.
-        walkOfComponent(graph, members),
+        walk,
       ),
     );
 }
@@ -700,7 +717,7 @@ function staleBlockerFindings(
     // the field.
     if (!verdict.declarerEdgesRead) continue;
     const effective = verdict.effective;
-    const via = effective === edge.to ? '' : ` (via ${edge.to}, which duplicates it)`;
+    const via = effective === edge.to ? '' : ` (via ${issueNumber(edge.to)}, which duplicates it)`;
     // THE TWO ENDS ONLY — the effective canonical is named in `detail` and
     // deliberately NOT in `members`, which is the opposite of what
     // `deadDuplicateFindings` does, and the asymmetry is decided rather than
@@ -716,7 +733,7 @@ function staleBlockerFindings(
       finding(
         'stale-blocker',
         [edge.from, edge.to].sort(),
-        `${edge.from} is blocked by ${effective}${via}, which is closed, so it no longer blocks anything.`,
+        `${issueNumber(edge.from)} is blocked by ${issueNumber(effective)}${via}, which is closed, so it no longer blocks anything.`,
         null,
         // THE DECLARER'S EDGE, which is what the paragraph above already says
         // this finding's remedy sits on. Now it is carried rather than only
@@ -780,13 +797,13 @@ function deadDuplicateFindings(
     // `declarerLive`, and the asymmetry with the stale-blocker case above.
     if (!verdict.declarerLive || !verdict.knowable || !verdict.effectiveClosed) continue;
     const canonical = verdict.effective;
-    const via = canonical === edge.to ? '' : ` (through ${edge.to})`;
+    const via = canonical === edge.to ? '' : ` (through ${issueNumber(edge.to)})`;
     // `finding` deduplicates, so the same-spelling case stays two members.
     findings.push(
       finding(
         'dead-duplicate-ref',
         [edge.from, edge.to, canonical].sort(),
-        `${edge.from} is a duplicate of ${canonical}${via}, which is closed. Nothing tracks this work now.`,
+        `${issueNumber(edge.from)} is a duplicate of ${issueNumber(canonical)}${via}, which is closed. Nothing tracks this work now.`,
         null,
         // THE DECLARED `duplicate-of`, NOT the chain's end. `Repoint or clear`
         // acts on the edge the reader wrote; `canonical` may be several hops
@@ -825,7 +842,7 @@ function encodingRefusedFindings(refusals: readonly EncodingRefusal[]): AuditFin
       finding(
         'encoding-refused',
         [refusal.ref],
-        `${refusal.ref} has relationships that could not be read${because}. Fix them so they count.`,
+        `${issueNumber(refusal.ref)} has relationships that could not be read${because}. Fix them so they count.`,
       ),
     );
   }

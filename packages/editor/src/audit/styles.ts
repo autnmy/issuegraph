@@ -321,6 +321,8 @@ export const auditStylesheet = `
 }
 
 .ig-audit-remedy {
+  /* An anchor too, for the open link on a loop with no drawn issue (300), so no underline. */
+  text-decoration: none;
   background: none;
   border: var(--ig-stroke) solid var(--ig-line);
   border-radius: var(--ig-radius-small);

@@ -411,7 +411,8 @@ export const WORKSPACE_WORDS: MountWords = {
       cycle: 'These issues block each other in a loop.',
       'stale-blocker': 'This waits on an issue that is already closed.',
       'dead-duplicate-ref': 'This is a duplicate of a closed issue, so nothing tracks its work.',
-      'encoding-refused': 'Some of this issue\u2019s relationships could not be read.',
+      // #300 (Design 70d5ff5): in the panel "this issue" points at nothing.
+      'encoding-refused': 'Some relationships could not be read.',
     },
     // §17d's own entry point, drawn in the panel head: `filter the rail to
     // these`. It used to ride the header count; §3 gave that count one job.
@@ -423,6 +424,8 @@ export const WORKSPACE_WORDS: MountWords = {
     // generalise away.
     remedies: {
       pickEdge: 'Pick one to remove',
+      // #300: a loop the page draws none of offers "Open #2301".
+      openIssue: 'Open',
       removeEdge: 'Remove the relationship',
       keepAsHistory: 'Keep as history',
       repoint: 'Change or remove',

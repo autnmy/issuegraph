@@ -172,8 +172,31 @@ function openControl(
   words: AuditWords,
   issueUrl: RefusedNoteOptions['issueUrl'],
 ): ElementSpec | null {
+  return openIssueLink(refusal.ref, {
+    className: 'ig-audit-refused-open',
+    label: words.refusedOpen,
+    name: controlName(words.refusedOpen, refusal.ref),
+    issueUrl,
+  });
+}
+
+/**
+ * An anchor to an issue where it lives, or `null` when there is nowhere safe
+ * to send the reader: the unreadable note's "Open the issue", and a loop's
+ * "Open #2301" when the page draws none of its issues (#300).
+ */
+export function openIssueLink(
+  ref: IssueRef,
+  link: {
+    readonly className: string;
+    readonly label: string;
+    readonly name: string;
+    readonly issueUrl: RefusedNoteOptions['issueUrl'];
+  },
+): ElementSpec | null {
+  const { issueUrl } = link;
   if (issueUrl === undefined) return null;
-  const href = issueUrl(refusal.ref);
+  const href = issueUrl(ref);
   // TRIMMED BEFORE THE ALLOWLIST, WHICH WOULD OTHERWISE PASS IT. `isLinkable`
   // canonicalizes the way a URL parser does — it strips tabs, newlines and
   // leading controls — so a resolver answering whitespace leaves it with an
@@ -186,16 +209,16 @@ function openControl(
   return element(
     'a',
     {
-      class: 'ig-audit-refused-open',
+      class: link.className,
       href,
       target: '_blank',
       rel: 'noreferrer noopener',
       'data-ig-command': 'open-issue-url',
-      'data-ig-target': refusal.ref,
-      'aria-label': controlName(words.refusedOpen, refusal.ref),
+      'data-ig-target': ref,
+      'aria-label': link.name,
     },
     [
-      words.refusedOpen,
+      link.label,
       // THE GLYPH IS THE FRAME'S AND IT IS NOT A WORD. `aria-hidden` for the
       // reason any drawn glyph is: the anchor already announces that it opens
       // elsewhere, so the arrow would be said twice.

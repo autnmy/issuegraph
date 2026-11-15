@@ -29,6 +29,7 @@ const WORDS: AuditWords = {
   refusedOpen: 'see it upstream',
   remedies: {
     pickEdge: 'choose an edge',
+    openIssue: 'visit',
     removeEdge: 'drop it',
     keepAsHistory: 'leave it be',
     repoint: 'point it somewhere',

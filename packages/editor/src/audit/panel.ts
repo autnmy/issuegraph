@@ -124,10 +124,10 @@
  */
 
 import type { IssueRef } from '@issuegraph/store';
-import { type ElementSpec, element, svg } from '@issuegraph/viewer';
+import { type ElementSpec, element, issueNumber, svg } from '@issuegraph/viewer';
 
 import type { AuditClass, AuditEdge, AuditFinding, EncodingRefusal } from './findings.ts';
-import { refusedNotes } from './refused.ts';
+import { openIssueLink, refusedNotes } from './refused.ts';
 import { AUDIT_FILTER_ATTRIBUTE } from './surface.ts';
 import type { AuditOverlay } from './surface.ts';
 
@@ -212,6 +212,11 @@ export interface AuditWords {
 export interface AuditRemedyWords {
   /** The frame's `pick one edge to drop`, on a cycle. */
   readonly pickEdge: string;
+  /**
+   * A loop's way on when the page draws none of its issues: "Open", before the
+   * first issue's number and the package's `↗` ("Open #2301", #300).
+   */
+  readonly openIssue: string;
   /** The frame's `Remove the edge`, on a stale blocker. */
   readonly removeEdge: string;
   /**
@@ -354,6 +359,7 @@ function cardSpec(
   known: ReadonlySet<string>,
   edges: ReadonlySet<string>,
   words: AuditWords,
+  issueUrl: AuditPanelOptions['issueUrl'],
 ): ElementSpec {
   return element(
     'li',
@@ -371,7 +377,7 @@ function cardSpec(
       element('div', { class: 'ig-audit-note-text' }, [
         element('p', { class: 'ig-audit-title' }, [words.titles[finding.kind]]),
         element('p', { class: 'ig-audit-detail' }, [finding.detail]),
-        remedySpec(finding, known, edges, words),
+        remedySpec(finding, known, edges, words, issueUrl),
       ]),
     ],
   );
@@ -402,6 +408,7 @@ function remedySpec(
   known: ReadonlySet<string>,
   edges: ReadonlySet<string>,
   words: AuditWords,
+  issueUrl: AuditPanelOptions['issueUrl'],
 ): ElementSpec | null {
   const { remedies } = words;
   // A SELECT-EDGE BUTTON, BUILT ONCE. The two edge classes differ only in their
@@ -465,11 +472,23 @@ function remedySpec(
     case 'cycle': {
       // THE WALK'S HEAD, NOT AN EDGE. See this function's header: the cycle is
       // about a component, and the reader chooses the edge in the inspector.
-      // `walk` is absent whenever the reader declined to order the component,
-      // and then there is no defensible head to name — so no button.
-      const head = finding.walk?.[0];
-      // AND THE HEAD HAS TO BE DRAWN, for the reason `reachable` records above.
-      if (head === undefined || !known.has(head)) return null;
+      //
+      // THE FIRST OF THE LOOP THE PAGE DRAWS (Design, #300): the head when it
+      // is drawn, else the next drawn member of the walk. When the page draws
+      // none, the note keeps a way on: "Open #2301", the walk's head where it
+      // lives, as the unreadable note's "Open the issue" does. No button names
+      // an issue the reader cannot reach, and no note is left without one.
+      // The walk where the reader named one, else the loop's members: either
+      // way they are the loop's issues, and Design asks only for the first drawn.
+      const loop = finding.walk ?? finding.members;
+      const head = loop.find((ref) => known.has(ref));
+      if (head === undefined) {
+        const first = loop[0];
+        if (first === undefined) return null;
+        const label = `${remedies.openIssue} ${issueNumber(first)}`;
+        const open = openIssueLink(first, { className: 'ig-audit-remedy', label, name: `${label} ${finding.detail}`, issueUrl });
+        return open === null ? null : element('div', { class: 'ig-audit-remedies' }, [open]);
+      }
       return element('div', { class: 'ig-audit-remedies' }, [
         element(
           'button',
@@ -526,7 +545,7 @@ export function renderAuditPanel(
   const listed = overlay.findings.filter((finding) => finding.kind !== 'encoding-refused');
   const { words } = options;
   const notes = [
-    ...listed.map((finding) => cardSpec(finding, options.known, options.edges, words)),
+    ...listed.map((finding) => cardSpec(finding, options.known, options.edges, words, options.issueUrl)),
     ...refusedNotes(options.refusals ?? [], { words, known: options.known, issueUrl: options.issueUrl }),
   ];
   // THE FORM THE COUNT TAKES, as the header's own problem / problems does.
