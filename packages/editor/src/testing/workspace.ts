@@ -180,7 +180,6 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
   },
 };
 
-/** `count` keys, zero-padded so lexical and numeric order agree. */
 /**
  * A second, complete vocabulary: every string and every sentence the host
  * supplies, in other words (#156).
@@ -326,6 +325,7 @@ export const OTHER_WORKSPACE_WORDS: WorkspaceWords = {
   },
 };
 
+/** `count` keys, zero-padded so lexical and numeric order agree. */
 export function keysOf(count: number): string[] {
   return Array.from({ length: count }, (_, index) => `i${String(index + 1).padStart(4, '0')}`);
 }
