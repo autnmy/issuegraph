@@ -997,8 +997,8 @@ function isCount(value: number): boolean {
  * condition read off the wire or one built behind a cast can. This is the
  * value before it is validated, so it claims nothing the host has not proven:
  * a missing field comes back `undefined` for {@link normalizeCondition} to
- * refuse, and a kind no arm knows comes back as one missing field, rather
- * than as a throw that takes the whole render with it.
+ * refuse, and a kind no arm knows comes back as one value that is not a
+ * string, rather than as a throw that takes the whole render with it.
  */
 function requiredTextOf(condition: ViewerCondition): readonly unknown[] {
   switch (condition.kind) {
@@ -1013,8 +1013,14 @@ function requiredTextOf(condition: ViewerCondition): readonly unknown[] {
     // an optional garnish.
     case 'filtered':
       return [condition.headline, condition.denominator];
-    default:
-      return [undefined];
+    // A KIND NO ARM KNOWS, which only an unvalidated host can send. `never`
+    // keeps the switch exhaustive for the compiler (a forgotten arm fails tsc,
+    // review-41 on PR 355); at runtime the value is the condition itself, not
+    // a string, so `normalizeCondition` drops it with the diagnostic.
+    default: {
+      const unhandled: never = condition;
+      return [unhandled];
+    }
   }
 }
 
