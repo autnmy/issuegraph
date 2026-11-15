@@ -33,6 +33,7 @@
 import {
   type ElementSpec,
   type LegendSwitch,
+  type SpecChild,
   type Theme,
   type ViewerDocument,
   clusterReachLabel,
@@ -231,19 +232,24 @@ function omittedSpec(omitted: OmittedComponents | null): ElementSpec | null {
  * `Focus <lead>` label had by accident.
  */
 function capsuleLabel(capsule: ScaleCapsule): string {
+  // THE NAME OPENS WITH WHAT THE CARD DRAWS, IN THE CARD'S ORDER (#322). WCAG
+  // 2.5.3 (axe `label-content-name-mismatch`) asks that a control's visible
+  // text sit inside its accessible name, so a reader who says what they see
+  // reaches the control. The name used to open with "Draw the group around
+  // <key>, <title>: N issues", the same facts in another order and the raw key
+  // where the card draws `#906`, and a host's axe sweep failed on every card.
+  // So: the count with its noun, the Loop tag where it is drawn, the anchor
+  // line exactly as drawn, the reach exactly as drawn; then what only the name
+  // carries, the blocking count, and the action.
+  const loop = capsule.reach.kind === 'cyclic' ? 'Loop, ' : '';
+  // A STUCK GROUP SAYS SO WITH ITS TAG, already in the name; its blocking
+  // count is voided by the loop, as on the card.
   const blocking =
     capsule.reach.kind === 'cyclic'
-      ? 'has a loop'
-      : `${String(capsule.blockedByEdges)} blocking`;
-  // THE ACCESSIBLE NAME SAYS "around" TOO, so what is heard and what is drawn
-  // make the same claim. It used to read "Focus <title> (<key>)", which names
-  // the component after one issue in the one channel that cannot show the
-  // layout making it an anchor.
-  // THE REACH IS SENTENCE CASE WHERE IT STARTS ITS OWN LINE; mid-sentence
-  // here it continues the name, as "has a loop" does, so its first letter is
-  // lowered for the name alone.
-  const reach = clusterReachLabel(capsule.reach);
-  return `Draw the group around ${capsule.lead}, ${capsule.name}: ${String(capsule.size)} issues, ${blocking}, ${reach.charAt(0).toLowerCase()}${reach.slice(1)}`;
+      ? ''
+      : `, ${String(capsule.blockedByEdges)} blocking ${capsule.blockedByEdges === 1 ? 'relationship' : 'relationships'}`;
+  const size = `${String(capsule.size)} ${capsule.size === 1 ? 'issue' : 'issues'}`;
+  return `${size}, ${loop}Around ${issueNumber(capsule.lead)} · ${capsule.name}, ${clusterReachLabel(capsule.reach)}${blocking}. Draw this group.`;
 }
 
 /**
@@ -294,7 +300,7 @@ function capsuleSpec(capsule: ScaleCapsule): ElementSpec {
         // out the glyph, which is a shape with no name of its own.
         'aria-label': capsuleLabel(capsule),
       },
-      [
+      spaced([
         // A COUNT WITH ITS NOUN, as the export's group card reads "24 issues"
         // (#296), not a bare figure a reader has to know the meaning of.
         element('span', { class: 'ig-capsule-size' }, [
@@ -342,9 +348,26 @@ function capsuleSpec(capsule: ScaleCapsule): ElementSpec {
           capsule.name,
         ]),
         element('span', { class: 'ig-capsule-reach' }, [clusterReachLabel(capsule.reach)]),
-      ],
+      ]),
     ),
   ]);
+}
+
+/**
+ * The card's parts with a literal space between each (#322).
+ *
+ * `element` joins children with nothing between them, and an accessibility
+ * engine reads the card's visible text the same way: axe's
+ * `label-content-name-mismatch` saw "2 issuesAround #906 · <title>Longest
+ * chain 3", which no written name contains. A space between the parts makes
+ * the text read as the card draws it. It doesn't move the card: every part is
+ * a direct child of `.ig-capsule-enter`, a grid container, and CSS Grid does
+ * not render whitespace-only text between grid items.
+ */
+function spaced(parts: readonly (SpecChild | null)[]): SpecChild[] {
+  return parts
+    .filter((part): part is SpecChild => part !== null)
+    .flatMap((part, index) => (index === 0 ? [part] : [' ', part]));
 }
 
 /** The group cards, or nothing when there are none to pick. */
