@@ -168,7 +168,8 @@ describe('the refusal, as a reader sees it', () => {
     assert.ok(
       result.markup.includes(
         `aria-label="${String(capsule.size)} issues, Around ${issueNumber(capsule.lead)} \u00b7 ${capsule.name}, ` +
-          `${clusterReachLabel(capsule.reach)}, ${String(capsule.blockedByEdges)} blocking. Draw this group."`,
+          `${clusterReachLabel(capsule.reach)}, ${String(capsule.blockedByEdges)} blocking ` +
+          `${capsule.blockedByEdges === 1 ? 'relationship' : 'relationships'}. Draw this group."`,
       ),
       'the capsule name does not open with the card text',
     );

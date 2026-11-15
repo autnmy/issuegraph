@@ -243,7 +243,10 @@ function capsuleLabel(capsule: ScaleCapsule): string {
   const loop = capsule.reach.kind === 'cyclic' ? 'Loop, ' : '';
   // A STUCK GROUP SAYS SO WITH ITS TAG, already in the name; its blocking
   // count is voided by the loop, as on the card.
-  const blocking = capsule.reach.kind === 'cyclic' ? '' : `, ${String(capsule.blockedByEdges)} blocking`;
+  const blocking =
+    capsule.reach.kind === 'cyclic'
+      ? ''
+      : `, ${String(capsule.blockedByEdges)} blocking ${capsule.blockedByEdges === 1 ? 'relationship' : 'relationships'}`;
   const size = `${String(capsule.size)} ${capsule.size === 1 ? 'issue' : 'issues'}`;
   return `${size}, ${loop}Around ${issueNumber(capsule.lead)} · ${capsule.name}, ${clusterReachLabel(capsule.reach)}${blocking}. Draw this group.`;
 }
