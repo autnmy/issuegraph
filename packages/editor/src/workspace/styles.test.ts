@@ -1666,7 +1666,7 @@ describe('the layout under 640', () => {
         assert.equal(hidden(strip, rules), true, `${tab}: the canvas strip is drawn`);
       }
       const children = [...zone(page, 'canvas').children];
-      const list = children.filter((child) => (child.textContent ?? '').includes(WORKSPACE_WORDS.narrow.noSelection));
+      const list = children.filter((child) => [WORKSPACE_WORDS.narrow.noSelection, WORKSPACE_WORDS.narrow.nothingRelated].some((word) => (child.textContent ?? '').includes(word)));
       if (tab === 'related') {
         assert.equal(list.length, 1, 'the Related groups list is not one child of the canvas zone');
         assert.deepEqual(
@@ -1806,7 +1806,7 @@ describe('the layout under 640', () => {
         const tablist = page.querySelector('[role="tablist"]') ?? assert.fail('no tablist');
         assert.equal(hidden(tablist, rules), true, `at ${String(width)} the narrow tabs are drawn`);
         for (const child of [...zone(page, 'canvas').children]) {
-          if (!(child.textContent ?? '').includes(WORKSPACE_WORDS.narrow.noSelection)) continue;
+          if (![WORKSPACE_WORDS.narrow.noSelection, WORKSPACE_WORDS.narrow.nothingRelated].some((word) => (child.textContent ?? '').includes(word))) continue;
           lists += 1;
           assert.equal(hidden(child, rules), true, `at ${String(width)} the Related groups list is drawn`);
         }

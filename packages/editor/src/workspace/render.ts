@@ -690,11 +690,18 @@ export interface NarrowWords {
    */
   readonly closeSheet: string;
   /**
-   * What the Related groups list says while nothing is selected and there are
-   * no groups to show in its place: a document with nothing related, or a
-   * picked group the canvas is drawing.
+   * What the Related groups list says while nothing is selected and a picked
+   * group is drawn in its place: "Select an issue to see its relationships."
+   * (Design content.md 82b78fd).
    */
   readonly noSelection: string;
+  /**
+   * What it says when no issue has a relationship yet (#315): "No issue has
+   * relationships yet. Select an issue to add one." The package picks between
+   * this and `noSelection` by the document, because adding the first
+   * relationship turns one case into the other with no remount.
+   */
+  readonly nothingRelated: string;
 }
 
 /**
@@ -2167,7 +2174,11 @@ function relatedListParts(
 ): readonly (ElementSpec | null)[] {
   switch (view.kind) {
     case 'no-selection':
-      return [element('p', { class: 'ig-related-empty' }, [words.narrow.noSelection])];
+      return [
+        element('p', { class: 'ig-related-empty' }, [
+          document.edges.length === 0 ? words.narrow.nothingRelated : words.narrow.noSelection,
+        ]),
+      ];
     case 'no-relationships':
       return [element('p', { class: 'ig-related-empty' }, [words.noRelationships])];
     case 'listed': {

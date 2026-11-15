@@ -2923,9 +2923,17 @@ describe('the narrow tabs and the Related groups list', () => {
     assert.equal(groups.match(/class="ig-capsule-cell"/g)?.length, 2, 'the tab does not show each group');
     assert.equal(groups.includes('data-projection="graph"'), false, 'every issue was drawn at once');
 
-    // With no group to show, the sentence stands in for them.
+    // With no group to show, the sentence stands in for them, worded by the
+    // case (#315, Design 82b78fd): nothing related at all...
     const unrelated = canvasOf(renderWorkspace(backlogOf(3), related).markup);
-    assert.ok(unrelated.includes(WORKSPACE_WORDS.narrow.noSelection), 'the canvas zone states nothing when nothing is selected');
+    assert.ok(unrelated.includes(WORKSPACE_WORDS.narrow.nothingRelated), 'a document with nothing related is not worded so');
+    assert.equal(unrelated.includes(WORKSPACE_WORDS.narrow.noSelection), false, 'nothing related is worded as a picked group');
+    // ...or a picked group the canvas draws, where the next step is to select.
+    const picked = canvasOf(
+      renderWorkspace(document, { ...related, scale: { focus: 'i0001', query: '', isolatedOpen: false } }).markup,
+    );
+    assert.ok(picked.includes(WORKSPACE_WORDS.narrow.noSelection), 'a picked group is not worded as one');
+    assert.equal(picked.includes(WORKSPACE_WORDS.narrow.nothingRelated), false, 'a picked group is worded as nothing related');
 
     const lone = canvasOf(
       renderWorkspace(document, { ...related, selection: { kind: 'issue', key: 'i0005' } }).markup,
