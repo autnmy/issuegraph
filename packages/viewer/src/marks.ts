@@ -116,7 +116,7 @@ export const MARK_PLACEMENT_ATTRIBUTE = 'data-ig-mark';
  * ends resolve to one box — but it is guarded anyway, because the alternative to
  * a guard is a `NaN` that reaches the markup as a silently undrawn mark.
  */
-function normalAt(start: Point, end: Point): Point {
+export function normalAt(start: Point, end: Point): Point {
   const dx = end.x - start.x;
   const dy = end.y - start.y;
   const length = Math.hypot(dx, dy);

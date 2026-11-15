@@ -33,7 +33,7 @@ import {
   layoutGraph,
   trunkRoutes,
 } from '../layout.ts';
-import { type EdgeMark, edgeMarkSpecs } from '../marks.ts';
+import { type EdgeMark, edgeMarkSpecs, normalAt } from '../marks.ts';
 import {
   type CardBlock,
   adoptionNote,
@@ -225,10 +225,6 @@ function terminalMarker(
 }
 
 /**
- * How a doubled arc's two strokes part: vertically, as they always have.
- */
-const ARC_SPLIT: Point = Object.freeze({ x: 0, y: 1 });
-/**
  * How a doubled trunk route's two strokes part: on the diagonal.
  *
  * A ROUTE TURNS TWICE, so no single axis parts it. Parted vertically, the
@@ -245,8 +241,9 @@ const TRUNK_SPLIT: Point = Object.freeze({ x: 1, y: -1 });
  *
  * `serialize-with` is drawn as two parallel strokes rather than one dashed
  * line — the "double" pattern is structural, so it cannot be confused with a
- * dash under any theme. `split` is the direction the two strokes part along:
- * see {@link ARC_SPLIT} and {@link TRUNK_SPLIT}.
+ * dash under any theme. `split` is the unit direction the two strokes part
+ * along: an arc's chord normal (`normalAt`), or {@link TRUNK_SPLIT} for a
+ * route, which turns twice and has no single normal.
  */
 function edgePaths(
   edge: ViewerEdge,
@@ -1029,7 +1026,13 @@ export function graphScene(document: NormalizedDocument, rawOptions: GraphOption
     drawable.forEach(({ edge, identity, arc }, index) => {
       const route = routes[index] ?? null;
       const geometry = route?.geometry ?? arc;
-      edgeLayers.push(...edgePaths(edge, geometry, theme, route === null ? ARC_SPLIT : TRUNK_SPLIT));
+      // A DOUBLED ARC PARTS ON ITS CHORD'S NORMAL (#166), as its companion
+      // already does (#164). Parted on the y-axis, a VERTICAL chord, the
+      // ordinary same-column arc, had its two strokes slide along each other
+      // and `serialize-with` drew as one line.
+      edgeLayers.push(
+        ...edgePaths(edge, geometry, theme, route === null ? normalAt(geometry.start, geometry.end) : TRUNK_SPLIT),
+      );
       // A GROUP INTO THE SELECTION ENDS ON ONE POINT, so its terminal is drawn
       // once, by its first route — "one line with one chevron".
       const marker =

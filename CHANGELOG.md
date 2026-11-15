@@ -4,6 +4,10 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/viewer` `0.29.2`: a doubled arc parts across its line, so `serialize-with` stays two strokes on a vertical arc (#166).** **No API change; the doubled arc's two `transform`s change.**
+  - Arcs parted their two strokes on the global y-axis. On a vertical chord, the ordinary same-column (spine-to-spine) arc, the y-axis runs along the line, so the strokes slid over each other and `serialize-with` drew as one line, losing its structural shape channel. An arc now parts on its chord's normal (`normalAt`, the function #164 already uses for the companion strokes), one stroke either side across the line at any angle. A trunk route keeps its diagonal split.
+  - **Pinned** in `projections/graph.test.ts` with a two-issue vertical arc.
+
 - **`@issuegraph/editor` `0.47.3`: activating `+ add` puts the focus on the kind list it opened (#159).** **No API change.**
   - `add` replaces itself with the kind list, so the mount's last-resort focus restore ran, and it took the zone's first command control: in the Inspector that is `clear`, drawn above the kind list, one press from discarding the selection. While the live draft is choosing a kind, the restore now lands on the first kind, wherever the chooser is drawn, and only otherwise falls back to the nearest control. The kind digits and `Escape` work from either spot, as before (#152 keeps where focus lands separate from what a press means).
   - **Pinned** in `workspace/mount.writes.test.ts`, whose landing assertion moves from `clear` to the kind list.
