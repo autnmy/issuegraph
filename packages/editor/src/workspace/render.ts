@@ -440,9 +440,11 @@ export interface WorkspaceWords {
    * The accessible name of a row's remove control — the `✕` in frame 17a's
    * right-hand slot.
    *
-   * ROW-INDEPENDENT WORDING. Which relationship it removes is in the markup
-   * (`data-ig-target`) and in the row the button sits on, not in this string, so
-   * a host writing "remove #488" here would be wrong on every other row.
+   * ROW-INDEPENDENT WORDING. A host writing "remove #488" here would be wrong
+   * on every other row, so this is the act alone. The renderer appends the
+   * row's own description to make the button's name (#176): a screen reader's
+   * button list shows names with nothing around them, so the word alone made
+   * every row's control the same entry.
    *
    * DISTINCT FROM `MountWords.deleteRelationship`, which names a different
    * control: that is the mount's labelled button for the one SELECTED edge, and
@@ -1825,6 +1827,7 @@ function markRail(
  */
 function rowSlot(
   relationship: InspectorRelationship,
+  subject: string | null,
   selected: string | null,
   words: WorkspaceWords,
 ): ElementSpec | null {
@@ -1864,7 +1867,10 @@ function rowSlot(
       // with an issue selected, and a delete of the WRONG edge with a
       // different row's edge selected.
       'data-ig-target': relationship.edgeId,
-      'aria-label': words.remove,
+      // THE HOST'S WORD, THEN THE ROW IT REMOVES (#176): "remove is blocked by
+      // #2". Appended in the renderer, never written into the host's string,
+      // so the word stays row-independent and each row's name is its own.
+      'aria-label': `${words.remove} ${spokenText(relationshipDescription(relationship, subject))}`,
     },
     [hiddenGlyph('\u2715')],
   );
@@ -1950,6 +1956,30 @@ function flipControl(
  */
 function refusalReason(code: InvalidCode, words: WorkspaceWords): ElementSpec {
   return element('span', { class: 'ig-relationship-reason' }, [words.refusals[code]]);
+}
+
+/**
+ * What a reader hears of some drawn parts: their text, with every
+ * `aria-hidden` subtree (a glyph) left out and the spacing collapsed.
+ *
+ * FOR A CONTROL REPEATED PER ROW (#176). A screen reader's button list shows a
+ * control's name with nothing around it, so the host's word alone makes six
+ * rows six identical entries. The row's own description is what tells them
+ * apart, and this is it as a string: the same words the row draws, so the name
+ * invents nothing and cannot disagree with the row.
+ */
+function spokenText(parts: readonly SpecChild[]): string {
+  const out: string[] = [];
+  const walk = (child: SpecChild): void => {
+    if (typeof child === 'string') {
+      out.push(child);
+      return;
+    }
+    if (child.attrs?.['aria-hidden'] === 'true') return;
+    for (const nested of child.children ?? []) walk(nested);
+  };
+  for (const part of parts) walk(part);
+  return out.join('').replace(/\s+/g, ' ').trim();
 }
 
 /**
@@ -2122,8 +2152,8 @@ function relationshipSpec(
       relationshipHead(relationship, subject),
       otherLine(relationship, subject, words),
       refused === undefined ? null : refusalReason(refused.code, words),
-      refused === undefined ? null : refusalDiscard(refused, words),
-      rowSlot(relationship, selected, words),
+      refused === undefined ? null : refusalDiscard(refused, relationshipDescription(relationship, subject), words),
+      rowSlot(relationship, subject, selected, words),
       // A PEER OF THE SLOT RATHER THAN A FOURTH OCCUPANT OF IT. The slot's
       // three occupants are exclusive because two are statements and one is a
       // destructive control, and a row is only ever one of those things; the
@@ -2309,7 +2339,11 @@ function refusalCapsule(
             relationshipDescription(relationship, subject),
           ),
       refusalReason(refusal.code, words),
-      refusalDiscard(refusal, words),
+      refusalDiscard(
+        refusal,
+        relationship === undefined ? null : relationshipDescription(relationship, subject),
+        words,
+      ),
     ],
   );
 }
@@ -2329,7 +2363,11 @@ function refusalCapsule(
  * capsule it sat on. The command and its word are the recovery card's own
  * Discard, so the two read and act the same.
  */
-function refusalDiscard(refusal: WorkspaceRefusal, words: WorkspaceWords): ElementSpec {
+function refusalDiscard(
+  refusal: WorkspaceRefusal,
+  described: readonly SpecChild[] | null,
+  words: WorkspaceWords,
+): ElementSpec {
   return element(
     'button',
     {
@@ -2337,6 +2375,10 @@ function refusalDiscard(refusal: WorkspaceRefusal, words: WorkspaceWords): Eleme
       class: 'ig-refusal-discard',
       'data-ig-command': AFFORDANCE_COMMANDS['discard-mine'],
       'data-ig-target': refusal.mutationId,
+      // NAMED BY ITS ROW (#176), as the remove control is: the visible word,
+      // then the relationship, or the refusal's reason where no relationship
+      // is drawn to name it by.
+      'aria-label': `${words.recovery.discardMine} ${described === null ? words.refusals[refusal.code] : spokenText(described)}`,
     },
     [words.recovery.discardMine],
   );
