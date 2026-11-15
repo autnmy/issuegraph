@@ -20,6 +20,7 @@ import { describe, it } from 'node:test';
 
 import type { GraphDocument } from '@issuegraph/store';
 import { makeEdge } from '@issuegraph/store';
+import { treatmentFor } from '@issuegraph/viewer';
 
 import { WORKSPACE_WORDS } from '../testing/workspace.ts';
 import { SEED, flush, blockingDeriver, hostedProject, mounted } from '../testing/mount.ts';
@@ -473,8 +474,7 @@ describe('the log under the head, mounted', () => {
       // The issue: "While a write is saving it says so, and the order holds: "Saving. The order updates when the save is done.""
       assert.ok(headerText().includes(WORKSPACE_WORDS.log.saving), 'the log does not say the write is saving');
       assert.ok(headerText().includes(WORKSPACE_WORDS.change.computing), 'the held sentence is missing');
-      assert.ok(headerText().includes(WORKSPACE_WORDS.log.ops.create), 'the entry does not name the write');
-      assert.ok(headerText().includes(WORKSPACE_WORDS.log.kinds['blocked-by']), 'the entry does not name the kind in the host word');
+      assert.ok(headerText().includes(`#2 ${treatmentFor('blocked-by').label} #3`), 'the entry does not read as the relationship (#304)');
       assert.equal(page.element.querySelector('.ig-mount')?.getAttribute('data-order'), 'held');
 
       page.source.settleNext('applied');
@@ -496,7 +496,7 @@ describe('the log under the head, mounted', () => {
         page.rows().map((row) => [row.getAttribute('data-ig-key'), row.querySelector('.ig-rank')?.textContent ?? null]);
       const header = (): HTMLElement | null => page.zone('header');
       const listedCreates = (): number =>
-        (header()?.textContent ?? '').split(WORKSPACE_WORDS.log.ops.create).length - 1;
+        (header()?.textContent ?? '').split(WORKSPACE_WORDS.log.saving).length - 1;
       const before = drawn();
       assert.deepEqual(before, [['2', '1'], ['3', '2'], ['4', '3'], ['1', '4']]);
 

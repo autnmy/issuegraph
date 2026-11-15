@@ -93,7 +93,6 @@ import type {
   OrderChange,
   OrderStatus,
   ProjectedEdge,
-  Proposal,
   StoredEdge,
 } from '@issuegraph/store';
 
@@ -695,33 +694,32 @@ export interface NarrowWords {
 }
 
 /**
- * The words the log under the head names a saving write with.
+ * The words the log under the head names a write with.
  *
- * A write is named as its operation, its kind and its two ends. The ends are
- * the issue refs themselves, so only the operation and the kind need words.
- *
- * KEYED BY THE STORE'S OWN VOCABULARIES, `Proposal['op']` and `EdgeKind`, so
- * a new operation or kind fails a host's build here rather than drawing a
- * bare ref. The viewer's fixed kind labels are not reused: they are the
- * package's English, and the log is worded by the host.
+ * A write reads as the relationship it leaves, the way the Inspector's rows
+ * read it: "#2240 is blocked by #2239 saving" (#304). The relationship words
+ * are the viewer's own edge vocabulary, so the log and the graph never word one
+ * edge two ways; only the state after the relationship is the host's. A delete
+ * leaves no relationship, so it names the one it takes out with its own pair
+ * of states, "removing" and "not removed".
  */
 export interface LogWords {
   /** Names the list of writes for assistive technology. */
   readonly label: string;
-  /** Leads an entry whose write has not settled yet. */
+  /** Follows the relationship a write is putting in place, while it saves: "saving". */
   readonly saving: string;
+  /** Follows the relationship a write did not put in place: "not saved" (#304). */
+  readonly notSaved: string;
+  /** Follows the relationship a delete is taking out, while it saves: "removing". */
+  readonly removing: string;
+  /** Follows the relationship a delete did not take out: "not removed". */
+  readonly notRemoved: string;
   /**
    * The word of a log row's "Show #2239", which selects the issue carrying a
    * write whose line the graph is not drawing (#308; the package appends the
    * number).
    */
   readonly show: string;
-  /** One word per operation a write can carry. */
-  readonly ops: Readonly<Record<Proposal['op'], string>>;
-  /** Sits between a retyped edge and the kind it is changed to. */
-  readonly becomes: string;
-  /** One word per relationship kind. */
-  readonly kinds: Readonly<Record<EdgeKind, string>>;
 }
 
 export interface RecoveryWords {
@@ -3025,27 +3023,59 @@ function recoveriesIn(log: readonly WorkspaceLogEntry[]): readonly WorkspaceReco
  * With the kind first, `blocked by i0001 i0002` reads either way round, and for
  * a reversal the direction is the whole edit.
  */
-function loggedEdgeSpecs(edge: WorkspaceLoggedEdge, words: LogWords): readonly ElementSpec[] {
+function loggedEdgeSpecs(edge: WorkspaceLoggedEdge): readonly (ElementSpec | string)[] {
+  // THE BOARD'S WORDS (#304): "#2252 is blocked by #2240", the numbers as the
+  // order prints them and the phrase the vocabulary gives every kind, so the
+  // log reads as the Inspector does and no host words it a second time.
   return typeof edge === 'string'
     ? [element('span', {}, [edge])]
     : [
-        element('span', { class: 'ig-id' }, [edge.from]),
-        element('span', {}, [words.kinds[edge.kind]]),
-        element('span', { class: 'ig-id' }, [edge.to]),
+        element('span', { class: 'ig-id' }, [issueNumber(edge.from)]),
+        ' ',
+        element('span', {}, [treatmentFor(edge.kind).label]),
+        ' ',
+        element('span', { class: 'ig-id' }, [issueNumber(edge.to)]),
       ];
 }
 
-/** What a logged write does: the operation, the edge, and a retype's new kind. */
-function loggedWriteSpecs(write: WorkspaceLoggedWrite, words: LogWords): readonly ElementSpec[] {
+/**
+ * The relationship a logged write leaves (#304): a create its edge, a flip the
+ * edge turned round, a retype the edge under its new kind. A delete leaves
+ * none, so it names the edge it takes out, and its state word says so. A raw id
+ * stays whole, as `loggedEdgeSpecs` explains.
+ */
+function relationshipLeft(write: WorkspaceLoggedWrite): WorkspaceLoggedEdge {
+  const edge = write.edge;
+  if (typeof edge === 'string') return edge;
+  return write.op === 'flip'
+    ? { ...edge, from: edge.to, to: edge.from }
+    : write.op === 'retype'
+      ? { ...edge, kind: write.nextKind }
+      : edge;
+}
+
+type LogState = 'pending' | 'failed';
+type LogStateWord = 'saving' | 'notSaved' | 'removing' | 'notRemoved';
+
+/** The word after the relationship, by the entry's state and whether the write takes the edge out. */
+const LOG_STATE_WORD: Readonly<Record<LogState, Readonly<Record<'removes' | 'leaves', LogStateWord>>>> = {
+  pending: { removes: 'removing', leaves: 'saving' },
+  failed: { removes: 'notRemoved', leaves: 'notSaved' },
+};
+
+/** A logged write's line: the relationship it leaves, then its state, then its Show. */
+function loggedLineSpecs(
+  write: WorkspaceLoggedWrite,
+  state: LogState,
+  show: ElementSpec | null,
+  words: LogWords,
+): readonly (ElementSpec | string)[] {
+  const word = words[LOG_STATE_WORD[state][write.op === 'delete' ? 'removes' : 'leaves']];
   return [
-    element('span', {}, [words.ops[write.op]]),
-    ...loggedEdgeSpecs(write.edge, words),
-    ...(write.op === 'retype'
-      ? [
-          element('span', {}, [words.becomes]),
-          element('span', {}, [words.kinds[write.nextKind]]),
-        ]
-      : []),
+    ...loggedEdgeSpecs(relationshipLeft(write)),
+    ' ',
+    element('span', { class: 'ig-log-status', 'data-ig-state': state }, [word]),
+    ...(show === null ? [] : [' ', show]),
   ];
 }
 
@@ -3069,16 +3099,14 @@ function showSpec(
   );
 }
 
-/** A write still saving: the saving word, then what the write does. */
+/** A write still saving: the relationship it leaves, its state (#304), then its Show. */
 function savingEntrySpec(
   entry: Extract<WorkspaceLogEntry, { readonly kind: 'pending' }>,
   drawn: ReadonlySet<string>,
   words: LogWords,
 ): ElementSpec {
   return element('li', { class: 'ig-log-entry', 'data-ig-state': 'pending', 'data-mutation': entry.mutationId }, [
-    element('span', {}, [words.saving]),
-    ...loggedWriteSpecs(entry.write, words),
-    showSpec(entry.carrier ?? null, entry.edgeId ?? null, drawn, words),
+    ...loggedLineSpecs(entry.write, 'pending', showSpec(entry.carrier ?? null, entry.edgeId ?? null, drawn, words), words),
   ]);
 }
 
@@ -3113,8 +3141,7 @@ function recoveryEntrySpec(
     'data-ig-inspected': statedHere(scope, recovery) ? 'true' : null,
   }, [
     element('div', { class: 'ig-log-write' }, [
-      ...loggedWriteSpecs(recovery.write, words.log),
-      showSpec(recovery.carrier, recovery.edgeId, drawn, words.log),
+      ...loggedLineSpecs(recovery.write, 'failed', showSpec(recovery.carrier, recovery.edgeId, drawn, words.log), words.log),
     ]),
     element('ul', { class: 'ig-recovery-list' }, [recoveryCard(recovery, words.recovery, diffOpen, 'log', null)]),
   ]);

@@ -31,28 +31,17 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
   // THE RE-EVALUATE SURFACE'S OWN FIXTURE, so a summary drawn in the workspace
   // and one drawn by `renderReevaluate` are checked against the same words.
   change: CHANGE_WORDS,
-  // THE LOG UNDER THE HEAD, on this constant's standing rule. No operation
-  // word or kind word is a substring of another, so a test counting the
-  // writes the log lists by their operation word counts only those, and none
-  // of the kind words is the viewer's own label for that kind.
+  // THE LOG UNDER THE HEAD, on this constant's standing rule. No state word
+  // is a substring of another, so a test counting the writes the log lists by
+  // a state word counts only those (#304: the relationship is the viewer's
+  // own phrase, so the host passes no operation or kind word).
   log: {
     label: 'writes not yet settled',
     saving: 'still being written',
+    notSaved: 'left unrecorded',
+    removing: 'on its way out',
+    notRemoved: 'stayed put',
     show: 'show',
-    ops: {
-      create: 'putting in place',
-      delete: 'taking out',
-      flip: 'turning around',
-      retype: 'swapping the kind of',
-    },
-    becomes: 'so that it reads as',
-    kinds: {
-      'blocked-by': 'waits on',
-      'decomposed-from': 'split out of',
-      'duplicate-of': 'repeats',
-      'serialize-with': 'queues behind',
-      'together-with': 'ships alongside',
-    },
   },
   // FOUR WORDS THAT SHARE NO SUBSTRING, on this constant's standing rule. The
   // caption prints them in one line either side of two numbers, so a fixture

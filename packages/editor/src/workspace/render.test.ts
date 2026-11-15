@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import { buildModel } from '@issuegraph/reader';
 import { EDGE_FIELDS, type EdgeField, edgeIdentity, isSymmetricEdgeField } from '@issuegraph/core';
-import { KEY_ATTRIBUTE, type ViewerHold, labelFrom, treatmentFor } from '@issuegraph/viewer';
+import { KEY_ATTRIBUTE, type ViewerHold, issueNumber, labelFrom, treatmentFor } from '@issuegraph/viewer';
 import { normalizeDocument, recedingOf } from '@issuegraph/viewer';
 import { makeEdge } from '@issuegraph/store';
 
@@ -11,7 +11,7 @@ import { RELATE_KEY, keyIntent } from '../create/keys.ts';
 import { AUDIT_SEVERITY_ATTRIBUTE } from '../audit/surface.ts';
 import { treatmentForState } from '../overlay/grammar.ts';
 import type { AuditGraph, AuditInput } from '../audit/findings.ts';
-import { type WorkspaceRecovery, ZONES, renderWorkspace } from './render.ts';
+import { type WorkspaceLoggedWrite, type WorkspaceRecovery, ZONES, renderWorkspace } from './render.ts';
 import type { ViewerDocument } from '@issuegraph/viewer';
 import { type WorkspaceSelection, selectionReducer } from './selection.ts';
 import type { WorkspaceWords } from '../index.ts';
@@ -2201,15 +2201,15 @@ describe('§17b: the recovery card narrows, discloses and never doubles', () => 
     const inspector = markup.slice(markup.indexOf('data-zone="inspector"'));
     const line = /<li class="ig-log-recovery" data-mutation="m6"[^>]*><div class="ig-log-write">([\s\S]*?)<\/div><ul class="ig-recovery-list"><li class="ig-recovery"/.exec(header)?.[1];
     assert.ok(line !== undefined, 'the log drew no line naming the write above its card');
-    for (const word of [words.ops.delete, words.kinds['blocked-by']]) {
-      assert.ok(line.includes(word), `the naming line does not carry "${word}"`);
-    }
-    assert.deepEqual([...line.matchAll(/<span class="ig-id">([^<]*)<\/span>/g)].map((match) => match[1]), ['i0001', 'i0002']);
+    // #304: a delete names the edge it takes out, then "not removed".
+    const spans = [...line.matchAll(/<span[^>]*>([^<]*)<\/span>/g)].map((match) => match[1]);
+    assert.deepEqual(spans.slice(0, 4), [issueNumber('i0001'), treatmentFor('blocked-by').label, issueNumber('i0002'), words.notRemoved]);
+    assert.match(line, /<span class="ig-log-status" data-ig-state="failed">/);
     assert.equal(inspector.includes('ig-log-write'), false, 'the Inspector card gained the log naming line');
   });
 });
 
-describe('the log names each write still saving in the host words', () => {
+describe('the log names each unsettled write as the relationship it leaves (#304)', () => {
   const headerOf = (markup: string): string =>
     markup.slice(markup.indexOf('data-zone="header"'), markup.indexOf('data-zone="rail"'));
   const savingEntries = (options: Parameters<typeof renderWorkspace>[1]): string[] =>
@@ -2218,69 +2218,52 @@ describe('the log names each write still saving in the host words', () => {
         /<li class="ig-log-entry" data-ig-state="pending"[^>]*>[\s\S]*?<\/li>/g,
       ),
     ].map((match) => match[0]);
+  const spansOf = (entry: string): string[] => [...entry.matchAll(/<span[^>]*>([^<]*)<\/span>/g)].map((match) => match[1] ?? '');
   const words = WORKSPACE_WORDS.log;
-
-  it('names a saving create by the host kind word and its two refs, and never by the viewer label', () => {
-    const [entry] = savingEntries({
-      words: WORKSPACE_WORDS,
-      orderStatus: 'held',
-      log: [
-        {
-          kind: 'pending',
-          mutationId: 'm-create',
-          write: { op: 'create', edge: { id: 'blocked-by|i0001|i0002', kind: 'blocked-by', from: 'i0001', to: 'i0002' } },
-        },
-      ],
-    });
+  const blocked: Extract<WorkspaceLoggedWrite, { readonly op: 'create' }>['edge'] = {
+    id: 'blocked-by|i0001|i0002',
+    kind: 'blocked-by',
+    from: 'i0001',
+    to: 'i0002',
+  };
+  const lineOf = (write: WorkspaceLoggedWrite): string[] => {
+    const [entry] = savingEntries({ words: WORKSPACE_WORDS, orderStatus: 'held', log: [{ kind: 'pending', mutationId: 'm', write }] });
     assert.ok(entry !== undefined, 'the log drew no saving entry');
-    assert.match(entry, /data-mutation="m-create"/);
-    for (const word of [words.saving, words.ops.create, words.kinds['blocked-by']]) {
-      assert.ok(entry.includes(word), `the saving entry does not carry "${word}"`);
-    }
-    assert.deepEqual([...entry.matchAll(/<span class="ig-id">([^<]*)<\/span>/g)].map((match) => match[1]), [
-      'i0001',
-      'i0002',
+    return spansOf(entry);
+  };
+
+  it('reads a saving create as the board does: "#2252 is blocked by #2240 saving", no operation word', () => {
+    assert.deepEqual(lineOf({ op: 'create', edge: blocked }), [issueNumber('i0001'), treatmentFor('blocked-by').label, issueNumber('i0002'), words.saving]);
+  });
+
+  it('reads a saving reversal as the edge turned round', () => {
+    assert.deepEqual(lineOf({ op: 'flip', edge: blocked }), [issueNumber('i0002'), treatmentFor('blocked-by').label, issueNumber('i0001'), words.saving]);
+  });
+
+  it('reads a saving retype as the edge under its new kind', () => {
+    assert.deepEqual(lineOf({ op: 'retype', edge: blocked, nextKind: 'duplicate-of' }), [
+      issueNumber('i0001'),
+      treatmentFor('duplicate-of').label,
+      issueNumber('i0002'),
+      words.saving,
     ]);
-    assert.equal(entry.includes(treatmentFor('blocked-by').label), false, 'the viewer label named the kind');
   });
 
-  it('names a saving reversal with the kind word between its from and to ends', () => {
-    const [entry] = savingEntries({
-      words: WORKSPACE_WORDS,
-      orderStatus: 'held',
-      log: [
-        {
-          kind: 'pending',
-          mutationId: 'm-flip',
-          write: { op: 'flip', edge: { id: 'blocked-by|i0003|i0001', kind: 'blocked-by', from: 'i0003', to: 'i0001' } },
-        },
-      ],
-    });
-    assert.ok(entry !== undefined, 'the log drew no saving entry');
-    const spans = [...entry.matchAll(/<span[^>]*>([^<]*)<\/span>/g)].map((match) => match[1]);
-    assert.deepEqual(spans, [words.saving, words.ops.flip, 'i0003', words.kinds['blocked-by'], 'i0001']);
+  it('reads a saving delete as the edge it takes out, then "removing"', () => {
+    assert.deepEqual(lineOf({ op: 'delete', edge: blocked }), [issueNumber('i0001'), treatmentFor('blocked-by').label, issueNumber('i0002'), words.removing]);
   });
 
-  it('names a saving retype with the becomes word before the new kind', () => {
-    const [entry] = savingEntries({
-      words: WORKSPACE_WORDS,
-      orderStatus: 'held',
-      log: [
-        {
-          kind: 'pending',
-          mutationId: 'm-retype',
-          write: {
-            op: 'retype',
-            edge: { id: 'blocked-by|i0001|i0002', kind: 'blocked-by', from: 'i0001', to: 'i0002' },
-            nextKind: 'duplicate-of',
-          },
-        },
-      ],
-    });
-    assert.ok(entry !== undefined, 'the log drew no saving entry');
-    const becomesAt = entry.indexOf(words.becomes);
-    assert.ok(entry.indexOf(words.kinds['blocked-by']) < becomesAt, 'the old kind is not named first');
-    assert.ok(becomesAt < entry.indexOf(words.kinds['duplicate-of']), 'the new kind is not named after the becomes word');
+  it('reads a create that did not save as the relationship, then "not saved" in the failed state', () => {
+    const header = headerOf(
+      renderWorkspace(backlogOf(3), {
+        words: WORKSPACE_WORDS,
+        log: [{ kind: 'failed', mutationId: 'm7', edgeId: blocked.id, carrier: 'i0001', write: { op: 'create', edge: blocked }, reason: 'refused' }],
+      }).markup,
+    );
+    const line = /<div class="ig-log-write">([\s\S]*?)<\/div>/.exec(header)?.[1];
+    assert.ok(line !== undefined, 'the log drew no line naming the failed write');
+    assert.deepEqual(spansOf(line).slice(0, 4), [issueNumber('i0001'), treatmentFor('blocked-by').label, issueNumber('i0002'), words.notSaved]);
+    assert.match(line, /<span class="ig-log-status" data-ig-state="failed">/);
   });
 
   it('names a saving delete whose edge is gone by its raw id, as one piece of escaped text', () => {
