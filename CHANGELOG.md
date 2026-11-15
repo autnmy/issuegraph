@@ -4,6 +4,10 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/viewer` `0.29.1`: a malformed condition is a diagnostic, never a throw (#168).** **No API change; the diagnostic reads "has a missing or empty required string".**
+  - `normalizeDocument` turns a malformed host fact into a diagnostic so a host can hand the viewer whatever it has. A condition missing one of its required fields (reachable from a JavaScript host, a condition read off the wire, or one built behind a cast) put `undefined` into the required-strings list and `.trim()` threw, taking the whole render with it. `requiredTextOf` now returns the values as `unknown`, the check asks `typeof` first, and a condition kind no arm knows reads as one missing field, so both are dropped whole with the diagnostic.
+  - **Pinned** in the viewer's document tests, building the malformed shapes without a cast.
+
 - **`@issuegraph/editor` `0.47.2`: the first-pass overlay's exit answers Enter and Space (#161).** **No API change.**
   - `onKeydown` returned while the queue was open, so the `Enter`/`Space` arm that activates a focused `data-ig-command` control (#158) never reached `first-pass-close`, the one command control the overlay draws; only the browser's native button activation closed it. The arm is now one function, `activateFocused`, run for the overlay's command controls as well as everywhere else. The queue's answers (`data-ig-answer`) keep their `y`/`n`/`s` map and are not activated by it.
   - **Pinned** in `workspace/mount.firstpass.test.ts`, for both keys.
