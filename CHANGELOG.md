@@ -4,7 +4,7 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
-- **`@issuegraph/editor` `0.39.1`: the Inspector zone is a tab stop, so a keyboard reader can scroll it (#331; axe `scrollable-region-focusable`, WCAG 2.1.1).** **No API change.** The zone scrolls, and with nothing selected it holds no control of its own, so a host that bounds the workspace could make it overflow with nothing inside to focus. Its frame now carries `tabindex="0"`. The mount's roving focus selects keyed rows only, so keyboard moves inside the zones are unchanged. The rail and the canvas gain no stop.
+- **`@issuegraph/editor` `0.39.1`: the Inspector zone is a tab stop, so a keyboard reader can scroll it (#331; axe `scrollable-region-focusable`, WCAG 2.1.1).** **No API change.** The zone scrolls, and with nothing selected it holds no control of its own, so a host that bounds the workspace could make it overflow with nothing inside to focus. Its frame now carries `tabindex="0"`, with an inset `:focus-visible` ring (the zone fills its column, so an outside ring would clip or cover the canvas). The mount's roving focus selects keyed rows only, so keyboard moves inside the zones are unchanged. The rail and the canvas gain no stop.
   - **Pinned** in `workspace/zone-focus.test.ts`. Also released as `0.33.2` from the `0.33` line for Descant's pin.
 
 - **`@issuegraph/editor` `0.39.0`: a log row reads as the relationship it leaves, in the board's words (#304; the redesign lead's ruling q322, and build-136 on delete, flip and retype).** **Breaking for a host: `LogWords.ops`, `LogWords.kinds` and `LogWords.becomes` are removed; `notSaved`, `removing` and `notRemoved` are new required words.**
