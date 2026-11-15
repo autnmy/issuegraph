@@ -442,11 +442,19 @@ function isInput(node: Element | null | undefined): node is HTMLInputElement {
   return node !== null && node !== undefined && node.tagName === 'INPUT';
 }
 
-/** Whether a key press was typed into a text field. */
+/**
+ * Whether a key press was typed into a text field. Every editable form of
+ * `contenteditable` counts — the empty value and `plaintext-only` as well as
+ * `true` — and only `false` opts out (#280).
+ */
 function typedInField(event: Event): boolean {
   const target = event.target;
   if (!isElement(target)) return false;
-  return target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.closest('[contenteditable="true"]') !== null;
+  return (
+    target.tagName === 'INPUT' ||
+    target.tagName === 'TEXTAREA' ||
+    target.closest('[contenteditable]:not([contenteditable="false"])') !== null
+  );
 }
 
 function isComposing(event: Event): boolean {
@@ -2737,7 +2745,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     if (zoneName === 'rail' && drawn !== null) {
       const across = event.shiftKey ? acrossEdge(drawn.rail, key, event.key) : null;
       if (across !== null) dispatch({ kind: 'point', key: across, gesture: 'range', order: rankOrder() });
-      if (drawn !== null && advanceRail(drawn.rail, key, event.key)) return true;
+      if (advanceRail(drawn.rail, key, event.key)) return true;
     }
     const scene = sceneFor(zoneName);
     if (scene === null) return false;
