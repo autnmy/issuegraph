@@ -991,8 +991,16 @@ function isCount(value: number): boolean {
  * the union does not offer. It is the same shape `sceneFor` uses for the
  * projections: one interpreter, one line per arm, and the compiler is what
  * proves a new arm was not forgotten.
+ *
+ * `unknown`, NOT `string` (#168). The types say every field is there, and a
+ * TypeScript host cannot send one without it, but a JavaScript host, a
+ * condition read off the wire or one built behind a cast can. This is the
+ * value before it is validated, so it claims nothing the host has not proven:
+ * a missing field comes back `undefined` for {@link normalizeCondition} to
+ * refuse, and a kind no arm knows comes back as one missing field, rather
+ * than as a throw that takes the whole render with it.
  */
-function requiredTextOf(condition: ViewerCondition): readonly string[] {
+function requiredTextOf(condition: ViewerCondition): readonly unknown[] {
   switch (condition.kind) {
     case 'importing':
       return [condition.headline, condition.caution, condition.progress];
@@ -1005,6 +1013,8 @@ function requiredTextOf(condition: ViewerCondition): readonly string[] {
     // an optional garnish.
     case 'filtered':
       return [condition.headline, condition.denominator];
+    default:
+      return [undefined];
   }
 }
 
@@ -1047,8 +1057,8 @@ function normalizeCondition(
   condition: ViewerCondition,
   diagnostics: string[],
 ): ViewerCondition | undefined {
-  if (requiredTextOf(condition).some((text) => text.trim() === '')) {
-    diagnostics.push(`${condition.kind} condition has an empty required string and was dropped whole`);
+  if (requiredTextOf(condition).some((text) => typeof text !== 'string' || text.trim() === '')) {
+    diagnostics.push(`${String(condition.kind)} condition has a missing or empty required string and was dropped whole`);
     return undefined;
   }
   if (condition.kind === 'importing' && condition.fraction !== undefined && !isShare(condition.fraction)) {

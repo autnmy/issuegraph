@@ -692,7 +692,33 @@ describe('normalizeDocument: the host facts', () => {
     });
     assert.equal(partial.document.host.condition, undefined);
     assert.deepEqual(partial.diagnostics, [
-      'importing condition has an empty required string and was dropped whole',
+      'importing condition has a missing or empty required string and was dropped whole',
+    ]);
+  });
+
+  it('drops a condition missing a required field, or of a kind no arm knows, with a diagnostic and no throw (#168)', () => {
+    // A JavaScript host, or one deserialising a condition off the wire, can
+    // send a shape the types rule out. Built here by removing a field from a
+    // whole condition, so no cast is needed to reach the malformed case.
+    const condition = {
+      kind: 'importing' as const,
+      headline: 'Building the local index',
+      caution: 'Ranks will change.',
+      progress: '412 of ~1,200 issues',
+    };
+    Reflect.deleteProperty(condition, 'progress');
+    const missing = normalizeDocument({ ...two, host: { condition } });
+    assert.equal(missing.document.host.condition, undefined);
+    assert.deepEqual(missing.diagnostics, [
+      'importing condition has a missing or empty required string and was dropped whole',
+    ]);
+
+    const strange = { kind: 'error' as const, headline: 'It broke', assurance: 'Nothing was lost.' };
+    Reflect.set(strange, 'kind', 'surprise');
+    const unknownKind = normalizeDocument({ ...two, host: { condition: strange } });
+    assert.equal(unknownKind.document.host.condition, undefined);
+    assert.deepEqual(unknownKind.diagnostics, [
+      'surprise condition has a missing or empty required string and was dropped whole',
     ]);
   });
 
