@@ -4,6 +4,11 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/viewer` `0.22.1`: a second kind in one direction takes its own stub on the selection, and a second kind on a neighbour its own stub on that card (#303, q355; Design 382ce04).** **No API change.**
+  - At the selection, the first kind in still arrives 10 above centre and the first out leaves 10 below; a second kind in the same direction steps a further half step, 20 above or 20 below, since different line styles cannot share one stub. Each kind keeps its own gutter line.
+  - A neighbour with two kinds takes the first, in the legend's order, at its centre and the second 10 below.
+  - **Pinned** in the viewer's layout test.
+
 - **`@issuegraph/viewer` `0.22.0` / `@issuegraph/editor` `0.34.1`: one set of relationship words, RULES' own, on rows, in the Inspector, in the legend and in accessible names (#308, part A).** **Breaking for a host: `EdgeTreatment.legendLabel`, `reverseLegendLabel` and `legendLabelFrom` are gone (`label`, `reverseLabel` and `labelFrom` now carry the RULES words), and `labelFrom` returns `string | null`.** Additive: `phraseFrom(treatment, outgoing, other)`, `otherFirst(treatment, outgoing)` and `EdgeTreatment.reverseOtherFirst`.
   - **The words.** "is blocked by #2240", "blocks #2244", "serializes with #2238", "goes together with #2246", "is a duplicate of #2244", "was decomposed from #2210" (RULES, Relationships), in place of the rows' "blocked by", "serialized with", "together with", "duplicate of" and "decomposed from".
   - **Read from the original, a duplicate names it first:** "#2250 is a duplicate of this", never "duplicated by #2250" (build-136's ruling, matching Design 5b5f1cc). The Inspector row draws the other issue's number before the phrase.
