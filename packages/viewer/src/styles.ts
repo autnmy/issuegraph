@@ -114,12 +114,42 @@ ${scope} .ig-slot .ig-row-meta .ig-badges > .ig-badge {
 
 ${scope} .ig-slot .ig-row-meta .ig-badges > .ig-badge[data-caveat],
 ${scope} .ig-slot .ig-row-meta .ig-badges > .ig-badge[data-evidence] {
-  flex: 0 1 auto;
+  /* SHRINKS FIRST (issue 295, the redesign lead's ruling): its weight dwarfs
+     the fact's, so the caveat gives its words up before the fact's verb does. */
+  flex: 0 1000 auto;
   /* ROOM FOR THE GLYPH AND THE ELLIPSIS, and the chip clips its own words:
      shrunk past its words it ends "◆ …", never a cut letter painted outside a
      chip narrower than its glyph (review-219 on PR 341). */
   min-width: calc(var(--ig-char-width) * 4);
   overflow: hidden;
+}
+
+/* THEN THE FACT'S VERB, NEVER ITS ISSUE (issue 295): "⇄ seri… #503". The
+   chip's words are the verb and the other issue's number; the verb ellipsizes,
+   the number and the glyph never shrink, and the chip clips past them. Its
+   full words stay as its title and its accessible name. */
+${scope} .ig-slot .ig-row-meta .ig-badges > .ig-badge[data-edge] {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+${scope} .ig-slot .ig-row-meta .ig-badge[data-edge] > .ig-badge-words {
+  display: inline-flex;
+  gap: var(--ig-space-tight);
+  min-width: 0;
+}
+
+${scope} .ig-slot .ig-row-meta .ig-badge[data-edge] .ig-badge-verb {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+${scope} .ig-slot .ig-row-meta .ig-badge[data-edge] .ig-badge-ref,
+${scope} .ig-slot .ig-row-meta .ig-badge[data-edge] > .ig-glyph {
+  flex: none;
 }
 
 ${scope} .ig-slot .ig-row-meta .ig-badges > .ig-badge[data-caveat] > span:last-child,
