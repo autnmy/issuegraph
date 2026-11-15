@@ -476,6 +476,18 @@ describe('the density escape hatch overrides the crossover it is an escape from'
     );
   });
 
+  it('wraps a dense row\u2019s meta line whole rather than clipping its muted words (issue 252)', () => {
+    // review-219 on PR 338: at the 336 rail a caveat after "+N" was clipped to
+    // "◆ Pri". The line wraps, so the words drop whole, and nothing clips it.
+    for (const scope of [CONTAINER_SCOPE, ATTRIBUTE_SCOPE]) {
+      const meta = rules().filter((rule) => rule.selector === `${scope} .ig-slot .ig-row-meta`).map((rule) => rule.body).join(';');
+      assert.match(meta, /flex-wrap:\s*wrap/, `${scope}: the meta line does not wrap`);
+      assert.equal(/overflow:\s*hidden/.test(meta), false, `${scope}: the meta line clips`);
+      const badges = rules().filter((rule) => rule.selector === `${scope} .ig-slot .ig-row-meta .ig-badges`).map((rule) => rule.body).join(';');
+      assert.match(badges, /flex-wrap:\s*wrap/, `${scope}: the chips do not wrap`);
+    }
+  });
+
   it('hides no part of an order row at any width or density (issue 252)', () => {
     // THE ROW IS THE PRIORITY TAG, ONE FACT AND "+N", with evidence and the
     // caveats as muted words, so nothing is left for a rail to drop: no rule,

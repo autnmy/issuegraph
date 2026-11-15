@@ -82,26 +82,23 @@ ${scope} .ig-slot .ig-row-body {
   min-width: 0;
 }
 
-/* LINE 2, AND IT DOES NOT WRAP. '17j' draws it as one mono run —
-   '#512 . P0 . blocked-by #488' — so the chips sit ON the identity's line
-   rather than under it. 'nowrap' is what makes the 53px a property of the
-   ROW: one long title or one extra badge would otherwise buy a second line
-   and double the height, which is exactly how this rail reached 408px. */
+/* LINE 2, ON THE IDENTITY'S LINE, AND IT WRAPS WHOLE WORDS (issue 252). The
+   chips sit on the identity's line ('#512 · P0 · ⊘ blocks #488'). The row is
+   the tag, one fact and "+N", so it fits a 336 rail; a muted caveat after it
+   that does not fit drops to a second line whole instead of being clipped to
+   "◆ Pri" (review-219 on PR 338). A taller row is the variable height the
+   rail's spacer already treats as approximate. */
 ${scope} .ig-slot .ig-row-meta {
   align-items: center;
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: var(--ig-space-tight);
   line-height: var(--ig-row-meta-line);
   min-width: 0;
-  overflow: hidden;
 }
 
-/* The chips keep their own row semantics and stop wrapping, so what does not
-   fit is clipped rather than stacked. The drop order above decides WHICH
-   chips are there to clip; this only decides they stay on the line. */
 ${scope} .ig-slot .ig-row-meta .ig-badges {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   min-width: 0;
 }
 
