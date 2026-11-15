@@ -4,6 +4,9 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/editor` `0.46.1`: under the fold, a selection that hides the rail hands its focus to the selected issue in the graph (#346; the design lead's call).** **No API change.** Selecting from the rail lifts the Inspector, which hides the rail, and a focused row dropped its focus to the page, where no key reaches the workspace: the keyboard loop (R, a kind key, the target search, Enter) stopped. Now the selected issue's node in the graph takes the focus, without scrolling, and only a focus the fold is hiding moves. When the rail comes back, a focus in the graph returns to the row.
+  - **Pinned** in `workspace/mount.fold-focus.test.ts`. Also released as `0.42.2` from the `0.42` line for Descant's pin.
+
 - **`@issuegraph/editor` `0.46.0`: the workspace rail is always at rail density, so its scroll position names the right rank at every width (#343; review-41's P2 on PR 341).** **Breaking for a host: `WorkspaceOptions.railDensity` and `MountWorkspaceOptions.railDensity` are removed.**
   - The rail is virtualized on one pitch, a dense row and its hairline (the mount's `railRowAt` and the spacer, since #295). A wide row broke it: from a host's `railDensity: 'wide'`, and from the container itself under 640, where the order is the view and wider than the viewer's 430 crossover. The rail now asks the viewer for dense rows outright; the canvas's viewer is left to its own box.
   - The workspace itself never needed the option (its rail is a 336 zone); a host that rendered a wide order can still render the viewer's linear projection with `density` directly.

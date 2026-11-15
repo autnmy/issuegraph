@@ -572,6 +572,9 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   // navigation reducer about the scene the reader is looking at.
   let drawn: { readonly viewer: ViewerDocument; readonly rail: RailWindow } | null = null;
   // A rail row to focus once the window has been re-cut around it.
+  // A FOCUS THE FOLD HANDED TO THE GRAPH (#346), which goes back to the rail
+  // row when the rail comes back; a focus the reader put in the graph stays.
+  let handedToGraph = false;
   let pendingFocus: { readonly kind: 'after' | 'before' | 'first' | 'last'; readonly key: string | null } | null = null;
   /**
    * Set when a command opened the isolated list, cleared by the redraw that
@@ -1276,6 +1279,13 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   const scopeOf = (name: string | null): Element =>
     (name === null ? null : name === RELATED_SCOPE ? surface.querySelector(RELATED_LIST) : zone(name)) ?? surface;
 
+  /** Whether a zone is drawn at all: the fold hides the rail with `display: none` (#313, #346). */
+  const folded = (element: Element | null): boolean =>
+    element !== null && doc.defaultView?.getComputedStyle(element).display === 'none';
+
+  /** The workspace's `data-inspector`, which says whether a selection lifts the Inspector (and so folds the rail). */
+  const inspectorState = (): string | null => surface.querySelector('.ig-workspace')?.getAttribute('data-inspector') ?? null;
+
   /** Focus the element carrying `key`, inside one zone when named, without scrolling the page. */
   const focusIn = (zoneName: string | null, key: string): void => {
     const scope = scopeOf(zoneName);
@@ -1683,6 +1693,10 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       (selector) => [selector, surface.querySelector<HTMLElement>(selector)?.scrollTop ?? 0] as const,
     );
     const active = doc.activeElement;
+    // THE INSPECTOR'S STATE BEFORE THIS DRAW (#346): the rail folds and unfolds
+    // only when it moves between lifted and not, so a draw that keeps it reads
+    // no computed style at all (a resize must read no window size).
+    const inspectorBefore = inspectorState();
     const activeInput = isElement(active) && isInput(active) && surface.contains(active) ? active : null;
     const activeCommand = activeInput?.getAttribute(COMMAND_ATTRIBUTE) ?? null;
     // THE CARET AS IT WAS, not the end of the value: a reader editing in the
@@ -1904,6 +1918,24 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const search = surface.querySelector<HTMLInputElement>(`input[${COMMAND_ATTRIBUTE}="target-query"]`);
     const focusRow = (key: string | null, within: string | null = focusedZone): void => {
       if (key === null) return;
+      // THE FOCUS FOLLOWS THE FOLD (#346, the design lead's call). Under the
+      // fold a selection hides the rail, and a row that held the focus there
+      // would drop it to the page, where no key reaches the workspace; the
+      // selection now lives in the graph, so its node takes the focus. Only a
+      // focus the fold is hiding moves, and without scrolling. When the rail
+      // comes back, a focus in the graph returns to the row.
+      if (inspectorState() !== inspectorBefore) {
+        if (within === 'rail' && folded(zone('rail'))) {
+          handedToGraph = true;
+          focusIn('canvas', key);
+          return;
+        }
+        if (within === 'canvas' && handedToGraph && !folded(zone('rail'))) {
+          handedToGraph = false;
+          focusIn('rail', key);
+          return;
+        }
+      }
       focusIn(within, key);
     };
     if (overlay !== null) {
