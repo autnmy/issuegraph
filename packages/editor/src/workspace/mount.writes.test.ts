@@ -807,17 +807,23 @@ describe('a command control keeps focus across the redraw it causes', () => {
       page.click(add);
       await flush();
 
-      // WHERE FOCUS ACTUALLY IS, asserted rather than assumed — and it is NOT
-      // inside the chooser. The last-resort restore takes the zone's FIRST
-      // command control and the inspector draws `clear` above the kind list, so
-      // a predicate conjoining the draft with `closest(<the chooser>)` would be
-      // false here and the digits would still be dead. Pinning the landing spot
-      // is what stops that predicate being reintroduced as an "improvement".
+      // WHERE FOCUS ACTUALLY IS, asserted rather than assumed: on the first
+      // kind, the step `add` opened, read off the live draft (#159). It used to
+      // land on `clear`, the zone's first command control, one press from
+      // discarding the selection. The digits below must work from here too,
+      // and that is still #152's lesson: where focus lands and what a press
+      // means stay separate questions, so `interaction()` must not start
+      // requiring focus inside the chooser.
       const landed = page.win.document.activeElement;
       assert.equal(
         landed?.getAttribute('data-ig-command') ?? null,
-        'clear',
-        `focus did not land on the inspector's clear control (${landed?.nodeName ?? 'null'})`,
+        'kind',
+        `focus did not land on the kind list (${landed?.nodeName ?? 'null'} ${landed?.getAttribute('data-ig-command') ?? ''})`,
+      );
+      assert.equal(
+        landed?.closest('.ig-inspector-add') !== null,
+        true,
+        'focus landed on a kind control outside the kind list add opened',
       );
 
       // THE DIGIT AND ITS KIND BOTH COME FROM `KIND_KEYS`, never written out.

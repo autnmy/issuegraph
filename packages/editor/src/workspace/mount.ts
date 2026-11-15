@@ -2093,9 +2093,20 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         // floating and sometimes the inspector's own list — so this asks the
         // weaker, answerable question: what can the reader act on, nearest to
         // where they were.
+        //
+        // WHAT THE PRESS OPENED, WHEN THE DRAFT SAYS SO (#159). The weaker
+        // question took the zone's FIRST control, which in the inspector is
+        // `clear`, above the kind list `add` opened, so a reader who pressed
+        // `add` landed one press from discarding the selection. The live
+        // create step answers the stronger question, wherever the chooser is
+        // drawn: while a kind is being chosen, the first kind is what opened.
         const zoneName = commandToken?.zone ?? null;
         const near = zoneName === null ? null : zone(zoneName);
+        const stepOpened = isChoosingKind(state.draft)
+          ? surface.querySelector<HTMLElement>(`[${COMMAND_ATTRIBUTE}="kind"]`)
+          : null;
         const opened =
+          stepOpened ??
           near?.querySelector<HTMLElement>(`[${COMMAND_ATTRIBUTE}]`) ??
           surface.querySelector<HTMLElement>(`[${COMMAND_ATTRIBUTE}]`);
         if (opened !== null) {
