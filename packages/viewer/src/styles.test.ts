@@ -476,27 +476,34 @@ describe('the density escape hatch overrides the crossover it is an escape from'
     );
   });
 
-  it('says a matched query once on a list row, at every density (#131)', () => {
-    // THE CHIP AND THE LINE TRADE PLACES. The line names the query wherever it
-    // is drawn, so the chip is hidden there; the dense rail hides the line, so
-    // the chip comes back; an opened dense row draws the line again, so the
-    // chip leaves. Asserted on both density keys, because a rule written into
-    // one emission and not the other is the drift `railDensity` exists to stop.
-    const display = (selector: string): string | undefined =>
-      rules()
-        .filter((rule) => rule.selector === selector)
-        .map((rule) => /display:\s*([\w-]+)/.exec(rule.body)?.[1])
-        .at(-1);
-    const chip = ".ig-badge[data-priority='query']";
-    assert.equal(display(`.ig-slot ${chip}`), 'none', 'the wide row prints the query twice');
+  it('keeps a dense row one line and ellipsizes only its muted words (issue 252, pick (a))', () => {
+    // The editor's rail is virtualized on a fixed pitch (review-41 on PR 338),
+    // so the meta line never wraps; a caveat that does not fit keeps its glyph
+    // and ends in an ellipsis, and the tag, the fact and "+N" never shrink.
+    const body = (scope: string, tail: string): string =>
+      rules().filter((rule) => rule.selector.split(',').map((one) => one.trim()).includes(`${scope} ${tail}`)).map((rule) => rule.body).join(';');
     for (const scope of [CONTAINER_SCOPE, ATTRIBUTE_SCOPE]) {
-      assert.equal(display(`${scope} .ig-slot ${chip}`), 'inline-flex', `${scope}: the dense row names no query`);
-      assert.equal(
-        display(`${scope} .ig-slot[aria-expanded='true'] ${chip}`),
-        'none',
-        `${scope}: an opened dense row prints the query twice`,
-      );
+      assert.match(body(scope, '.ig-slot .ig-row-meta'), /flex-wrap:\s*nowrap/, `${scope}: the meta line wraps`);
+      assert.match(body(scope, '.ig-slot .ig-row-meta .ig-badges > .ig-badge'), /flex:\s*none/, `${scope}: a chip can shrink`);
+      for (const kind of ['caveat', 'evidence']) {
+        assert.match(body(scope, `.ig-slot .ig-row-meta .ig-badges > .ig-badge[data-${kind}]`), /flex:\s*0 1 auto/, `${scope}: ${kind} cannot give way`);
+        assert.match(body(scope, `.ig-slot .ig-row-meta .ig-badges > .ig-badge[data-${kind}] > span:last-child`), /text-overflow:\s*ellipsis/, `${scope}: ${kind} is cut, not ellipsized`);
+      }
     }
+  });
+
+  it('hides no part of an order row at any width or density (issue 252)', () => {
+    // THE ROW IS THE PRIORITY TAG, ONE FACT AND "+N", with evidence and the
+    // caveats as muted words, so nothing is left for a rail to drop: no rule,
+    // base, dense or container-keyed, hides any of them on a row. The query
+    // chip went with cardPriorityBadge, which never draws one on a row, so its
+    // three trade-places rules (#131) are gone too.
+    const parts = ['[data-priority', '[data-edge]', '[data-omitted]', '[data-evidence', '[data-caveat', '[data-not-ready]'];
+    const hiding = rules().filter(
+      (rule) => rule.selector.includes('.ig-slot') && parts.some((part) => rule.selector.includes(part)) && /display:\s*none/.test(rule.body),
+    );
+    assert.deepEqual(hiding.map((rule) => rule.selector), [], 'a rule hides part of the order row');
+    assert.equal(/data-priority='query'/.test(css), false, 'a rule still reaches the query chip a row never draws');
   });
 });
 

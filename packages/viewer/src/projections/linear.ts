@@ -280,14 +280,8 @@ export interface SceneOptions {
    * the container query stops deciding; set to `dense`, the dense block applies
    * at any width; set to `wide`, the base density does.
    *
-   * IT GOVERNS ONE BLOCK, AND `wide` IS NARROWER THAN IT SOUNDS. §17j's drop
-   * order has further steps of its own — evidence chips at 360, relationship
-   * badges past the first at 345, the declared priority tier at 335 — and those
-   * stay keyed to the container, because they are about what fits on a line
-   * rather than about which density the row is drawn at. So `wide` on a rail
-   * that is genuinely 330 wide still drops those chips. That is deliberate;
-   * said out loud because "wide" reads like a claim over the whole drop order
-   * and is not one.
+   * IT GOVERNS ONE BLOCK. The row has no drop order of its own any more
+   * (issue 252): the priority tag, one fact and "+N" show at every width.
    */
   readonly density?: 'dense' | 'wide' | undefined;
 }
@@ -374,24 +368,24 @@ export function slotRow(
 
   // A UNIT'S HEAD IS ITS ENCLOSURE, not a joined title. Every other row keeps
   // the frame's two-line pair: the title, and the identity 2px beneath it.
-  const badges = [
+  const notReady = notReadyBadge(slot);
+  // THE ROW'S CHIPS, IN THE BOARD'S ORDER (issue 252): the priority tag and its
+  // raise, then ONE fact — the not-ready mark when the slot has one, else the
+  // first relationship — then "+N" for every relationship it does not name,
+  // then the muted words a reader is not asked a question by: evidence and the
+  // caveats. Those are words, not facts, and never counted in "+N".
+  const badgeRow = [
     // THE TAG A NODE CARRIES, never a query's text (q339: "the order row: the
     // number, then its one fact"; the board's row reads "#2290 · P0 · ...").
     cardPriorityBadge(lead),
     priorityRaise(lead?.provenance),
+    notReady,
+    ...(relationships === 'named'
+      ? edgeBadgeList(document, slot.members, notReady === null ? ORDER_ROW_RELATIONSHIPS : 0)
+      : []),
     evidenceBadge(lead),
-    notReadyBadge(slot),
     ...caveatBadges(lead),
   ].filter((badge): badge is ElementSpec => badge !== null);
-
-  // ONE BADGE ROW, FED BY FOUR SOURCES. §16a draws the tier, the evidence, the
-  // readiness and the relationships as one wrapping row of chips, in that
-  // order — the facts a reader scans for before they read a word of the
-  // sentence beneath.
-  const badgeRow = [
-    ...badges,
-    ...(relationships === 'named' ? edgeBadgeList(document, slot.members, ORDER_ROW_RELATIONSHIPS) : []),
-  ];
 
   // THE IDENTITY AND THE BADGES ARE ONE LINE, NOT TWO BLOCKS — which is what
   // §17j's row anatomy asks for and what the old markup could not express.

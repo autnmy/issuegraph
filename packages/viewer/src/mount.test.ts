@@ -267,14 +267,16 @@ describe('mountViewer', () => {
     // never happened for the subjects that need it most.
     const doc = new TestDocument();
     const container = doc.createContainer();
-    // The partner's line, which the list row names as its one relationship.
-    const edge = edgeIdentity('blocked-by', '2', '3');
-    const handle = mountViewer(container, heldTogetherDocument, { projection: 'graph' });
+    // A line the list row names as its one relationship: 102 is ready, so its
+    // one fact is its first relationship, "blocks #101" (since issue 252 a
+    // held row's one fact is its not-ready mark, and it names no edge).
+    const edge = edgeIdentity('blocked-by', '101', '102');
+    const handle = mountViewer(container, fixtureDocument, { projection: 'graph' });
 
     const line = container
       .descendants()
       .find((element) => element.getAttribute(GROUP_ATTRIBUTE) === edge);
-    assert.ok(line !== undefined, 'no line was drawn from the partner');
+    assert.ok(line !== undefined, 'no line was drawn for the edge');
     container.dispatch('click', { target: line });
     assert.equal(handle.state.selected, edge);
 
@@ -286,7 +288,7 @@ describe('mountViewer', () => {
     assert.equal(scrolled[0]?.getAttribute(GROUP_ATTRIBUTE), edge);
 
     // An ordinary issue selection takes the same path.
-    const row = container.descendants().find((element) => element.getAttribute(KEY_ATTRIBUTE) === '1');
+    const row = container.descendants().find((element) => element.getAttribute(KEY_ATTRIBUTE) === '102');
     assert.ok(row !== undefined);
     container.dispatch('click', { target: row });
     handle.setProjection('graph');

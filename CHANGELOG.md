@@ -4,6 +4,14 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/viewer` `0.27.0`: an order row is the priority tag, one fact and "+N", with nothing a narrow rail drops (#252; the redesign tracker #248).** No API change. Reaches the editor's rail, which draws its rows through the viewer.
+  - **One fact after the tag.** A held row's not-ready mark is its one fact, so it names no relationship and counts them all ("⊘ not ready +2"); a ready row names its first relationship and counts the rest, as before. It was the mark and a relationship and "+N".
+  - **The board's order**: the tag and its raise, the one fact, "+N", then evidence and the caveats as the muted words #293 made them, never counted.
+  - **Nothing on the row is dropped by width.** The rail's 360, 345 and 335 rules that hid evidence, relationships past the first and a declared tier are gone (the row has one relationship and nothing else to drop), so every part shows at the 336 workspace rail and the 330 settings rail.
+  - **The query chip's rules are gone.** A row's tag is the node's (`cardPriorityBadge`), which never draws a matched query as a chip, so the three rules that traded it with the provenance line (#131) reached nothing.
+  - Muted text already clears 4.5:1 on the row's grounds in both shipped themes (pinned in the theme tests).
+  - **Pinned** in the viewer's linear and styles tests.
+
 - **`@issuegraph/viewer` `0.26.0`: a tracker hold can name who it is held on, after its tag (#305; Design q321, issue-graph-states e1d0445, content.md f58baed, RULES a38612c).** Additive: `TrackerHold.detail`.
   - **`detail`** is host-authored and verbatim, like `reason`. The footer draws it straight after the hold's tag, with no separator, in `--ig-text-muted` at the number's size, unwrapped, as the board draws `<span class="tag plain">Assigned</span><span>to maya-chen</span>` (content.md; review-219): `label: 'Assigned'`, `detail: 'to maya-chen'`. It is drawn only beside a `label`; a blank detail draws nothing.
   - **The row's accessible name reads it** after the hold's reason, joined by " · ", in the list's footer and the graph's (one row, `footerRow`).
