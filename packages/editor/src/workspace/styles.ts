@@ -147,19 +147,17 @@ export const workspaceStylesheet = `
       calc(var(--ig-char-width) * 41);
   }
   /* NOTHING SELECTED, NO INSPECTOR COLUMN (#330; the board's .no-insp, 336 |
-     1fr): the graph takes the room an empty panel would hold. */
-  .ig-workspace[data-inspector='dismissed'] {
+     1fr): the graph takes the room an empty panel would hold. "empty", not
+     "dismissed": a selection's Inspector stays at this width, dismissed or
+     not, since nothing here lies over the graph to dismiss. */
+  .ig-workspace[data-inspector='empty'] {
     grid-template-areas:
       'header header'
       'rail canvas';
     grid-template-columns: calc(var(--ig-char-width) * 43) 1fr;
   }
-  .ig-workspace[data-inspector='dismissed'] .ig-zone[data-zone='inspector'] {
+  .ig-workspace[data-inspector='empty'] .ig-zone[data-zone='inspector'] {
     display: none;
-  }
-  /* No Inspector on screen, so the log keeps the card. */
-  .ig-workspace[data-inspector='dismissed'] .ig-log-recovery[data-ig-inspected] {
-    display: flex;
   }
 }
 
@@ -2213,7 +2211,8 @@ ${heldRailDeclarations}
   /* THE DISMISSAL MEANS NOTHING HERE, and saying so is the undo of the middle
      block's only conditional rule. The inspector is a zone again, so there is
      no overlay to have dismissed. */
-  .ig-workspace[data-inspector='dismissed'] .ig-zone[data-zone='inspector'] {
+  .ig-workspace[data-inspector='dismissed'] .ig-zone[data-zone='inspector'],
+  .ig-workspace[data-inspector='empty'] .ig-zone[data-zone='inspector'] {
     display: block;
   }
 

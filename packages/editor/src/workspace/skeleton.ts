@@ -56,7 +56,7 @@ export function renderWorkspaceSkeleton(options: WorkspaceSkeletonOptions = {}):
       // THE REAL SURFACE'S RESTING STATE, so the narrow layouts' container
       // queries fold these zones exactly as they will fold the real ones.
       'data-canvas': 'strip',
-      'data-inspector': 'dismissed',
+      'data-inspector': 'empty',
       'data-ig-loading': 'true',
       'aria-busy': 'true',
       role: options.label === undefined ? undefined : 'status',

@@ -544,11 +544,6 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     typeof element.getBoundingClientRect === 'function' && isNarrowBox(element.getBoundingClientRect());
   let narrow = measuresNarrow();
   /**
-   * The state with its selection cut to the most recently added issue while
-   * the root is narrow, and the same state otherwise, so a caller can tell by
-   * identity whether anything changed.
-   */
-  /**
    * The state with #313's order panel shut once the order no longer folds
    * (review-41, PR 328): widened past the fold, the panel is the plain order
    * zone again, and left open it would still be drawn and announced as a
@@ -561,6 +556,11 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const folds = strip !== null && doc.defaultView?.getComputedStyle(strip).display !== 'none';
     return folds ? next : { ...next, orderPanel: false };
   };
+  /**
+   * The state with its selection cut to the most recently added issue while
+   * the root is narrow, and the same state otherwise, so a caller can tell by
+   * identity whether anything changed.
+   */
   const narrowed = (next: HostState): HostState => {
     if (!narrow) return next;
     const selection = selectionReducer(next.selection, { kind: 'limit-to-one' });

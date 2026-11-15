@@ -116,7 +116,7 @@ describe('the three zones render at their fixed positions', () => {
     // block reads, and the folded order its panel's state (#313).
     assert.match(
       result.markup,
-      /^<div class="ig-workspace" data-order="settled" data-canvas="strip" data-canvas-legend="[a-z]+" data-inspector="dismissed" data-order-panel="shut" data-tab="order">/,
+      /^<div class="ig-workspace" data-order="settled" data-canvas="strip" data-canvas-legend="[a-z]+" data-inspector="empty" data-order-panel="shut" data-tab="order">/,
     );
     assert.match(result.markup, /<\/div>$/);
   });

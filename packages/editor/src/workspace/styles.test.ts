@@ -1095,9 +1095,11 @@ describe('the workspace stylesheet carries structure, never a value', () => {
 
   it('gives the wide layout two columns and no Inspector when nothing is selected (#330, the board\u2019s .no-insp)', () => {
     const wide = containerBlock(css, 'width >= 1138px');
-    const tracks = wide.match(/\.ig-workspace\[data-inspector='dismissed'\]\s*\{[^}]*grid-template-columns:([^;]*);/)?.[1];
+    const tracks = wide.match(/\.ig-workspace\[data-inspector='empty'\]\s*\{[^}]*grid-template-columns:([^;]*);/)?.[1];
     assert.equal(tracks?.trim(), 'calc(var(--ig-char-width) * 43) 1fr');
-    assert.match(wide, /\.ig-workspace\[data-inspector='dismissed'\] \.ig-zone\[data-zone='inspector'\]\s*\{\s*display:\s*none;/);
+    assert.match(wide, /\.ig-workspace\[data-inspector='empty'\] \.ig-zone\[data-zone='inspector'\]\s*\{\s*display:\s*none;/);
+    // A dismissed selection keeps its Inspector here (review-41, PR 333).
+    assert.equal(/data-inspector='dismissed'/.test(wide), false, 'the wide layout hides a selected issue\u2019s Inspector');
   });
 
   it('draws the order head at every width, its close button only on the folded panel (#330)', () => {

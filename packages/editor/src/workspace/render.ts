@@ -1049,9 +1049,8 @@ export interface WorkspaceOptions {
    * COMBINED WITH THE SELECTION, NEVER READ ALONE. §17k opens the lifted panel
    * "by selection", so the attribute this becomes is `lifted` only when
    * something is selected AND the reader has not pressed Escape since. A render
-   * with nothing selected draws the panel dismissed however this is set, which
-   * is what keeps an empty "nothing selected" card from floating over the
-   * canvas at the middle width.
+   * with nothing selected draws `empty` however this is set: no Inspector at
+   * the middle width, and no Inspector column at the wide one (#330).
    *
    * Ignored at the two other widths, where the inspector is a zone.
    */
@@ -4139,7 +4138,12 @@ export function renderWorkspace(
   // which this function already has, so the panel is lifted when something is
   // selected and the reader has not dismissed it since. Storing the openness
   // instead would be a second copy of the selection, free to disagree with it.
-  const lifted = selection.kind !== 'none' && options.inspectorDismissed !== true;
+  //
+  // THREE FACTS, NOT TWO (#330, review-41 on PR 333): nothing selected is
+  // `empty`, which the wide layout answers with two columns; a selection the
+  // reader dismissed is `dismissed`, which only the middle width hides. One
+  // value for both would hide a selected issue's Inspector at the wide layout.
+  const inspectorState = selection.kind === 'none' ? 'empty' : options.inspectorDismissed === true ? 'dismissed' : 'lifted';
   // WHETHER THE CANVAS DREW A KEY, SO THE SURFACE DRAWS ONE AND NOT TWO. The
   // rail and the canvas are both viewers, so both draw the grammar legend, and
   // the workspace showed the same five line styles twice, side by side, at the
@@ -4168,7 +4172,7 @@ export function renderWorkspace(
   const narrowState =
     ` data-canvas="${canvasOpen ? 'open' : 'strip'}"` +
     ` data-canvas-legend="${canvasLegend}"` +
-    ` data-inspector="${lifted ? 'lifted' : 'dismissed'}"` +
+    ` data-inspector="${inspectorState}"` +
     ` data-order-panel="${options.orderPanel === true ? 'open' : 'shut'}"` +
     ` data-tab="${tab}"`;
   const ids = zoneIds(options.surfaceId);
