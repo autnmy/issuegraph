@@ -1984,16 +1984,25 @@ describe('lines into and out of the selection share a trunk per kind and directi
     const tags = [...canvasOf(render(hub, options)).matchAll(/<path class="ig-edge"[^>]*>/g)]
       .map(([tag]) => tag)
       .filter((tag) => !tag.includes('aria-hidden'));
-    return tags.map((tag) => {
-      const numbers = (/ d="([^"]*)"/.exec(tag)?.[1] ?? '').match(/-?\d+(?:\.\d+)?/g)?.map(Number) ?? [];
-      return {
-        identity: /data-ig-group="([^"]*)"/.exec(tag)?.[1] ?? '',
-        field: /data-edge="([^"]*)"/.exec(tag)?.[1] ?? '',
-        points: numbers.flatMap((value, index) =>
-          index % 2 === 0 ? [{ x: value, y: numbers[index + 1] ?? Number.NaN }] : [],
-        ),
-      };
-    });
+    return tags.map((tag) => ({
+      identity: /data-ig-group="([^"]*)"/.exec(tag)?.[1] ?? '',
+      field: /data-edge="([^"]*)"/.exec(tag)?.[1] ?? '',
+      points: corners(/ d="([^"]*)"/.exec(tag)?.[1] ?? ''),
+    }));
+  }
+
+  /**
+   * A path's corners, in order: a rounded turn (`L before Q corner after`) read
+   * as the corner it rounds, so a route is its four points however it turns.
+   */
+  function corners(d: string): readonly { readonly x: number; readonly y: number }[] {
+    const points: { readonly x: number; readonly y: number }[] = [];
+    for (const [, command, args] of d.matchAll(/([MLQ])([^MLQ]*)/g)) {
+      const [x = Number.NaN, y = Number.NaN] = args?.match(/-?\d+(?:\.\d+)?/g)?.map(Number) ?? [];
+      if (command === 'Q') points.pop();
+      points.push({ x, y });
+    }
+    return points;
   }
 
   function line(lines: readonly Line[], field: Parameters<typeof edgeIdentity>[0], from: string, to: string): Line {
