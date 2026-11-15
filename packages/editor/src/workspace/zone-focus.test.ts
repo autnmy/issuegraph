@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { renderWorkspace } from './render.ts';
+import { workspaceStylesheet } from './styles.ts';
 import { WORKSPACE_WORDS, backlogOf } from '../testing/workspace.ts';
 
 /** The opening tag of one zone frame. */
@@ -30,5 +31,12 @@ describe('zone frames and the keyboard (#331)', () => {
   it('adds no stop to the rail or the canvas, whose rows carry the focus', () => {
     assert.doesNotMatch(zoneTag(markup, 'rail'), /tabindex/);
     assert.doesNotMatch(zoneTag(markup, 'canvas'), /tabindex/);
+  });
+
+  it('rings the Inspector zone inset when it takes the focus', () => {
+    const rule = /\.ig-zone\[data-zone='inspector'\]:focus-visible\s*\{([^}]*)\}/.exec(workspaceStylesheet);
+    assert.ok(rule !== null, 'no focus-visible rule for the Inspector zone');
+    assert.match(rule[1] ?? '', /outline:\s*var\(--ig-focus-ring\) solid var\(--ig-focus\)/);
+    assert.match(rule[1] ?? '', /outline-offset:\s*calc\(var\(--ig-focus-ring\) \* -1\)/);
   });
 });
