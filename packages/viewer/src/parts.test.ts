@@ -44,6 +44,17 @@ describe('provenanceClause', () => {
     }
   });
 
+  it('says the tier case without claiming queries where the host has none (#219)', () => {
+    // The board's sentence where the board drew it: ordering queries exist and
+    // none matched. A host with no queries configured gets a sentence that
+    // names no query; a host that never says keeps the board's.
+    const clause = (queried: boolean | undefined): string =>
+      renderMarkup(provenanceClause({ kind: 'declared-tier', priority: 0, queried })!);
+    assert.equal(clause(true), '<span>No query matched, so it goes by its priority, <span class="ig-id">P0</span></span>');
+    assert.equal(clause(undefined), clause(true));
+    assert.equal(clause(false), '<span>Ranked by its priority, <span class="ig-id">P0</span></span>');
+  });
+
   it('answers null for absent provenance, as the line does', () => {
     assert.equal(provenanceClause(undefined), null);
     assert.equal(provenanceLine(undefined), null);

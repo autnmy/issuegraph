@@ -177,8 +177,13 @@ export function provenanceClause(provenance: RankProvenance | undefined): Elemen
       // borrowing that row's sentence made the panel tell every reader that an
       // explicitly-declared P0 had no declared priority. A panel whose job is
       // explaining the order cannot invent the reason.
+      //
+      // TWO SENTENCES, ONE PER CASE (#219, the redesign lead's call). The
+      // board's words stand where the board drew them, ordering queries that
+      // matched nothing; a host with no queries configured says so, and its
+      // reader is not told about queries that do not exist.
       return element('span', {}, [
-        'No query matched, so it goes by its priority, ',
+        provenance.queried === false ? 'Ranked by its priority, ' : 'No query matched, so it goes by its priority, ',
         element('span', { class: 'ig-id' }, [`P${String(provenance.priority)}`]),
       ]);
     case 'promotion': {
@@ -818,9 +823,14 @@ export function nowRows(document: NormalizedDocument): ElementSpec | null {
           // the queued rows beneath it — the opposite of what the frame does.
           element('div', { class: 'ig-row-head' }, [
             element('span', { class: 'ig-title' }, [issue?.title ?? job.key]),
-            element('span', { class: 'ig-id' }, [
-              issue === undefined ? issueNumber(job.key) : identity(issue),
-              ` · ${job.phase} · ${job.elapsed}`,
+            // THE KEY GIVES WAY, THE CLOCK DOES NOT (#219). In one shrinking
+            // span a long key cut the phase and the elapsed time first, which
+            // are the facts this row exists for; now only the key ellipsizes.
+            // THE FULL KEY ON HOVER, since the line cuts it first
+            // (review-219 on PR 353).
+            element('span', { class: 'ig-now-meta', title: `${issueNumber(job.key)} · ${job.phase} · ${job.elapsed}` }, [
+              issue === undefined ? element('span', { class: 'ig-id' }, [issueNumber(job.key)]) : identity(issue),
+              element('span', { class: 'ig-now-clock' }, [` · ${job.phase} · ${job.elapsed}`]),
             ]),
           ]),
           element('span', { class: 'ig-now-phase' }, [

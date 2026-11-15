@@ -39,7 +39,18 @@ export type RankProvenance =
   /** A host ordering query matched this issue. `label` is the query as written. */
   | { readonly kind: 'matched-query'; readonly index: number; readonly label: string }
   /** No query matched; the issue sits in its declared priority tier. */
-  | { readonly kind: 'declared-tier'; readonly priority: number }
+  | {
+      readonly kind: 'declared-tier';
+      readonly priority: number;
+      /**
+       * Whether the host has ordering queries configured at all (#219). The
+       * board's sentence, "No query matched", is true only where some exist;
+       * `false` says the tier ranked the issue without implying any. Absent
+       * keeps the board's sentence, so a host that never sends it reads as
+       * it always has.
+       */
+      readonly queried?: boolean | undefined;
+    }
   /**
    * Effective priority promoted it. `notation` is the spec's own `P3 -> 0`
    * form and `promotedBy` names the open dependents the urgency arrived
