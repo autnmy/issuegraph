@@ -826,7 +826,9 @@ export function nowRows(document: NormalizedDocument): ElementSpec | null {
             // THE KEY GIVES WAY, THE CLOCK DOES NOT (#219). In one shrinking
             // span a long key cut the phase and the elapsed time first, which
             // are the facts this row exists for; now only the key ellipsizes.
-            element('span', { class: 'ig-now-meta' }, [
+            // THE FULL KEY ON HOVER, since the line cuts it first
+            // (review-219 on PR 353).
+            element('span', { class: 'ig-now-meta', title: `${issueNumber(job.key)} · ${job.phase} · ${job.elapsed}` }, [
               issue === undefined ? element('span', { class: 'ig-id' }, [issueNumber(job.key)]) : identity(issue),
               element('span', { class: 'ig-now-clock' }, [` · ${job.phase} · ${job.elapsed}`]),
             ]),
