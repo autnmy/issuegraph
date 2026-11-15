@@ -1290,8 +1290,25 @@ function orderHeadSpec(words: WorkspaceWords, ranked: number): ElementSpec {
   ]);
 }
 
+/**
+ * THE INSPECTOR IS A TAB STOP (#331). Its zone scrolls (`overflow-y: auto` in
+ * `workspace/styles.ts`), and with nothing selected it holds only headings and
+ * sentences, so when a bounded host makes it overflow, a keyboard reader has
+ * nothing inside to focus and no way to scroll it (WCAG 2.1.1; axe
+ * `scrollable-region-focusable`, which a host's sweep failed in the first-pass
+ * state). The zone frame takes the focus itself. Keyboard moves inside a zone
+ * are untouched: the mount's roving focus selects keyed rows, never the frame.
+ * The rail and the canvas are left alone: each always draws keyed rows or
+ * controls to focus.
+ */
+const ZONE_FOCUS: Readonly<Partial<Record<Zone, Readonly<Record<string, string>>>>> = {
+  inspector: { tabindex: '0' },
+};
+
 function zone(name: Zone, id: string, inner: string, attributes: Readonly<Record<string, string>> = {}): string {
-  const frame = renderMarkup(element('section', { class: 'ig-zone', 'data-zone': name, id, ...attributes }, []));
+  const frame = renderMarkup(
+    element('section', { class: 'ig-zone', 'data-zone': name, id, ...ZONE_FOCUS[name], ...attributes }, []),
+  );
   return `${frame.slice(0, -ZONE_CLOSE.length)}${inner}${ZONE_CLOSE}`;
 }
 
