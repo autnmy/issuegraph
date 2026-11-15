@@ -152,7 +152,8 @@ describe('the refusal, as a reader sees it', () => {
           // In sentence case since #293, as the export's group card reads it.
           `<span class="ig-capsule-name"><span class="ig-capsule-anchor">Around </span>` +
           `<span class="ig-id">${capsule.lead}</span> \u00b7 ${capsule.name}</span> ` +
-          `<span class="ig-capsule-reach">Longest chain ${String(capsule.chainDepth)}</span>`,
+          // Issues, not edges (issue 295).
+          `<span class="ig-capsule-reach">Longest chain ${String(capsule.chainDepth + 1)}</span>`,
       ),
     );
   });

@@ -524,7 +524,9 @@ describe('a host that sets none of the new tokens renders as it did before', () 
     '--ig-font-size-small': '12px',
     '--ig-line-height': '1.45',
     '--ig-space': 12,
-    '--ig-space-tight': 6,
+    // MOVED BY #295, deliberately: the export's spacing is a 4 grid (its
+    // small step 4, the next 8), and 6 sat between them.
+    '--ig-space-tight': 4,
     '--ig-radius': 6,
     '--ig-row-height': 44,
     '--ig-station-size': 12,

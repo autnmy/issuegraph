@@ -4325,7 +4325,11 @@ export function renderWorkspace(
           document.host,
           // OPEN MEANS DRAWN (review-41, PR 336): with nothing to list the panel
           // is not drawn, so the count is not expanded and names no panel.
-          overlay === null ? '' : renderAuditHeader(overlay, { open: auditPanel !== '', controls: auditPanelId(options.surfaceId) }),
+          overlay === null ? '' : renderAuditHeader(overlay, {
+            open: auditPanel !== '',
+            controls: auditPanelId(options.surfaceId),
+            label: options.words.audit.heading,
+          }),
           options.words,
         ),
         // THE LOG IS IN THE HEADER because the header is the one zone drawn at

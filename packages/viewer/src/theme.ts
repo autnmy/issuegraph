@@ -410,7 +410,9 @@ export const defaultTheme: Theme = Object.freeze({
   }),
   metrics: Object.freeze({
     '--ig-space': 12,
-    '--ig-space-tight': 6,
+    // ON THE 4 GRID (issue 295): the board's small step is 4 (.rel) and its
+    // next is 8 (.ig-meta, --ig-space-snug); 6 sat between them.
+    '--ig-space-tight': 4,
     '--ig-radius': 6,
     '--ig-row-height': 44,
     '--ig-station-size': 12,
@@ -515,20 +517,23 @@ export const defaultTheme: Theme = Object.freeze({
     // container and pick its drop step from that"*. A package that reads the
     // window cannot be dropped into someone else's settings page, which is the
     // whole BYO premise.
-    '--ig-row-height-dense': 53,
-    '--ig-row-padding-block-dense': 9,
+    // THE BOARD'S ORDER ROW (issue 295, the export's .ig-order li): 8 + 20 + 20
+    // + 8 = 56, a 20 line for the title and a 20 line for the meta, which is
+    // the height of the priority tag's pill the row now keeps.
+    '--ig-row-height-dense': 56,
+    '--ig-row-padding-block-dense': 8,
     '--ig-rank-column-dense': 30,
     // The two text lines the 53px is composed of, so the height is built from
     // its parts rather than asserted as one number a later edit can drift from.
     // The meta token was added, removed when nothing read it — this package
     // fails a token with no use, and rightly — and is back now that the meta
     // line exists to read it.
-    '--ig-row-title-line': 17,
-    '--ig-row-meta-line': 15,
-    // The 3 in 9 + 17 + 3 + 15 + 9. Its own token because the anatomy is a
+    '--ig-row-title-line': 20,
+    '--ig-row-meta-line': 20,
+    // The gap between the two lines: 0 in 8 + 20 + 0 + 20 + 8. Its own token because the anatomy is a
     // SUM: a gap borrowed from the spacing scale would drift the height the
     // moment that scale moved, and the height is the thing 17j fixes.
-    '--ig-row-line-gap': 3,
+    '--ig-row-line-gap': 0,
     // §16b's station disc, 26px across on the spine.
     '--ig-station-box': 26,
     // One line of text inside a §16b node card, which is what lets the layout

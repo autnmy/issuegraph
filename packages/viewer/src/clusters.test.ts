@@ -289,7 +289,8 @@ describe('a component says one thing about how its work runs', () => {
   it('words each case once, so two capsules cannot describe one component differently', () => {
     assert.equal(clusterReachLabel({ kind: 'cyclic', held: 3, of: 3 }), 'Nothing can start');
     assert.equal(clusterReachLabel({ kind: 'cyclic', held: 2, of: 9 }), '2 of 9 in a loop');
-    assert.equal(clusterReachLabel({ kind: 'chain', depth: 4 }), 'Longest chain 4');
+    // Issues, not edges (issue 295): a walk of 4 edges is a chain of 5 issues.
+    assert.equal(clusterReachLabel({ kind: 'chain', depth: 4 }), 'Longest chain 5');
     assert.equal(clusterReachLabel({ kind: 'unblocked' }), 'No blocking relationships');
   });
 

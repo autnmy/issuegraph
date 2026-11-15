@@ -1220,7 +1220,7 @@ describe('the graph projection', () => {
     const markup = render(crowdedDocument(GRAPH_NODE_BUDGET + 1));
     assert.match(markup, /61 issues/);
     assert.match(markup, /60 blocking/);
-    assert.match(markup, /Longest chain 60/);
+    assert.match(markup, /Longest chain 61/);
   });
 
   it('flags the host’s cycle in a capsule rather than deriving one, and does not hang on the loop', () => {
@@ -1295,7 +1295,7 @@ describe('the graph projection', () => {
 
     assert.match(markup, /shown as groups/);
     assert.match(markup, /20000 issues/);
-    assert.match(markup, /Longest chain 19999/);
+    assert.match(markup, /Longest chain 20000/);
   });
 
   it('is deterministic — two renders of one document agree byte for byte', () => {
