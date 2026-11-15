@@ -3252,9 +3252,14 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
    * rail can narrow because the host resized, because a sibling grew, or
    * because a container query re-tracked the grid, and only the box itself sees
    * all three.
+   *
+   * TAKEN FROM THE ROOT ELEMENT'S OWN DOCUMENT, as `rootResize` is below, so
+   * the mount reaches no global to watch a box and a test supplies one
+   * observer for both (#290).
    */
+  const ElementResizeObserver = doc.defaultView?.ResizeObserver;
   const railResize =
-    typeof ResizeObserver === 'function' ? new ResizeObserver(() => { dockRailLegend(); }) : null;
+    ElementResizeObserver === undefined ? null : new ElementResizeObserver(() => { dockRailLegend(); });
 
   /**
    * The root element's own width, watched so a resize under 640 cuts a live
@@ -3263,16 +3268,14 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
    *
    * ITS OWN OBSERVER, NOT `railResize`, because `dockRailLegend` disconnects
    * and re-observes that one on every redraw, and the root element is never
-   * replaced by a redraw. TAKEN FROM THE ROOT ELEMENT'S OWN DOCUMENT, which in
-   * a browser is the same constructor `railResize` uses, so a test can supply
-   * one with no global. Without one the narrow flag measured at mount still
-   * holds; only the resize watch is lost.
+   * replaced by a redraw. The same constructor as `railResize`, from the root
+   * element's own document. Without one the narrow flag measured at mount
+   * still holds; only the resize watch is lost.
    */
-  const RootResizeObserver = doc.defaultView?.ResizeObserver;
   const rootResize =
-    RootResizeObserver === undefined
+    ElementResizeObserver === undefined
       ? null
-      : new RootResizeObserver(() => {
+      : new ElementResizeObserver(() => {
           // A queued callback can still arrive after `disconnect()`.
           if (destroyed) return;
           narrow = measuresNarrow();
