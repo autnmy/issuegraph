@@ -2743,9 +2743,12 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // the re-cut then focuses, so the set extends across the edge exactly as
     // it does inside the window.
     if (zoneName === 'rail' && drawn !== null) {
-      const across = event.shiftKey ? acrossEdge(drawn.rail, key, event.key) : null;
+      // READ ONCE, BEFORE `dispatch`: it can run a host callback that calls
+      // `destroy()`, which sets `drawn` to null (review-41, PR 349).
+      const rail = drawn.rail;
+      const across = event.shiftKey ? acrossEdge(rail, key, event.key) : null;
       if (across !== null) dispatch({ kind: 'point', key: across, gesture: 'range', order: rankOrder() });
-      if (advanceRail(drawn.rail, key, event.key)) return true;
+      if (advanceRail(rail, key, event.key)) return true;
     }
     const scene = sceneFor(zoneName);
     if (scene === null) return false;
