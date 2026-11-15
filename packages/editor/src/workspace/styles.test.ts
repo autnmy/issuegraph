@@ -809,7 +809,12 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     // here rather than silently reintroducing the undercount.
     const rule = css.match(/(?:^|\n)\.ig-rail-spacer\s*\{([^}]*)\}/)?.[1];
     assert.ok(rule !== undefined, 'nothing sizes the spacer');
-    assert.ok(rule.includes('--ig-row-min-height'), 'the pitch omits the row floor');
+    // THE RAIL IS AT RAIL DENSITY, so its pitch is the dense row and the
+    // hairline under it: the same two tokens the mount's railRowAt divides by
+    // (review-41 on PR 341). The row floor (--ig-row-min-height) is the wide
+    // density's and was 13 short of the dense row.
+    assert.ok(rule.includes('--ig-row-height-dense'), 'the pitch omits the dense row');
+    assert.ok(rule.includes('--ig-hairline-width'), 'the pitch omits the hairline under each row');
     // The count is a factor, or the spacer is one row tall whatever it omits.
     assert.match(rule, /\*\s*var\(--ig-rail-rows/);
 

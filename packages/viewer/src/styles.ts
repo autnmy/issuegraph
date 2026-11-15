@@ -115,7 +115,11 @@ ${scope} .ig-slot .ig-row-meta .ig-badges > .ig-badge {
 ${scope} .ig-slot .ig-row-meta .ig-badges > .ig-badge[data-caveat],
 ${scope} .ig-slot .ig-row-meta .ig-badges > .ig-badge[data-evidence] {
   flex: 0 1 auto;
-  min-width: 0;
+  /* ROOM FOR THE GLYPH AND THE ELLIPSIS, and the chip clips its own words:
+     shrunk past its words it ends "◆ …", never a cut letter painted outside a
+     chip narrower than its glyph (review-219 on PR 341). */
+  min-width: calc(var(--ig-char-width) * 4);
+  overflow: hidden;
 }
 
 ${scope} .ig-slot .ig-row-meta .ig-badges > .ig-badge[data-caveat] > span:last-child,

@@ -765,7 +765,9 @@ export const workspaceStylesheet = `
    content-sized above that floor, which is the same approximation the note above
    already describes, at a slightly larger typical size. */
 .ig-rail-spacer {
-  height: calc(var(--ig-row-min-height) * var(--ig-rail-rows, 0));
+  /* The rail's pitch: a dense row and the hairline under it, the same two
+     tokens the mount's railRowAt divides by (review-41 on PR 341). */
+  height: calc((var(--ig-row-height-dense) + var(--ig-hairline-width)) * var(--ig-rail-rows, 0));
 }
 
 .ig-inspector {
