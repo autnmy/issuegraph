@@ -83,6 +83,18 @@ it('#303 q349: a selected relationship leaves the list as it was around the issu
   assert.ok(relatedRowKeys(relatedListView(document, { kind: 'edge', edgeId: picked.edgeId }), []).includes(picked.to));
 });
 
+it('#303 q349: a selected row inside the fold opens nothing, so the list stays as it was', () => {
+  const document = hub(13);
+  const relationships = inspectorView(document, SUBJECT).relationships;
+  // The second blocked-by, inside the fold of five.
+  const picked = relationships.filter((relationship) => relationship.field === 'blocked-by')[1];
+  assert.ok(picked !== undefined);
+  const [blocks] = onlyBlock(relatedListView(document, { kind: 'edge', edgeId: picked.edgeId })).groups;
+  assert.ok(blocks !== undefined && blocks.selected === picked.to);
+  assert.equal(shownNeighbours(blocks, []).length, 5, 'a selected row already drawn opened its group');
+  assert.ok(shownNeighbours(blocks, []).includes(picked.to));
+});
+
 it('#303 q349: a relationship declared by the other end reads around its stored `from` end, every group with its count', () => {
   const document = hub(4);
   const declaredByOther = inspectorView(document, SUBJECT).relationships.find((relationship) => relationship.from !== 'i0001');

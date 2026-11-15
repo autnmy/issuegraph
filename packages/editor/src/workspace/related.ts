@@ -46,7 +46,8 @@ export interface RelatedGroup {
   readonly neighbours: readonly string[];
   /**
    * The row that is the selected relationship's, its far end, or `null`. Its
-   * group draws whole, so the selected row is always drawn.
+   * group opens only when that row sits past the fold, so the row is always
+   * drawn and the list otherwise stays as it was (q349).
    */
   readonly selected: string | null;
 }
@@ -146,12 +147,14 @@ export function relatedListView(raw: ViewerDocument, selection: WorkspaceSelecti
 
 /**
  * The rows a group draws: its first five until the reader opens it, the way
- * the Inspector folds, and all of them when one is the selected row. One rule
- * for the list and for the keyboard's scene of it, so the reader moves
- * through exactly the rows drawn.
+ * the Inspector folds, and all of them when the selected row sits past those
+ * five (q349: "the list stays as it was", so a selected row already drawn
+ * opens nothing). One rule for the list and for the keyboard's scene of it, so
+ * the reader moves through exactly the rows drawn.
  */
 export function shownNeighbours(group: RelatedGroup, shownGroups: readonly string[]): readonly string[] {
-  return shownGroups.includes(group.key) || group.selected !== null
+  const selectedPastFold = group.selected !== null && group.neighbours.indexOf(group.selected) >= INSPECTOR_GROUP_SHOWN;
+  return shownGroups.includes(group.key) || selectedPastFold
     ? group.neighbours
     : group.neighbours.slice(0, INSPECTOR_GROUP_SHOWN);
 }
