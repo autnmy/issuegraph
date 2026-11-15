@@ -1341,6 +1341,27 @@ export const workspaceStylesheet = `
   font-size: var(--ig-font-size-small);
 }
 
+/* THE REFUSAL'S ONE CONTROL, SECONDARY AND SMALL (issue 285, the redesign
+   lead's call): the flip's quiet bordered button at the small size, so it
+   reads as an action on the refused write and never outranks the reason it
+   follows. Its ring matches every other control in the row. */
+.ig-refusal-discard {
+  background: var(--ig-surface);
+  color: var(--ig-text-body);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  padding: 0 var(--ig-space-tight);
+  font-family: inherit;
+  font-size: var(--ig-font-size-small);
+  line-height: inherit;
+  cursor: pointer;
+}
+
+.ig-refusal-discard:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-tight);
+}
+
 /* A REFUSAL ON A RELATIONSHIP THAT IS STILL THERE. The row stays — it names a
    real edge and its remove control still works — so this marks it rather than
    replacing it: the capsule's dotted stroke, and room for the reason to wrap
@@ -1350,6 +1371,24 @@ export const workspaceStylesheet = `
    one colour channel away on exactly the rows carrying the most information. */
 .ig-relationship[data-ig-code] {
   border: var(--ig-stroke) dotted var(--ig-line);
+}
+
+/* THE REASON AND ITS DISCARD GO UNDER THE ROW'S TWO LINES, starting under the
+   phrase as the second line does. Left to auto-placement they took the
+   control columns beside the name and squeezed the reference to a word a line
+   (issue 285's capture). The remove and the flip keep their two rows. */
+.ig-relationship > .ig-relationship-reason {
+  grid-column: 1;
+  grid-row: 3;
+  padding-inline-start: calc(var(--ig-space-loose) + var(--ig-space-snug));
+}
+
+.ig-relationship > .ig-refusal-discard {
+  grid-column: 1;
+  grid-row: 4;
+  justify-self: start;
+  margin-inline-start: calc(var(--ig-space-loose) + var(--ig-space-snug));
+  margin-block-start: var(--ig-space-tight);
 }
 
 /* THE KIND STEP'S OWN BOX — the heading, the numbered list and the cancel that

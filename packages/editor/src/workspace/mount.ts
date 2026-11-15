@@ -47,7 +47,7 @@
  */
 
 import { edgeIdentity } from '@issuegraph/core';
-import type { EdgeId, EdgeKind, GraphDocument, MutationId, Store, StoreSnapshot } from '@issuegraph/store';
+import type { EdgeKind, GraphDocument, MutationId, Store, StoreSnapshot } from '@issuegraph/store';
 import { nextDocument } from '@issuegraph/store';
 import {
   type Scene,
@@ -100,10 +100,9 @@ import {
 import type { CanvasMode } from './narrow.ts';
 import type { RailWindow } from './rail.ts';
 import { relatedListView, relatedRowKeys } from './related.ts';
-import { writeLog } from './log.ts';
+import { markedEdges, writeLog, writeRefusals } from './log.ts';
 import {
   type WorkspaceOptions,
-  type WorkspaceRefusal,
   type WorkspaceWords,
   canvasDrawing,
   renderWorkspace,
@@ -594,6 +593,9 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   // row when the rail comes back; a focus the reader put in the graph stays.
   let handedToGraph = false;
   let pendingFocus: { readonly kind: 'after' | 'before' | 'first' | 'last'; readonly key: string | null } | null = null;
+  // The issue whose node takes the focus on the redraw after a refusal's
+  // Discard (#285), cleared by that redraw.
+  let refusalFocus: string | null = null;
   /**
    * Set when a command opened the isolated list, cleared by the redraw that
    * reveals it.
@@ -767,9 +769,17 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         }
         return;
       }
-      case 'discard':
+      case 'discard': {
+        // A REFUSAL'S DISCARD HANDS FOCUS TO ITS ISSUE'S NODE (#285, the
+        // redesign lead's call). The capsule it sat on goes with the record, so
+        // the focus would fall to the page; the issue the refusal was stated on
+        // is where the reader was working. Asked BEFORE the discard, while the
+        // record and its carrier are still in the ledger.
+        const record = store.getSnapshot().writes.find((write) => write.mutationId === effect.mutationId);
+        refusalFocus = record?.state === 'invalid' ? (writeCarriers.get(effect.mutationId) ?? null) : null;
         store.discardMine(effect.mutationId);
         return;
+      }
       case 'dismiss-change':
         store.dismissChange();
         return;
@@ -1507,20 +1517,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // with the line the canvas draws the ghost on; asked of the projection, the
     // record that produced one edge cannot also be counted against another,
     // which is the double-draw this join used to be able to produce.
-    const markedBy = new Map<MutationId, EdgeId>(
-      snapshot.projected.flatMap((edge) => edge.writes.map((write) => [write, edge.id] as const)),
-    );
-    // WHETHER THE MARKED EDGE IS REAL. Three codes refuse an edit ABOUT a
-    // landed relationship — `duplicate-edge`, `unchanged-kind`,
-    // `symmetric-edge` — and the panel keeps the row for those rather than
-    // replacing it with a capsule; see `WorkspaceRefusal.phantom`.
-    //
-    // ASKED OF `landed`, NEVER OF THE CODE. A list of codes here would be a
-    // second copy of `validity.ts`'s decision about which edge each refusal
-    // marks, and it would already be wrong: `cardinality` reads like a fourth
-    // member of that set and marks a PHANTOM through both of its routes. This
-    // is the store's own answer to "what does the document actually carry".
-    const landedIds = new Set(snapshot.landed.map((edge) => edge.id));
+    const markedBy = markedEdges(snapshot.projected);
     const landedNow: GraphDocument = { issues: snapshot.issues, edges: snapshot.landed };
     // THE CARRIER MAP, BROUGHT LEVEL WITH THE LEDGER. See `writeCarriers` for
     // why the answer is kept rather than re-asked, and why the ledger's own
@@ -1553,34 +1550,10 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         writeCarriers.set(record.mutationId, editCarrier(landedNow, record.mutation));
       }
     }
-    const refusals: readonly WorkspaceRefusal[] = snapshot.writes.flatMap((record) => {
-      if (record.state !== 'invalid') return [];
-      // WHOSE PANEL STATES IT, READ BACK RATHER THAN WORKED OUT. The panel used
-      // to derive this from the refused edge's endpoints, against a subject it
-      // had derived by an unrelated rule; then `editCarrier` was called here
-      // instead, which is one rule but still asked at the wrong TIME — a
-      // sibling write can remove the relationship between the act and the
-      // refusal, and what is left says which end declared it only for the
-      // directed fields — `edgeIdentity` sorts the symmetric ones. The answer
-      // was taken when the edit was made; this only looks it up. The two loops
-      // above run over this same `snapshot.writes`, so the key is always
-      // present, and `null` means the document held neither end — there is no
-      // panel a reader could be standing on to read it.
-      const carrier = writeCarriers.get(record.mutationId) ?? null;
-      if (carrier === null) return [];
-      // THE PROJECTION'S EDGE, AND THE EDIT'S OWN AS THE FALLBACK. A refusal
-      // the projection has nothing to hang on is the whole `unknown-edge`
-      // class — a retype, flip or delete of an edge the document no longer
-      // carries produces `{ hidden: [], drawn: [], marked: [] }` — and the
-      // mutation names the edge it was about, so that id is what the capsule
-      // is keyed on.
-      const edgeId =
-        markedBy.get(record.mutationId) ??
-        (record.mutation.op === 'create'
-          ? edgeIdentity(record.mutation.kind, record.mutation.from, record.mutation.to)
-          : record.mutation.edgeId);
-      return [{ edgeId, code: record.reason.code, carrier, phantom: !landedIds.has(edgeId) }];
-    });
+    // THE REFUSALS, FROM THE SAME LEDGER AND THE SAME MARKS AS THE LOG. See
+    // `writeRefusals` for whose panel states each one and which edge it marks;
+    // a pick on a ghost line asks the same function (#285).
+    const refusals = writeRefusals(snapshot.writes, { landed: landedNow, carriers: writeCarriers, markedBy });
 
     // THE LOG, BUILT FROM THE SAME LEDGER AS THE REFUSALS. It reuses the
     // `markedBy` and carrier answers already worked out above rather than
@@ -2007,6 +1980,14 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       // focus back into the search; the caret arm above already keeps it when
       // the reader is typing there.
       search.focus();
+    } else if (refusalFocus !== null) {
+      // THE GRAPH'S NODE, AND THE RAIL'S ROW WHERE THE GRAPH DRAWS NONE: under
+      // 640 on the Order tab, or with the tree drawn, the canvas holds no node
+      // that can take the focus.
+      const key = refusalFocus;
+      refusalFocus = null;
+      focusIn('canvas', key);
+      if (zone('canvas')?.contains(doc.activeElement) !== true) focusIn('rail', key);
     } else if (pendingFocus !== null) {
       const rows = result.view.rail.rows;
       const wanted = pendingFocus.key;
@@ -2388,6 +2369,23 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     return null;
   };
 
+  /**
+   * The issue whose panel states a refused write marking `edgeId` as a ghost
+   * line, or `undefined`. Asked of the ledger as it stands, through the same
+   * `writeRefusals` the panel is drawn from, and the LAST refusal on the edge
+   * wins, as on the panel. Only a phantom: a refusal about a real
+   * relationship marks a line that selects that relationship.
+   */
+  const refusalCarrier = (edgeId: string): string | undefined => {
+    const snapshot = store.getSnapshot();
+    const refusals = writeRefusals(snapshot.writes, {
+      landed: { issues: snapshot.issues, edges: snapshot.landed },
+      carriers: writeCarriers,
+      markedBy: markedEdges(snapshot.projected),
+    });
+    return refusals.filter((refusal) => refusal.phantom && refusal.edgeId === edgeId).at(-1)?.carrier;
+  };
+
   const onClick = (event: MouseEvent): void => {
     const target = isElement(event.target) ? event.target : null;
     if (target === null) return;
@@ -2408,7 +2406,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     if (named === null || !surface.contains(named)) return;
     const id = named.getAttribute(GROUP_ATTRIBUTE);
     if (id !== null) {
-      dispatch({ kind: 'group', id });
+      dispatch({ kind: 'group', id, refusedBy: refusalCarrier(id) });
       return;
     }
     // MODIFIERS ARE READ ON AN ISSUE ONLY. A relationship above stays a plain
