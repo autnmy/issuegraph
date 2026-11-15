@@ -89,7 +89,9 @@ ${scope} .ig-slot .ig-row-body {
    "◆ Pri" (review-219 on PR 338). A taller row is the variable height the
    rail's spacer already treats as approximate. */
 ${scope} .ig-slot .ig-row-meta {
-  align-items: center;
+  /* BASELINE, so a wrapped row's number reads with its first line of chips
+     rather than floating between the two. */
+  align-items: baseline;
   display: flex;
   flex-wrap: wrap;
   gap: var(--ig-space-tight);
@@ -97,7 +99,11 @@ ${scope} .ig-slot .ig-row-meta {
   min-width: 0;
 }
 
+/* THE CHIPS SHARE THE IDENTITY'S LINE AND WRAP INSIDE THEMSELVES: a zero
+   basis gives them the room after the number, so only what does not fit drops,
+   and the number never stands on a line of its own. */
 ${scope} .ig-slot .ig-row-meta .ig-badges {
+  flex: 1 1 0;
   flex-wrap: wrap;
   min-width: 0;
 }
