@@ -140,7 +140,9 @@ describe('the refusal, as a reader sees it', () => {
       result.markup,
       new RegExp(
         // A count with its noun since #296, as the export's group card reads it.
-        `<span class="ig-capsule-size">${String(capsule.size)} issues</span>` +
+        // A literal space between the parts since #322, so the card's text
+        // reads as drawn for an accessibility engine; the grid drops it.
+        `<span class="ig-capsule-size">${String(capsule.size)} issues</span> ` +
           // No blocked count since #296: the export's group card draws none.
           // THE NAME SLOT NOW HOLDS THE ANCHOR, not a bare title: RULINGS.md
           // §4 identifies a capsule by "around #488 · <title>" because a
@@ -149,7 +151,7 @@ describe('the refusal, as a reader sees it', () => {
           // widens the one slot whose contents moved.
           // In sentence case since #293, as the export's group card reads it.
           `<span class="ig-capsule-name"><span class="ig-capsule-anchor">Around </span>` +
-          `<span class="ig-id">${capsule.lead}</span> \u00b7 ${capsule.name}</span>` +
+          `<span class="ig-id">${capsule.lead}</span> \u00b7 ${capsule.name}</span> ` +
           `<span class="ig-capsule-reach">Longest chain ${String(capsule.chainDepth)}</span>`,
       ),
     );
@@ -191,6 +193,32 @@ describe('the refusal, as a reader sees it', () => {
         `no accessible name carries the lead ${each.lead}`,
       );
     }
+  });
+
+  it('keeps every card\'s visible text inside its accessible name (#322, WCAG 2.5.3)', () => {
+    // READ AS AN ACCESSIBILITY ENGINE READS IT: the card's text nodes joined
+    // with nothing between them (axe's visible text), then punctuation removed
+    // and whitespace collapsed on both sides, as axe's
+    // `label-content-name-mismatch` curates them. A name that only lists the
+    // same facts passes a reading by eye and fails this, which is how 0.33.0
+    // shipped the defect.
+    const decode = (text: string): string =>
+      text.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+    const curate = (text: string): string =>
+      decode(text).toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim();
+    const chain = renderScaleLadder(relatedDocument(GRAPH_NODE_BUDGET + 1)).markup;
+    const cyclic = renderScaleLadder(documentOf({ components: [40, 30], cycleIn: 1 })).markup;
+    for (const markup of [chain, cyclic]) {
+      const cards = [...markup.matchAll(/<button([^>]*class="ig-capsule-enter"[^>]*)>([\s\S]*?)<\/button>/g)];
+      assert.ok(cards.length > 0, 'no group card rendered');
+      for (const [, attrs, inner] of cards) {
+        const name = /aria-label="([^"]*)"/.exec(attrs ?? '')?.[1];
+        assert.ok(name !== undefined, 'a group card has no written name');
+        const visible = (inner ?? '').replace(/<[^>]+>/g, '');
+        assert.ok(curate(name).includes(curate(visible)), `name "${name}" does not hold the card text "${decode(visible)}"`);
+      }
+    }
+    assert.match(cyclic, />Loop</);
   });
 
   it('shows the Loop tag only for a component that has one', () => {

@@ -33,6 +33,7 @@
 import {
   type ElementSpec,
   type LegendSwitch,
+  type SpecChild,
   type Theme,
   type ViewerDocument,
   clusterReachLabel,
@@ -299,7 +300,7 @@ function capsuleSpec(capsule: ScaleCapsule): ElementSpec {
         // out the glyph, which is a shape with no name of its own.
         'aria-label': capsuleLabel(capsule),
       },
-      [
+      spaced([
         // A COUNT WITH ITS NOUN, as the export's group card reads "24 issues"
         // (#296), not a bare figure a reader has to know the meaning of.
         element('span', { class: 'ig-capsule-size' }, [
@@ -347,9 +348,26 @@ function capsuleSpec(capsule: ScaleCapsule): ElementSpec {
           capsule.name,
         ]),
         element('span', { class: 'ig-capsule-reach' }, [clusterReachLabel(capsule.reach)]),
-      ],
+      ]),
     ),
   ]);
+}
+
+/**
+ * The card's parts with a literal space between each (#322).
+ *
+ * `element` joins children with nothing between them, and an accessibility
+ * engine reads the card's visible text the same way: axe's
+ * `label-content-name-mismatch` saw "2 issuesAround #906 · <title>Longest
+ * chain 3", which no written name contains. A space between the parts makes
+ * the text read as the card draws it. It doesn't move the card: every part is
+ * a direct child of `.ig-capsule-enter`, a grid container, and CSS Grid does
+ * not render whitespace-only text between grid items.
+ */
+function spaced(parts: readonly (SpecChild | null)[]): SpecChild[] {
+  return parts
+    .filter((part): part is SpecChild => part !== null)
+    .flatMap((part, index) => (index === 0 ? [part] : [' ', part]));
 }
 
 /** The group cards, or nothing when there are none to pick. */
