@@ -2566,6 +2566,13 @@ describe('the inspector zone at the audit sizes §17f produces', () => {
     assert.equal(shut.includes('aria-controls="ig-audit-panel'), false, 'a shut panel is named but not drawn');
   });
 
+  it('leaves the count closed and naming nothing when an open panel has nothing to list (review-41, PR 336)', () => {
+    const quiet = renderWorkspace(backlogOf(3), { ...WORDS, audit: auditOf(0), auditOpen: true, surfaceId: 'w9' }).markup;
+    assert.equal(quiet.includes('class="ig-audit-overlay"'), false, 'the fixture drew a panel, so this proves nothing');
+    assert.match(quiet, /class="ig-audit-toggle" aria-expanded="false"/);
+    assert.equal(quiet.includes('aria-controls="ig-audit-panel'), false, 'the count names a panel that is not drawn');
+  });
+
   it('draws an unreadable relationship as a note in the panel, inside the overlay (#296)', () => {
     // THE EXPORT'S PANEL holds every problem, unreadable relationships
     // included, under its one title; it was a block of its own ahead of the

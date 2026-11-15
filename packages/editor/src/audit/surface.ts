@@ -326,6 +326,14 @@ export interface AuditHeaderOptions {
 }
 
 /**
+ * ` aria-controls="…"`, escaped by the viewer's one escaper: the id carries a
+ * host's `surfaceId`, and this header is assembled as a string.
+ */
+function controlsAttribute(id: string): string {
+  return /^<i( [^>]*)><\/i>$/.exec(renderMarkup(element('i', { 'aria-controls': id })))?.[1] ?? '';
+}
+
+/**
  * The persistent header count, as markup.
  *
  * ONE CONTROL, ALWAYS PRESENT, ALWAYS THE SAME CLICK — including at zero, which
@@ -348,14 +356,6 @@ export interface AuditHeaderOptions {
  * and its word already say what was found. At zero there is no worst finding,
  * so no dot is drawn.
  */
-/**
- * ` aria-controls="…"`, escaped by the viewer's one escaper: the id carries a
- * host's `surfaceId`, and this header is assembled as a string.
- */
-function controlsAttribute(id: string): string {
-  return /^<i( [^>]*)><\/i>$/.exec(renderMarkup(element('i', { 'aria-controls': id })))?.[1] ?? '';
-}
-
 export function renderAuditHeader(overlay: AuditOverlay, options: AuditHeaderOptions = {}): string {
   const count = String(overlay.count);
   const open = options.open === true;

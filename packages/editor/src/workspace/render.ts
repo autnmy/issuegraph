@@ -1324,12 +1324,12 @@ function zone(name: Zone, id: string, inner: string, attributes: Readonly<Record
   return `${frame.slice(0, -ZONE_CLOSE.length)}${inner}${ZONE_CLOSE}`;
 }
 
-/** Each zone frame's id, unique on the page when the caller supplied a `surfaceId`. */
 /** §17d's panel id, unique to the mount for the reason {@link zoneIds} gives (#334). */
 function auditPanelId(surfaceId: string | undefined): string {
   return surfaceId === undefined ? 'ig-audit-panel' : `ig-audit-panel-${surfaceId}`;
 }
 
+/** Each zone frame's id, unique on the page when the caller supplied a `surfaceId`. */
 function zoneIds(surfaceId: string | undefined): Readonly<Record<Zone, string>> {
   const suffix = surfaceId === undefined ? '' : `-${surfaceId}`;
   return {
@@ -4323,7 +4323,9 @@ export function renderWorkspace(
       [
         headerMarkup(
           document.host,
-          overlay === null ? '' : renderAuditHeader(overlay, { open: auditOpen, controls: auditPanelId(options.surfaceId) }),
+          // OPEN MEANS DRAWN (review-41, PR 336): with nothing to list the panel
+          // is not drawn, so the count is not expanded and names no panel.
+          overlay === null ? '' : renderAuditHeader(overlay, { open: auditPanel !== '', controls: auditPanelId(options.surfaceId) }),
           options.words,
         ),
         // THE LOG IS IN THE HEADER because the header is the one zone drawn at

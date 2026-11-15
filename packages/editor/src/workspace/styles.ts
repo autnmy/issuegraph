@@ -211,6 +211,15 @@ export const workspaceStylesheet = `
   border-bottom: var(--ig-hairline-width) solid var(--ig-hairline);
 }
 
+/* AN EMPTY LOG DRAWS NO RULE (review-219, PR 336). With no write listed and
+   nothing in its live region it holds only that waiting region, and its rule
+   stacked a second hairline a few pixels under the head's: the board draws one
+   between the head and what follows. */
+.ig-workspace-log:not(:has(.ig-recovery-list, .ig-change-line > *)) {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
 /* A write named on one line (#304): the relationship it leaves, as the
    Inspector reads it, then its state. Its words are separate spans, so the
    gap is the space between them. */
