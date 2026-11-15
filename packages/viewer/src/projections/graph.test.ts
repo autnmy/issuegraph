@@ -148,6 +148,38 @@ describe('the graph projection', () => {
     const strokes = [...canvasOf(render()).matchAll(/class="ig-edge" data-edge="serialize-with"/g)];
     assert.equal(strokes.length, 2);
   });
+  it('parts a vertical serialize-with arc sideways, so its two strokes stay two (#166)', () => {
+    // Two issues in one column: a spine-to-spine arc, whose chord is vertical.
+    // Parted on the y-axis, the two strokes slid along each other and drew as
+    // one line; parted on the chord's normal they sit one stroke apart across it.
+    const pair: ViewerDocument = {
+      issues: [
+        { key: '1', title: 'First', open: true, priority: 1 },
+        { key: '2', title: 'Second', open: true, priority: 1 },
+      ],
+      edges: [{ field: 'serialize-with', from: '1', to: '2' }],
+      order: {
+        slots: [
+          { rank: 1, lead: '1', members: ['1'], ready: true, holds: [] },
+          { rank: 2, lead: '2', members: ['2'], ready: true, holds: [] },
+        ],
+        excluded: [],
+      },
+      cycles: [],
+    };
+    const shifts = [
+      ...canvasOf(render(pair)).matchAll(
+        /class="ig-edge" data-edge="serialize-with"[^>]*transform="translate\(([-\d.e]+) ([-\d.e]+)\)"/g,
+      ),
+    ].map((match) => ({ x: Number(match[1]), y: Number(match[2]) }));
+    assert.equal(shifts.length, 2, 'the arc was not drawn as two strokes');
+    const [one, two] = shifts;
+    assert.ok(one !== undefined && two !== undefined);
+    assert.ok(Math.abs(one.x) > 0, 'the strokes did not part across the vertical chord');
+    assert.equal(one.x, -two.x, 'the strokes are not one either side of the line');
+    assert.equal(Math.abs(one.y) + Math.abs(two.y), 0, 'the strokes still part along the vertical chord');
+  });
+
   it('draws a together unit as ONE card listing its members, not two boxes in a lasso', () => {
     // §16b draws the unit as one card with the members inside it, and the
     // frame's own vocabulary table calls the enclosure "distinct issues forming
