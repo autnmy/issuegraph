@@ -891,6 +891,16 @@ export interface WorkspaceRefusal {
   readonly edgeId: EdgeId;
   readonly code: InvalidCode;
   /**
+   * The refused write's own id, which the refusal's Discard sends (#285).
+   *
+   * REQUIRED, BECAUSE A REFUSAL WITH NO WAY TO CLEAR IT IS THE DEFECT. The
+   * store keeps a refused write, and the ghost line it marks, until
+   * `discardMine` drops it; without this id the panel can state the refusal
+   * and offer nothing that removes it. A host reads it off the same
+   * `WriteRecord` it reads the code from.
+   */
+  readonly mutationId: MutationId;
+  /**
    * The issue whose panel states this refusal.
    *
    * THE EDIT'S OWN SUBJECT, DECIDED BY WHOEVER MADE THE EDIT. This panel used
@@ -2094,7 +2104,7 @@ function relationshipSpec(
   subject: string | null,
   selected: string | null,
   words: WorkspaceWords,
-  refused: InvalidCode | undefined,
+  refused: WorkspaceRefusal | undefined,
 ): ElementSpec {
   return element(
     'li',
@@ -2104,14 +2114,15 @@ function relationshipSpec(
       // Omitted rather than falsified when the subject is not an issue: an edge
       // selection has no "my end", and `data-direction=""` would claim one.
       'data-direction': relationship.direction ?? undefined,
-      'data-ig-code': refused,
+      'data-ig-code': refused?.code,
       // THE SELECTED ROW IS THE STRONG FILL, as an order row is (RULES).
       'data-ig-selected': relationship.edgeId === selected ? 'true' : undefined,
     },
     [
       relationshipHead(relationship, subject),
       otherLine(relationship, subject, words),
-      refused === undefined ? null : refusalReason(refused, words),
+      refused === undefined ? null : refusalReason(refused.code, words),
+      refused === undefined ? null : refusalDiscard(refused, words),
       rowSlot(relationship, selected, words),
       // A PEER OF THE SLOT RATHER THAN A FOURTH OCCUPANT OF IT. The slot's
       // three occupants are exclusive because two are statements and one is a
@@ -2264,14 +2275,15 @@ function relatedGroupSpec(
  * description is drawn bare instead, on the rule
  * {@link WorkspaceRefusal.phantom} already states in as many words: there is no
  * relationship to operate. Its remove control was withheld for the same reason
- * from the start; this is the half that was missed.
+ * from the start; this is the half that was missed. What it does carry is
+ * {@link refusalDiscard}, which acts on the refused WRITE, not on an edge.
  *
  * `data-ig-code` IS THE STORE'S VOCABULARY VERBATIM, so a host that wants to
  * style or count refusals reads the code rather than matching a sentence.
  */
 function refusalCapsule(
   relationship: InspectorRelationship | undefined,
-  code: InvalidCode,
+  refusal: WorkspaceRefusal,
   subject: string | null,
   words: WorkspaceWords,
 ): ElementSpec {
@@ -2279,7 +2291,7 @@ function refusalCapsule(
     'li',
     {
       class: 'ig-relationship-refused',
-      'data-ig-code': code,
+      'data-ig-code': refusal.code,
       'data-edge': relationship?.field,
     },
     [
@@ -2296,8 +2308,37 @@ function refusalCapsule(
             { class: 'ig-relationship-name' },
             relationshipDescription(relationship, subject),
           ),
-      refusalReason(code, words),
+      refusalReason(refusal.code, words),
+      refusalDiscard(refusal, words),
     ],
+  );
+}
+
+/**
+ * The one control a refusal offers: Discard, which drops the refused write and
+ * the ghost line it marks (#285, the redesign lead's call).
+ *
+ * WHERE THE REFUSAL IS STATED, AND NOWHERE ELSE. RULES states a refused choice
+ * where it was made, so the control sits on the capsule, or on the row a
+ * refusal about a real relationship joins, and the log stays a log of writes.
+ * The ghost line on the graph selects the refusal's issue, so a refusal on an
+ * issue that is not selected is one pick away from this.
+ *
+ * NO RETRY. The store would refuse the same write again unless the document
+ * changed under it, so offering one would be a button that answers with the
+ * capsule it sat on. The command and its word are the recovery card's own
+ * Discard, so the two read and act the same.
+ */
+function refusalDiscard(refusal: WorkspaceRefusal, words: WorkspaceWords): ElementSpec {
+  return element(
+    'button',
+    {
+      type: 'button',
+      class: 'ig-refusal-discard',
+      'data-ig-command': AFFORDANCE_COMMANDS['discard-mine'],
+      'data-ig-target': refusal.mutationId,
+    },
+    [words.recovery.discardMine],
   );
 }
 /**
@@ -3280,8 +3321,8 @@ function relationshipEntries(
     }
     listed.add(relationship.edgeId);
     return refusal.phantom
-      ? refusalCapsule(relationship, refusal.code, subject, context.words)
-      : relationshipSpec(relationship, subject, selected, context.words, refusal.code);
+      ? refusalCapsule(relationship, refusal, subject, context.words)
+      : relationshipSpec(relationship, subject, selected, context.words, refusal);
   };
   const drawnEntries = listingSpecs(
     inspectorListing(view.relationships),
@@ -3292,7 +3333,7 @@ function relationshipEntries(
   );
   const orphaned = [...stated.values()]
     .filter((refusal) => !listed.has(refusal.edgeId))
-    .map((refusal) => refusalCapsule(undefined, refusal.code, subject, context.words));
+    .map((refusal) => refusalCapsule(undefined, refusal, subject, context.words));
   return orphaned.length === 0
     ? drawnEntries
     : [...drawnEntries, element('ul', { class: 'ig-relationship-list' }, orphaned)];

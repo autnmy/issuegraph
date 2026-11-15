@@ -1276,7 +1276,7 @@ describe('a refused relationship is drawn where the reader was building it', () 
       renderWorkspace(document, {
         ...WORDS,
         selection: { kind: 'issue', key: 'i0001' },
-        refusals: [{ edgeId: refused, code: 'would-cycle', carrier: 'i0001', phantom: true }],
+        refusals: [{ edgeId: refused, code: 'would-cycle', mutationId: 'm-refused', carrier: 'i0001', phantom: true }],
       }).markup,
     );
     const capsule = panel.slice(
@@ -1333,7 +1333,7 @@ describe('a refused relationship is drawn where the reader was building it', () 
       renderWorkspace(backlogOf(4), {
         ...WORDS,
         selection: { kind: 'issue', key: 'i0001' },
-        refusals: [{ edgeId: edgeIdentity('blocked-by', 'i0001', 'i0009'), code: 'unknown-issue', carrier: 'i0001', phantom: true }],
+        refusals: [{ edgeId: edgeIdentity('blocked-by', 'i0001', 'i0009'), code: 'unknown-issue', mutationId: 'm-refused', carrier: 'i0001', phantom: true }],
       }).markup,
     );
     assert.match(panel, /<li class="ig-relationship-refused" data-ig-code="unknown-issue">/);
@@ -1364,7 +1364,7 @@ describe('a refused relationship is drawn where the reader was building it', () 
         {
           ...WORDS,
           selection: { kind: 'issue', key: 'i0001' },
-          refusals: [{ edgeId: elsewhere, code: 'would-cycle', carrier: 'i0005', phantom: true }],
+          refusals: [{ edgeId: elsewhere, code: 'would-cycle', mutationId: 'm-refused', carrier: 'i0005', phantom: true }],
         },
       ).markup,
     );
@@ -1395,7 +1395,7 @@ describe('a refused relationship is drawn where the reader was building it', () 
     const partnerEdge = edgeIdentity('blocked-by', 'i0002', 'i0003');
     const options = {
       ...WORDS,
-      refusals: [{ edgeId: partnerEdge, code: 'would-cycle' as const, carrier: 'i0002', phantom: true }],
+      refusals: [{ edgeId: partnerEdge, code: 'would-cycle' as const, mutationId: 'm-refused', carrier: 'i0002', phantom: true }],
     };
     for (const key of ['i0001', 'i0002']) {
       // EITHER SELECTION, ONE PANEL. Both canonicalize onto the lead, so this
@@ -1427,8 +1427,8 @@ describe('a refused relationship is drawn where the reader was building it', () 
     const document_ = backlogOf(4, { edges: [['blocked-by', 'i0001', 'i0002']] });
     const landed_ = edgeIdentity('blocked-by', 'i0001', 'i0002');
     const both = [
-      { edgeId: landed_, code: 'unknown-edge' as const, carrier: 'i0001', phantom: false },
-      { edgeId: landed_, code: 'duplicate-edge' as const, carrier: 'i0001', phantom: false },
+      { edgeId: landed_, code: 'unknown-edge' as const, mutationId: 'm-refused', carrier: 'i0001', phantom: false },
+      { edgeId: landed_, code: 'duplicate-edge' as const, mutationId: 'm-refused', carrier: 'i0001', phantom: false },
     ];
     const panel = inspectorOf(
       renderWorkspace(document_, {
@@ -1460,7 +1460,7 @@ describe('a refused relationship is drawn where the reader was building it', () 
     // line that renders exactly when there is nothing to list.
     const document = backlogOf(4, { edges: [['blocked-by', 'i0001', 'i0002']] });
     const refusals = [
-      { edgeId: edgeIdentity('blocked-by', 'i0001', 'i0002'), code: 'would-cycle' as const, carrier: 'i0001', phantom: true },
+      { edgeId: edgeIdentity('blocked-by', 'i0001', 'i0002'), code: 'would-cycle' as const, mutationId: 'm-refused', carrier: 'i0001', phantom: true },
     ];
     const nothing = inspectorOf(renderWorkspace(document, { ...WORDS, refusals }).markup);
     assert.equal(/ig-relationship-refused/.test(nothing), false, 'a capsule with nothing selected');
@@ -1479,7 +1479,7 @@ describe('a refused relationship is drawn where the reader was building it', () 
         ...WORDS,
         selection: { kind: 'edge', edgeId: edgeIdentity('blocked-by', 'i0001', 'i0002') },
         refusals: [
-          { edgeId: edgeIdentity('blocked-by', 'i0005', 'i0006'), code: 'would-cycle' as const, carrier: 'i0005', phantom: true },
+          { edgeId: edgeIdentity('blocked-by', 'i0005', 'i0006'), code: 'would-cycle' as const, mutationId: 'm-refused', carrier: 'i0005', phantom: true },
         ],
       }).markup,
     );
@@ -1499,7 +1499,7 @@ describe('a refusal about a relationship that EXISTS keeps the relationship', ()
     renderWorkspace(document, {
       ...WORDS,
       selection: { kind: 'issue', key: 'i0001' },
-      refusals: [{ edgeId: landed, code: 'duplicate-edge', carrier: 'i0001', phantom: false }],
+      refusals: [{ edgeId: landed, code: 'duplicate-edge', mutationId: 'm-refused', carrier: 'i0001', phantom: false }],
     }).markup,
   );
 
@@ -1530,7 +1530,7 @@ describe('a refusal about a relationship that EXISTS keeps the relationship', ()
       renderWorkspace(document, {
         ...WORDS,
         selection: { kind: 'issue', key: 'i0001' },
-        refusals: [{ edgeId: landed, code: 'would-cycle', carrier: 'i0001', phantom: true }],
+        refusals: [{ edgeId: landed, code: 'would-cycle', mutationId: 'm-refused', carrier: 'i0001', phantom: true }],
       }).markup,
     );
     assert.match(phantom, /<li class="ig-relationship-refused" data-ig-code="would-cycle"/);
@@ -1556,7 +1556,7 @@ describe('a refusal about a relationship that EXISTS keeps the relationship', ()
       renderWorkspace(document, {
         ...WORDS,
         selection: { kind: 'issue', key: 'i0001' },
-        refusals: [{ edgeId: landed, code: 'would-cycle', carrier: 'i0001', phantom: true }],
+        refusals: [{ edgeId: landed, code: 'would-cycle', mutationId: 'm-refused', carrier: 'i0001', phantom: true }],
       }).markup,
     );
     assert.equal(
@@ -2400,7 +2400,7 @@ describe("§17b's flip control is published markup, not mount chrome", () => {
       renderWorkspace(edgeOf('blocked-by'), {
         ...WORDS,
         selection: selectionOf('blocked-by'),
-        refusals: [{ edgeId, code: 'unchanged-kind', carrier: 'i0001', phantom: false }],
+        refusals: [{ edgeId, code: 'unchanged-kind', mutationId: 'm-refused', carrier: 'i0001', phantom: false }],
       }).markup,
     );
     const row = rowFor(panel, 'blocked-by');

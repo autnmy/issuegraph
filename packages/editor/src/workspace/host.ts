@@ -224,7 +224,16 @@ export type HostCommand =
       readonly gesture?: 'toggle' | 'range' | undefined;
       readonly order?: readonly string[] | undefined;
     }
-  | { readonly kind: 'group'; readonly id: string }
+  | {
+      readonly kind: 'group';
+      readonly id: string;
+      /**
+       * The issue whose panel states a refusal of this edge, when the mark is a
+       * refused write's ghost line (#285). The shell reads it off the ledger,
+       * which this reducer is not given.
+       */
+      readonly refusedBy?: string | undefined;
+    }
   | {
       readonly kind: 'control';
       readonly name: string;
@@ -1150,6 +1159,12 @@ function reduceCommand(state: HostState, command: HostCommand, document: GraphDo
       // identity as an issue, or worse, commit it as a draft's target.
       if (findEdge(document, command.id) !== undefined) return selectEdge(state, command.id);
       if (document.issues.some((issue) => issue.ref === command.id)) return pointed(state, { kind: 'point', key: command.id }, document);
+      // A REFUSED WRITE'S GHOST LINE SELECTS THE ISSUE THAT STATES IT (#285, the
+      // redesign lead's call), so a refusal on an issue that is not selected is
+      // one pick away from its Discard. As navigation that cannot write, for
+      // `reveal-issue`'s reason: a pointer with a draft open would take the
+      // issue as the draft's target and declare a relationship.
+      if (command.refusedBy !== undefined) return revealIssue(state, command.refusedBy);
       return settled(state);
     }
     case 'control':

@@ -18,7 +18,7 @@ import type { EdgeId, GraphDocument, Mutation, MutationId, WriteRecord } from '@
 import { findEdge, makeEdge } from '@issuegraph/store';
 
 import { conflictDiff } from './recovery.ts';
-import type { WorkspaceLogEntry, WorkspaceLoggedEdge, WorkspaceLoggedWrite } from './render.ts';
+import type { WorkspaceLogEntry, WorkspaceLoggedEdge, WorkspaceLoggedWrite, WorkspaceRefusal } from './render.ts';
 
 /** What the ledger alone cannot say about a write, read off the mount and the snapshot. */
 export interface WriteLogContext {
@@ -35,6 +35,56 @@ export interface WriteLogContext {
   readonly refreshFailedFor: MutationId | null;
   /** Why the store's last read failed, or `null`. */
   readonly hydrationError: string | null;
+}
+
+/**
+ * Which edge the projection marks for each write: `ProjectedEdge.writes`,
+ * inverted.
+ *
+ * THE PROJECTION'S OWN ANSWER. `validity.ts` has already decided which edge
+ * each write marks — a create the edge it would have made, a retype the one it
+ * would have become — so this reads that record rather than rebuilding it, and
+ * the panel cannot disagree with the line the canvas draws the ghost on.
+ */
+export function markedEdges(
+  projected: readonly { readonly id: EdgeId; readonly writes: readonly MutationId[] }[],
+): ReadonlyMap<MutationId, EdgeId> {
+  return new Map(projected.flatMap((edge) => edge.writes.map((write) => [write, edge.id] as const)));
+}
+
+/** What a refusal needs beyond its record: the landed document, the carriers and the marks. */
+export type RefusalContext = Pick<WriteLogContext, 'landed' | 'carriers' | 'markedBy'>;
+
+/**
+ * The refused writes, as the panel states them and the graph's ghost lines
+ * point at them, in ledger order.
+ *
+ * ONE DERIVATION FOR THE PANEL AND THE GRAPH (#285). The Inspector states each
+ * refusal on its carrier's panel, and a pick on a refusal's ghost line selects
+ * that carrier; both read this, so a line cannot lead to a panel that does not
+ * state it.
+ *
+ * WHOSE PANEL STATES IT IS READ BACK, NEVER WORKED OUT. The carrier was taken
+ * when the edit was made, while the document still held the relationship; a
+ * sibling write can remove it before the refusal comes back. A `null` carrier
+ * means the document held neither end, so no panel states it.
+ *
+ * THE PROJECTION'S EDGE, AND THE EDIT'S OWN AS THE FALLBACK. A retype, flip or
+ * delete of an edge the document no longer carries marks nothing, and its
+ * mutation still names the edge it was about.
+ *
+ * WHETHER THE MARKED EDGE IS REAL is asked of the landed document, never of the
+ * code: see {@link WorkspaceRefusal.phantom}.
+ */
+export function writeRefusals(writes: readonly WriteRecord[], context: RefusalContext): readonly WorkspaceRefusal[] {
+  const landedIds = new Set(context.landed.edges.map((edge) => edge.id));
+  return writes.flatMap((record) => {
+    if (record.state !== 'invalid') return [];
+    const carrier = context.carriers.get(record.mutationId) ?? null;
+    if (carrier === null) return [];
+    const edgeId = context.markedBy.get(record.mutationId) ?? mutationEdgeId(record.mutation);
+    return [{ edgeId, code: record.reason.code, mutationId: record.mutationId, carrier, phantom: !landedIds.has(edgeId) }];
+  });
 }
 
 /** The log's entries, one per saving, failed or conflicted write, in ledger order. */

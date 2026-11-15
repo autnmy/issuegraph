@@ -10,7 +10,7 @@
 
 import assert from 'node:assert/strict';
 
-import type { GraphDocument, Mutation, StoreSnapshot, DataSource } from '@issuegraph/store';
+import type { DataSource, EdgeGuard, GraphDocument, Mutation, StoreSnapshot } from '@issuegraph/store';
 import { type OrderDeriver, createScriptedSource, createStore, makeEdge } from '@issuegraph/store';
 import { JSDOM } from 'jsdom';
 
@@ -183,6 +183,8 @@ export async function mounted(
     /** §17d's outward link is drawn only for a URL the host can name. */
     issueUrl?: (ref: string) => string | null;
     onSelectionChange?: (selection: WorkspaceSelection) => void;
+    /** The store's injected guard: the only route to a `would-cycle` refusal. */
+    guard?: EdgeGuard;
   } = {},
 ) {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>');
@@ -190,8 +192,8 @@ export async function mounted(
   const element = win.document.getElementById('host');
   assert.ok(element !== null);
   const source = createScriptedSource(seed, applyAny);
-  const { derive = flatDeriver, project: projection = project, wrap, ...mountOptions } = options;
-  const store = createStore({ source: wrap === undefined ? source : wrap(source), derive });
+  const { derive = flatDeriver, project: projection = project, wrap, guard, ...mountOptions } = options;
+  const store = createStore({ source: wrap === undefined ? source : wrap(source), derive, ...(guard === undefined ? {} : { guard }) });
   await store.hydrate();
   const handle = mountWorkspace(element, { store, project: projection, words: WORDS, ...mountOptions });
   const click = (node: Element): void => {

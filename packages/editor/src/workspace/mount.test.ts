@@ -1087,6 +1087,8 @@ describe('mountWorkspace', () => {
       );
       assert.ok(row.querySelector('.ig-relationship-remove') !== null, 'the remove control went with it');
       assert.equal(inspector.querySelector('.ig-relationship-refused'), null);
+      // THE REFUSAL'S OWN DISCARD JOINS THE ROW WITH ITS REASON (#285).
+      assert.equal(row.querySelector('.ig-refusal-discard')?.textContent, WORDS.recovery.discardMine);
     });
 
     it('draws a capsule for a refusal about an edge the document never got', async () => {
@@ -1503,6 +1505,60 @@ describe('mountWorkspace', () => {
       // one selection, so an edge the workspace has stopped drawing leaves no
       // picker behind offering to retype it again.
       assert.equal(inspector.querySelector('.ig-picker'), null);
+    });
+
+    describe('a refusal can be discarded, and its ghost line leads to it (#285)', () => {
+      // `2 blocked by 1` closes a loop with the seed's `1 blocked by 2`. The
+      // store leaves loops to an injected guard, so this one refuses it
+      // `would-cycle`, as a host's would; the store then projects the edge as a
+      // phantom, drawn as a ghost line, stated on `2`, which declared it.
+      const ghost = makeEdge('blocked-by', '2', '1').id;
+      const refuseCycle = async (): Promise<void> => {
+        page.handle.destroy();
+        page = await mounted(SEED, {
+          guard: ({ mutation }) =>
+            mutation.op === 'create' && mutation.from === '2' && mutation.to === '1'
+              ? { code: 'would-cycle', message: 'That would close a loop.' }
+              : undefined,
+        });
+        // THE GROUP PICKED, so the canvas draws its graph (#303).
+        page.handle.dispatch({ kind: 'control', name: 'focus', target: '2' });
+        await flush();
+        void page.store.propose({ op: 'create', kind: 'blocked-by', from: '2', to: '1' });
+        await flush();
+        const record = page.store.getSnapshot().writes[0];
+        assert.ok(record !== undefined && record.state === 'invalid' && record.reason.code === 'would-cycle');
+      };
+
+      it('selects the issue that states the refusal when its ghost line is picked', async () => {
+        await refuseCycle();
+        assert.deepEqual(page.handle.state.selection, { kind: 'none' });
+        const line = page.element.querySelector<HTMLElement>(`[data-zone="canvas"] [data-ig-group="${ghost}"]`);
+        assert.ok(line !== null, 'the refusal draws no ghost line on the graph');
+        page.click(line);
+        await flush();
+        assert.deepEqual(page.handle.state.selection, { kind: 'issue', key: '2' });
+        const capsule = page.zone('inspector')?.querySelector<HTMLElement>('.ig-relationship-refused');
+        assert.equal(capsule?.getAttribute('data-ig-code'), 'would-cycle', 'the pick led to a panel that does not state it');
+      });
+
+      it('drops the record and its ghost line on Discard, and hands focus to the issue’s node', async () => {
+        await refuseCycle();
+        const inspector = await select('2');
+        const discard = inspector.querySelector<HTMLElement>('.ig-relationship-refused .ig-refusal-discard');
+        assert.ok(discard !== null, 'the refusal offers no Discard');
+        assert.equal(discard.textContent, WORDS.recovery.discardMine);
+        discard.focus();
+        page.click(discard);
+        await flush();
+        assert.deepEqual(page.store.getSnapshot().writes, [], 'the refused write is still in the ledger');
+        assert.equal(page.element.querySelector(`[data-ig-group="${ghost}"]`), null, 'the ghost line outlived its write');
+        assert.equal(page.zone('inspector')?.querySelector('.ig-relationship-refused'), null);
+        const focused = page.element.ownerDocument.activeElement;
+        assert.ok(focused !== null && page.zone('canvas')?.contains(focused) === true, 'the focus did not go to the graph');
+        assert.equal(focused.getAttribute('data-ig-key'), '2');
+        assert.deepEqual(page.handle.state.selection, { kind: 'issue', key: '2' });
+      });
     });
   });
 

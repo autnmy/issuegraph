@@ -4,6 +4,12 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/editor` `0.47.0`: a refused edit can be discarded, and its ghost line leads to it (#285; the redesign lead's call).** **Breaking for a host that calls `renderWorkspace` with `refusals`: `WorkspaceRefusal` gains a required `mutationId`.** A host using `mountWorkspace` passes nothing new.
+  - A refused write stayed in the store, with its ghost line on the graph, until `discardMine`, and nothing in the workspace offered it: the capsule named the edge and its reason and had no control, and the log lists writes only. The capsule, or the row a refusal about a real relationship joins, now carries one small Discard (`WorkspaceWords.recovery.discardMine`, the recovery card's own `discard` command with the refusal's `mutationId`). No Retry: the store would refuse the same write again. Discard drops the record and its ghost line and hands the focus to the issue's node, or its rail row where the graph draws none.
+  - A pick on a refused write's ghost line selects the issue that states the refusal, as navigation that never writes, so a refusal on an issue that is not selected is one pick away from its Discard. The log stays a log of writes.
+  - The refusals are derived once, in `workspace/log.ts`'s `writeRefusals`, for the panel and for the pick.
+  - **Pinned** in `workspace/mount.test.ts` (through the real store) and `workspace/host.test.ts`.
+
 - **`@issuegraph/editor` `0.46.3`: two mount tidies, no API change.**
   - **An Escape typed into any editable `contenteditable` keeps the selection (#280).** The field test matched only `contenteditable="true"`; the empty value and `plaintext-only` count now, and only `false` opts out. The editor draws only inputs today, so no host was affected. Pinned in `workspace/mount.narrow.test.ts`.
   - **The rail's width watch takes its `ResizeObserver` from the root element's own document (#290),** as the root watch already did, so the mount reaches no global to watch a box. Pinned in `workspace/mount.2.test.ts`.

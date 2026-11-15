@@ -160,6 +160,24 @@ describe('selection is one value the zones share', () => {
     assert.equal(mid.state.draft.target, null);
   });
 
+  it('selects the issue a refused write is stated on when its ghost line is picked, and never writes (#285)', () => {
+    // A refused create's ghost line names an edge no landed document holds,
+    // like a pending one; the shell passes the refusal's issue with the pick.
+    const ghost = makeEdge('blocked-by', '2', '1').id;
+    assert.deepEqual(drive([{ kind: 'group', id: ghost, refusedBy: '2' }]).state.selection, { kind: 'issue', key: '2' });
+    // NAVIGATION THAT CANNOT WRITE: with a draft choosing its target, the pick
+    // abandons the draft rather than making the issue its target.
+    const choosing = drive([
+      { kind: 'point', key: '3' },
+      { kind: 'control', name: 'add' },
+      { kind: 'control', name: 'kind', value: 'blocked-by' },
+    ]).state;
+    const picked = drive([{ kind: 'group', id: ghost, refusedBy: '2' }], choosing);
+    assert.equal(picked.effects.length, 0, 'the ghost line must not become the draft’s target');
+    assert.equal(picked.state.draft.target, null);
+    assert.deepEqual(picked.state.selection, { kind: 'issue', key: '2' });
+  });
+
   it('clears the selection AND the draft on the inspector’s clear', () => {
     const { state } = drive([
       { kind: 'point', key: '2' },
