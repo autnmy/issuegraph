@@ -3,6 +3,54 @@
     {
       "zone": null,
       "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "order",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "true",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "related",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "sub-issues",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
       "control": "order-open",
       "target": null,
       "value": null,
@@ -114,54 +162,6 @@
       "inert": false,
       "name": "text",
       "aria": {}
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "order",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "true",
-        "aria-controls": "resolves"
-      }
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "related",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "false",
-        "aria-controls": "resolves"
-      }
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "sub-issues",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "false",
-        "aria-controls": "resolves"
-      }
     },
     {
       "zone": "header",
@@ -315,6 +315,54 @@
     {
       "zone": null,
       "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "order",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "true",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "related",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "sub-issues",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
       "control": "order-open",
       "target": null,
       "value": null,
@@ -413,54 +461,6 @@
       "inert": false,
       "name": "text",
       "aria": {}
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "order",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "true",
-        "aria-controls": "resolves"
-      }
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "related",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "false",
-        "aria-controls": "resolves"
-      }
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "sub-issues",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "false",
-        "aria-controls": "resolves"
-      }
     },
     {
       "zone": "header",
@@ -616,6 +616,54 @@
     {
       "zone": null,
       "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "order",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "true",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "related",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "sub-issues",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
       "control": "order-open",
       "target": null,
       "value": null,
@@ -714,54 +762,6 @@
       "inert": false,
       "name": "text",
       "aria": {}
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "order",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "true",
-        "aria-controls": "resolves"
-      }
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "related",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "false",
-        "aria-controls": "resolves"
-      }
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "sub-issues",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "false",
-        "aria-controls": "resolves"
-      }
     },
     {
       "zone": "header",
@@ -980,6 +980,54 @@
     {
       "zone": null,
       "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "order",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "true",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "related",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "sub-issues",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
       "control": "order-open",
       "target": null,
       "value": null,
@@ -1078,54 +1126,6 @@
       "inert": false,
       "name": "text",
       "aria": {}
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "order",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "true",
-        "aria-controls": "resolves"
-      }
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "related",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "false",
-        "aria-controls": "resolves"
-      }
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "sub-issues",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "false",
-        "aria-controls": "resolves"
-      }
     },
     {
       "zone": "header",
@@ -1370,6 +1370,54 @@
     {
       "zone": null,
       "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "order",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "true",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "related",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "sub-issues",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
       "control": "order-open",
       "target": null,
       "value": null,
@@ -1481,54 +1529,6 @@
       "inert": true,
       "name": "text",
       "aria": {}
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "order",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "none",
-      "inert": true,
-      "name": "text",
-      "aria": {
-        "aria-selected": "true",
-        "aria-controls": "resolves"
-      }
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "related",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "none",
-      "inert": true,
-      "name": "text",
-      "aria": {
-        "aria-selected": "false",
-        "aria-controls": "resolves"
-      }
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "sub-issues",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "none",
-      "inert": true,
-      "name": "text",
-      "aria": {
-        "aria-selected": "false",
-        "aria-controls": "resolves"
-      }
     },
     {
       "zone": "header",
@@ -1679,6 +1679,54 @@
     }
   ],
   "refusal-tier": [
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "order",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "true",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "related",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "sub-issues",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
     {
       "zone": null,
       "channel": "data-ig-command",
@@ -1953,54 +2001,6 @@
     {
       "zone": "header",
       "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "order",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "true",
-        "aria-controls": "resolves"
-      }
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "related",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "false",
-        "aria-controls": "resolves"
-      }
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "sub-issues",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "false",
-        "aria-controls": "resolves"
-      }
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
       "control": "refresh",
       "target": null,
       "value": null,
@@ -2067,6 +2067,54 @@
     }
   ],
   "edge-selected": [
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "order",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "true",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "related",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "sub-issues",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
     {
       "zone": null,
       "channel": "data-ig-command",
@@ -2168,54 +2216,6 @@
       "inert": false,
       "name": "text",
       "aria": {}
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "order",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "true",
-        "aria-controls": "resolves"
-      }
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "related",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "false",
-        "aria-controls": "resolves"
-      }
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "sub-issues",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "false",
-        "aria-controls": "resolves"
-      }
     },
     {
       "zone": "header",
@@ -2416,6 +2416,54 @@
     {
       "zone": null,
       "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "order",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "true",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "related",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "sub-issues",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
       "control": "order-open",
       "target": null,
       "value": null,
@@ -2529,54 +2577,6 @@
       "inert": false,
       "name": "text",
       "aria": {}
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "order",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "true",
-        "aria-controls": "resolves"
-      }
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "related",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "false",
-        "aria-controls": "resolves"
-      }
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "sub-issues",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "false",
-        "aria-controls": "resolves"
-      }
     },
     {
       "zone": "header",
@@ -2730,6 +2730,54 @@
     {
       "zone": null,
       "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "order",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "true",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "related",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "sub-issues",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
       "control": "order-open",
       "target": null,
       "value": null,
@@ -2844,54 +2892,6 @@
       "inert": false,
       "name": "text",
       "aria": {}
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "order",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "true",
-        "aria-controls": "resolves"
-      }
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "related",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "false",
-        "aria-controls": "resolves"
-      }
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "sub-issues",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "false",
-        "aria-controls": "resolves"
-      }
     },
     {
       "zone": "header",
@@ -3045,6 +3045,54 @@
     {
       "zone": null,
       "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "order",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "true",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "related",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "sub-issues",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
       "control": "order-open",
       "target": null,
       "value": null,
@@ -3143,54 +3191,6 @@
       "inert": false,
       "name": "text",
       "aria": {}
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "order",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "true",
-        "aria-controls": "resolves"
-      }
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "related",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "false",
-        "aria-controls": "resolves"
-      }
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "sub-issues",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "false",
-        "aria-controls": "resolves"
-      }
     },
     {
       "zone": "header",
@@ -3356,6 +3356,82 @@
   "audit-findings": [
     {
       "zone": null,
+      "channel": "data-ig-audit-filter",
+      "control": "",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-pressed": "false"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "order",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "true",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "related",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "narrow-tab",
+      "target": null,
+      "value": "sub-issues",
+      "tag": "button",
+      "role": "tab",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "text",
+      "aria": {
+        "aria-selected": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "open-issue-url",
+      "target": "3",
+      "value": null,
+      "tag": "a",
+      "role": "link",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {}
+    },
+    {
+      "zone": null,
       "channel": "data-ig-command",
       "control": "order-open",
       "target": null,
@@ -3371,19 +3447,30 @@
       }
     },
     {
-      "zone": "canvas",
-      "channel": "data-ig-audit-filter",
-      "control": "",
-      "target": null,
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "reveal-issue",
+      "target": "1",
       "value": null,
       "tag": "button",
       "role": "button",
       "tabStop": "tab",
       "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-pressed": "false"
-      }
+      "name": "aria-label",
+      "aria": {}
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "reveal-issue",
+      "target": "3",
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {}
     },
     {
       "zone": "canvas",
@@ -3431,45 +3518,6 @@
       }
     },
     {
-      "zone": "canvas",
-      "channel": "data-ig-command",
-      "control": "open-issue-url",
-      "target": "3",
-      "value": null,
-      "tag": "a",
-      "role": "link",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "aria-label",
-      "aria": {}
-    },
-    {
-      "zone": "canvas",
-      "channel": "data-ig-command",
-      "control": "reveal-issue",
-      "target": "1",
-      "value": null,
-      "tag": "button",
-      "role": "button",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "aria-label",
-      "aria": {}
-    },
-    {
-      "zone": "canvas",
-      "channel": "data-ig-command",
-      "control": "reveal-issue",
-      "target": "3",
-      "value": null,
-      "tag": "button",
-      "role": "button",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "aria-label",
-      "aria": {}
-    },
-    {
       "zone": "header",
       "channel": "data-ig-audit-panel",
       "control": "",
@@ -3481,7 +3529,8 @@
       "inert": false,
       "name": "text",
       "aria": {
-        "aria-expanded": "true"
+        "aria-expanded": "true",
+        "aria-controls": "resolves"
       }
     },
     {
@@ -3509,54 +3558,6 @@
       "inert": false,
       "name": "text",
       "aria": {}
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "order",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "true",
-        "aria-controls": "resolves"
-      }
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "related",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "false",
-        "aria-controls": "resolves"
-      }
-    },
-    {
-      "zone": "header",
-      "channel": "data-ig-command",
-      "control": "narrow-tab",
-      "target": null,
-      "value": "sub-issues",
-      "tag": "button",
-      "role": "tab",
-      "tabStop": "tab",
-      "inert": false,
-      "name": "text",
-      "aria": {
-        "aria-selected": "false",
-        "aria-controls": "resolves"
-      }
     },
     {
       "zone": "header",

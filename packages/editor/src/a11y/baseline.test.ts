@@ -558,8 +558,8 @@ describe('the narrow tabs on every surface', () => {
     assert.ok(drawn.length > 0, 'no surface was recorded');
     // "The a11y baseline covers the tabs with no dangling ARIA reference"
     for (const [surface, entries] of drawn) {
-      // THE HEADER'S, because the middle zone's switch sends the same command from the canvas zone.
-      const tabs = entries.filter((entry) => nameOf(entry) === 'data-ig-command:narrow-tab' && entry.zone === 'header');
+      // THE WORKSPACE'S OWN, IN NO ZONE (#334), because the middle zone's switch sends the same command from the canvas zone.
+      const tabs = entries.filter((entry) => nameOf(entry) === 'data-ig-command:narrow-tab' && entry.zone === null);
       assert.equal(tabs.length, 3, `${surface} records ${String(tabs.length)} narrow tabs`);
       assert.equal(
         tabs.filter((tab) => tab.aria['aria-selected'] === 'true').length,
@@ -582,8 +582,8 @@ describe('the narrow tabs on every surface', () => {
     // "The a11y baseline covers the tabs with no dangling ARIA reference"
     // "Regenerate packages/editor/src/a11y/baseline.json by hand."
     for (const [surface, entries] of surfaces) {
-      // THE HEADER'S, because the middle zone's switch sends the same command from the canvas zone.
-      const tabs = entries.filter((entry) => nameOf(entry) === 'data-ig-command:narrow-tab' && entry.zone === 'header');
+      // THE WORKSPACE'S OWN, IN NO ZONE (#334), because the middle zone's switch sends the same command from the canvas zone.
+      const tabs = entries.filter((entry) => nameOf(entry) === 'data-ig-command:narrow-tab' && entry.zone === null);
       assert.equal(tabs.length, 3, `${surface} records ${String(tabs.length)} narrow tabs`);
       for (const tab of tabs) {
         assert.equal(tab.aria['aria-controls'], 'resolves', `${surface}: a narrow tab names no rendered zone`);

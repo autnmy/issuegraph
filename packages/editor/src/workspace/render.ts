@@ -1324,6 +1324,11 @@ function zone(name: Zone, id: string, inner: string, attributes: Readonly<Record
   return `${frame.slice(0, -ZONE_CLOSE.length)}${inner}${ZONE_CLOSE}`;
 }
 
+/** §17d's panel id, unique to the mount for the reason {@link zoneIds} gives (#334). */
+function auditPanelId(surfaceId: string | undefined): string {
+  return surfaceId === undefined ? 'ig-audit-panel' : `ig-audit-panel-${surfaceId}`;
+}
+
 /** Each zone frame's id, unique on the page when the caller supplied a `surfaceId`. */
 function zoneIds(surfaceId: string | undefined): Readonly<Record<Zone, string>> {
   const suffix = surfaceId === undefined ? '' : `-${surfaceId}`;
@@ -4280,7 +4285,7 @@ export function renderWorkspace(
         // selection — the same call `renderAuditPanel` makes about a list of
         // nothing, one level up.
         if (panel === null) return '';
-        return renderMarkup(element('div', { class: 'ig-audit-overlay' }, [panel]));
+        return renderMarkup(element('div', { class: 'ig-audit-overlay', id: auditPanelId(options.surfaceId) }, [panel]));
       })();
 
   // ONE MARKING FOR BOTH HALVES OF THE RAIL'S VIEWER — the window's root and the
@@ -4318,7 +4323,9 @@ export function renderWorkspace(
       [
         headerMarkup(
           document.host,
-          overlay === null ? '' : renderAuditHeader(overlay, { open: auditOpen }),
+          // OPEN MEANS DRAWN (review-41, PR 336): with nothing to list the panel
+          // is not drawn, so the count is not expanded and names no panel.
+          overlay === null ? '' : renderAuditHeader(overlay, { open: auditPanel !== '', controls: auditPanelId(options.surfaceId) }),
           options.words,
         ),
         // THE LOG IS IN THE HEADER because the header is the one zone drawn at
@@ -4348,12 +4355,16 @@ export function renderWorkspace(
             drawnLines,
           ),
         ),
-        // THE TABS ARE THE HEADER'S LAST CHILD, because the header is the one
-        // zone nothing replaces after this render: the mount swaps the canvas
-        // zone's children for the tree, and a tab inside it would vanish there.
-        renderMarkup(narrowTabsSpec(tab, options.words.narrow, ids)),
       ].join(''),
     ),
+    // §17d'S PANEL AND THE NARROW TABS ARE THE WORKSPACE'S OWN CHILDREN (#334),
+    // so the sheet can place each per layout: the panel over the graph from the
+    // canvas's grid area at the wide widths, and under 640 in the flow between
+    // the head and the Tabs, on every tab. Inside a zone neither could leave
+    // it. The mount swaps only the canvas zone's children for the tree, so
+    // neither is touched by that swap.
+    auditPanel,
+    renderMarkup(narrowTabsSpec(tab, options.words.narrow, ids)),
     // THE FOLDED ORDER'S STRIP (#313): one button that opens the order over the
     // graph. Drawn always and shown by the sheet only where the order folds.
     renderMarkup(orderStripSpec(options.words, options.orderPanel === true, ids.rail)),
@@ -4400,18 +4411,14 @@ export function renderWorkspace(
       // where it is `display: none` and therefore no stop at all — so the
       // position is chosen for the width where it is drawn.
       //
-      // AND §17d'S PANEL IS LAST so it paints over the graph rather than under
-      // it, and it is INSIDE this zone so `workspace/styles.ts` can position it
-      // against the zone's box — which is what keeps it off the rail without a
-      // magic number. The strip's hiding rule names it as an exception, or a
-      // collapsed canvas would take the audit panel down with it.
+      // §17d'S PANEL IS NOT HERE (#334): it is the workspace's own child, and
+      // the sheet places it in this zone's grid area.
       [strip, toolbar]
         .map((spec) => (spec === null ? '' : renderMarkup(spec)))
         .join('') +
       overLine +
       relatedList +
-      canvas.markup +
-      auditPanel,
+      canvas.markup,
     ),
     zone(
       'inspector',

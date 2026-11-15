@@ -49,6 +49,15 @@ function graphFor(
 const WORDS = { words: WORKSPACE_WORDS } as const;
 
 /** The canvas zone alone — from its marker to the inspector's, which follows it. */
+/**
+ * §17d's overlay, which is the workspace's own child since #334 (between the
+ * header zone and the narrow tabs), or '' when it is not drawn.
+ */
+function overlayOf(markup: string): string {
+  const at = markup.indexOf('<div class="ig-audit-overlay"');
+  return at === -1 ? '' : markup.slice(at, markup.indexOf('<div class="ig-narrow-tabs"', at));
+}
+
 function canvasOf(markup: string): string {
   const at = markup.indexOf('data-zone="canvas"');
   return at === -1 ? '' : markup.slice(at, markup.indexOf('data-zone="inspector"'));
@@ -2531,16 +2540,12 @@ describe('the inspector zone at the audit sizes §17f produces', () => {
     });
     assert.ok((result.view.audit?.count ?? 0) >= 30, 'the fixture produced too few findings');
 
-    const canvas = canvasOf(result.markup);
-    assert.ok(canvas.includes('ig-audit-overlay'), 'the overlay is not in the canvas zone');
-    assert.ok(canvas.includes('ig-audit-panel'), 'the panel is not in the canvas zone');
-    // AND THE PANEL IS INSIDE THE OVERLAY, not a sibling of it: the bound and
-    // the scrolling are declared on the overlay, so a panel that escaped it
-    // would be unbounded again.
-    assert.ok(
-      canvas.indexOf('ig-audit-overlay') < canvas.indexOf('ig-audit-panel'),
-      'the panel is outside the overlay that carries the bound',
-    );
+    // THE WORKSPACE'S OWN CHILD (#334), which the sheet places over the
+    // canvas's grid area at this width; the panel is inside it, where the
+    // bound and the scrolling are declared.
+    const overlay = overlayOf(result.markup);
+    assert.ok(overlay.includes('ig-audit-panel'), 'the panel is not inside the overlay that carries the bound');
+    assert.equal(canvasOf(result.markup).includes('ig-audit-overlay'), false, 'the overlay is still inside the canvas zone');
 
     const zone = inspectorOf(result.markup);
     assert.ok(zone.includes('class="ig-inspector"'), 'the zone lost the selection detail entirely');
@@ -2549,11 +2554,23 @@ describe('the inspector zone at the audit sizes §17f produces', () => {
       false,
       'the audit is back in the inspector column, which is the defect #209 reports',
     );
-    // THE OVERLAY PAINTS OVER THE GRAPH, so it comes after it in the zone.
-    assert.ok(
-      canvas.indexOf('ig-audit-overlay') > canvas.indexOf('data-zone="canvas"'),
-      'the overlay is not inside the canvas zone at all',
-    );
+  });
+
+  it('names the open panel from the header count, and names nothing while it is shut (#334)', () => {
+    const audit = auditOf(3);
+    const open = renderWorkspace(backlogOf(312), { ...WORDS, audit, auditOpen: true, surfaceId: 'w9' }).markup;
+    assert.match(open, /<button type="button" class="ig-audit-toggle" aria-expanded="true" aria-controls="ig-audit-panel-w9"/);
+    assert.match(open, /<div class="ig-audit-overlay" id="ig-audit-panel-w9">/);
+    const shut = renderWorkspace(backlogOf(312), { ...WORDS, audit, surfaceId: 'w9' }).markup;
+    assert.match(shut, /class="ig-audit-toggle" aria-expanded="false"/);
+    assert.equal(shut.includes('aria-controls="ig-audit-panel'), false, 'a shut panel is named but not drawn');
+  });
+
+  it('leaves the count closed and naming nothing when an open panel has nothing to list (review-41, PR 336)', () => {
+    const quiet = renderWorkspace(backlogOf(3), { ...WORDS, audit: auditOf(0), auditOpen: true, surfaceId: 'w9' }).markup;
+    assert.equal(quiet.includes('class="ig-audit-overlay"'), false, 'the fixture drew a panel, so this proves nothing');
+    assert.match(quiet, /class="ig-audit-toggle" aria-expanded="false"/);
+    assert.equal(quiet.includes('aria-controls="ig-audit-panel'), false, 'the count names a panel that is not drawn');
   });
 
   it('draws an unreadable relationship as a note in the panel, inside the overlay (#296)', () => {
@@ -2570,11 +2587,10 @@ describe('the inspector zone at the audit sizes §17f produces', () => {
       },
       issueUrl: (ref) => `https://example.invalid/${ref}`,
     });
-    const zone = canvasOf(result.markup);
-    assert.equal(/class="ig-audit-refused"/.test(zone), false, 'a refused block is still drawn');
+    const zone = overlayOf(result.markup);
+    assert.equal(/class="ig-audit-refused"/.test(result.markup), false, 'a refused block is still drawn');
     const panelAt = zone.indexOf('ig-audit-panel');
     const noteAt = zone.indexOf('data-ig-audit-kind="encoding-refused"');
-    assert.ok(zone.indexOf('ig-audit-overlay') < panelAt, 'the panel is outside the overlay that carries the bound');
     assert.ok(panelAt >= 0 && noteAt > panelAt, 'the unreadable note is not in the panel');
     // AND THE HOST'S OWN VALUES REACHED THE NOTE — the words, the drawn keys and
     // the URL resolver each arrive through a different argument.

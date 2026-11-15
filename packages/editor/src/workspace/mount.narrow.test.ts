@@ -695,7 +695,8 @@ describe('tree mode keeps the findings panel', () => {
         await page.openAudit();
         const zone = page.zone('canvas');
         assert.ok(zone !== null);
-        assert.ok(zone.querySelector('.ig-audit-overlay') !== null, `${canvas}: the header count opened no findings panel`);
+        // THE WORKSPACE'S OWN CHILD (#334), outside the zone the tree replaces.
+        assert.ok(page.element.querySelector('.ig-workspace > .ig-audit-overlay') !== null, `${canvas}: the header count opened no findings panel`);
         if (canvas === 'tree') {
           assert.ok(zone.querySelector('.ig-tree') !== null, 'the canvas did not draw the tree, so this proves nothing');
         }

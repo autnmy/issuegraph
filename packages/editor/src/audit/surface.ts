@@ -54,6 +54,7 @@
  */
 
 import type { IssueRef } from '@issuegraph/store';
+import { element, renderMarkup } from '@issuegraph/viewer';
 
 import { AUDIT_CLASSES, AUDIT_CLASS_SPECS, auditDocument } from './findings.ts';
 import type { AuditClass, AuditFinding, AuditInput, AuditSeverity } from './findings.ts';
@@ -308,6 +309,12 @@ export function heaviestRow(
 
 export interface AuditHeaderOptions {
   /**
+   * The id of the panel the button discloses, written as its `aria-controls`
+   * while it is open (#334). Left off while shut, when the panel is not drawn,
+   * so the reference always resolves.
+   */
+  readonly controls?: string | undefined;
+  /**
    * Whether §17d's overlay is open. Defaults to `false`.
    *
    * WAS `filtered`, AND THE SWAP IS THE RULING. This button used to toggle the
@@ -316,6 +323,14 @@ export interface AuditHeaderOptions {
    * error rather than a control that silently does something else.
    */
   readonly open?: boolean | undefined;
+}
+
+/**
+ * ` aria-controls="…"`, escaped by the viewer's one escaper: the id carries a
+ * host's `surfaceId`, and this header is assembled as a string.
+ */
+function controlsAttribute(id: string): string {
+  return /^<i( [^>]*)><\/i>$/.exec(renderMarkup(element('i', { 'aria-controls': id })))?.[1] ?? '';
 }
 
 /**
@@ -359,6 +374,7 @@ export function renderAuditHeader(overlay: AuditOverlay, options: AuditHeaderOpt
     // something, which is what an overlay anchored here is. A reader told
     // "pressed" would be waiting for a state, not for a panel.
     `<button type="button" class="ig-audit-toggle" aria-expanded="${String(open)}"`,
+    open && options.controls !== undefined ? controlsAttribute(options.controls) : '',
     // The worst class rides on the button too, so its words can take the
     // neutral state's muted ink when a closed blocker is the worst problem.
     worst === undefined ? '' : ` ${AUDIT_WORST_ATTRIBUTE}="${worst}"`,
