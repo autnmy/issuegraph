@@ -1305,6 +1305,27 @@ describe('the narrow tabs and the Related groups list', () => {
     }
   });
 
+  it('#303 q354 reduceHost: a move that keeps the list around the same issue keeps its opened groups, a new subject starts folded', () => {
+    const opened = drive([
+      { kind: 'point', key: '2' },
+      { kind: 'control', name: 'show-group', value: 'blocked-by:outgoing' },
+    ]).state;
+    // Issue 2 to its relationship with issue 1, which issue 1 declares: the list stays around 2.
+    const onEdge = drive([{ kind: 'group', id: blockedBy.id }], opened).state;
+    assert.deepEqual(onEdge.selection, { kind: 'edge', edgeId: blockedBy.id, pickedFrom: '2' });
+    assert.deepEqual(onEdge.shownGroups, ['blocked-by:outgoing'], 'picking a relationship folded the list it was picked from');
+    // And back to issue 2.
+    const back = drive([{ kind: 'point', key: '2' }], onEdge).state;
+    assert.deepEqual(back.shownGroups, ['blocked-by:outgoing'], 'returning to the issue folded its list');
+    // A new subject starts folded: issue 1, and a relationship that does not touch issue 2.
+    assert.deepEqual(drive([{ kind: 'point', key: '1' }], onEdge).state.shownGroups, []);
+    assert.deepEqual(drive([{ kind: 'group', id: serialize.id }], onEdge).state.shownGroups, []);
+    // The legend's kinds still start over on every move.
+    const switched = drive([{ kind: 'control', name: 'legend-kind', value: 'serialize-with' }], opened).state;
+    assert.deepEqual(switched.switchedKinds, ['serialize-with']);
+    assert.deepEqual(drive([{ kind: 'group', id: blockedBy.id }], switched).state.switchedKinds, []);
+  });
+
   it('#303 reconcileHost: a selection dropped or moved to its carrier starts the kinds over, and a live one keeps the same state', () => {
     const nothingHidden: ReadonlySet<string> = new Set();
     const switched: HostCommand[] = [{ kind: 'control', name: 'legend-kind', value: 'serialize-with' }];

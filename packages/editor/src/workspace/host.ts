@@ -50,6 +50,7 @@ import {
   INITIAL_SELECTION,
   type SelectionCommand,
   type WorkspaceSelection,
+  aroundEdge,
   issuesSelection,
   selectedEdgeId,
   selectedKey,
@@ -155,16 +156,18 @@ export interface HostState {
   readonly narrowView: NarrowView;
   /**
    * The Inspector groups the reader opened past their first five, by
-   * `InspectorGroup.key`. Cleared when the selection moves: a group key names a
-   * kind, and the next issue's kind is a different list.
+   * `InspectorGroup.key`. Cleared when the selection moves to a list read
+   * around a different issue: a group key names a kind, and the next issue's
+   * kind is a different list. Kept when the list stays around the same issue
+   * (q354).
    */
   readonly shownGroups: readonly string[];
   /**
    * The kinds the reader switched on or off in the legend, away from where
    * they start for this selection (past 8 relationships with two kinds or
    * more that switch, the first of them in the legend's order). See
-   * `drawnKinds`. Cleared when the selection moves, as `shownGroups` is: the
-   * next issue's kinds start over.
+   * `drawnKinds`. Cleared whenever the selection moves: the next selection's
+   * kinds start over.
    */
   readonly switchedKinds: readonly EdgeField[];
 }
@@ -1065,21 +1068,49 @@ function intended(state: HostState, intent: KeyIntent, document: GraphDocument):
  * something, the panel is open again. Comparing the two selections rather than
  * listing the commands that change one is what makes a ninth arm free.
  *
- * The Inspector's opened groups and the legend's switched kinds go on the
- * same move, to nothing selected as well: both describe the old selection's
- * relationships.
+ * The legend's switched kinds go on the same move, to nothing selected as
+ * well: they describe the old selection's relationships. The opened groups go
+ * only when the move reads the list around a different issue (q354): from an
+ * issue to one of its relationships and back, the list stays where it was, so
+ * its opened groups stay open; a new subject starts folded.
  */
 export function reduceHost(state: HostState, command: HostCommand, document: GraphDocument): HostResult {
   const result = reduceCommand(state, command, document);
   if (result.state.selection === state.selection) return result;
-  return { ...result, state: afterSelectionMoved(result.state) };
+  const keepsSubject = sameListSubject(state.selection, result.state.selection, document);
+  return { ...result, state: afterSelectionMoved(result.state, keepsSubject) };
 }
 
-function afterSelectionMoved(state: HostState): HostState {
+function afterSelectionMoved(state: HostState, keepsSubject: boolean): HostState {
   return {
     ...forgetRelationships(state),
+    ...(keepsSubject ? { shownGroups: state.shownGroups } : {}),
     inspectorDismissed: state.selection.kind === 'none' ? state.inspectorDismissed : false,
   };
+}
+
+/**
+ * The one issue the Related list and the Inspector read a selection around:
+ * the issue selected, or the issue a selected relationship is read around
+ * ({@link aroundEdge}). `null` for nothing selected and for a set, whose list
+ * is one block per member: any move changes a set.
+ */
+function listSubject(selection: WorkspaceSelection, document: GraphDocument): string | null {
+  switch (selection.kind) {
+    case 'issue': return selection.key;
+    case 'edge': {
+      const edge = findEdge(document, selection.edgeId);
+      return edge === undefined ? null : aroundEdge(selection, edge);
+    }
+    case 'none':
+    case 'issues':
+      return null;
+  }
+}
+
+function sameListSubject(before: WorkspaceSelection, after: WorkspaceSelection, document: GraphDocument): boolean {
+  const subject = listSubject(after, document);
+  return subject !== null && subject === listSubject(before, document);
 }
 
 /** The reader's place among a selection's relationships, cleared for a selection it no longer describes. */

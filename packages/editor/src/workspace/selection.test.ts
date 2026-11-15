@@ -4,6 +4,8 @@ import { describe, it } from 'node:test';
 import {
   type WorkspaceSelection,
   INITIAL_SELECTION,
+  aroundEdge,
+  selectedEdgeId,
   selectedKey,
   selectedKeys,
   selectionReducer,
@@ -26,10 +28,9 @@ describe('the workspace holds one selection, and cannot hold two', () => {
         kind: 'issue',
         key: 'z',
       });
-      assert.deepEqual(selectionReducer(state, { kind: 'select-edge', edgeId: 'e' }), {
-        kind: 'edge',
-        edgeId: 'e',
-      });
+      const edge = selectionReducer(state, { kind: 'select-edge', edgeId: 'e' });
+      assert.equal(edge.kind, 'edge');
+      assert.equal(selectedEdgeId(edge), 'e');
       assert.deepEqual(selectionReducer(state, { kind: 'clear' }), INITIAL_SELECTION);
     }
   });
@@ -50,7 +51,32 @@ describe('the workspace holds one selection, and cannot hold two', () => {
     assert.deepEqual(selectionReducer(onIssue, { kind: 'select-edge', edgeId: 'x' }), {
       kind: 'edge',
       edgeId: 'x',
+      pickedFrom: 'x',
     });
+  });
+
+  it('#303 q354: a relationship carries the issue it was picked from, and the next relationship keeps it', () => {
+    const fromIssue = selectionReducer({ kind: 'issue', key: 'a' }, { kind: 'select-edge', edgeId: 'blocked-by|b|a' });
+    assert.deepEqual(fromIssue, { kind: 'edge', edgeId: 'blocked-by|b|a', pickedFrom: 'a' });
+    assert.deepEqual(selectionReducer(fromIssue, { kind: 'select-edge', edgeId: 'blocked-by|c|a' }), {
+      kind: 'edge',
+      edgeId: 'blocked-by|c|a',
+      pickedFrom: 'a',
+    });
+    // Picked with nothing selected, or a set: there is no issue it was picked from.
+    assert.deepEqual(selectionReducer(INITIAL_SELECTION, { kind: 'select-edge', edgeId: 'e' }), { kind: 'edge', edgeId: 'e' });
+    assert.deepEqual(selectionReducer({ kind: 'issues', keys: ['a', 'b'] }, { kind: 'select-edge', edgeId: 'e' }), {
+      kind: 'edge',
+      edgeId: 'e',
+    });
+  });
+
+  it('#303 q354: a relationship is read around the issue it was picked from when that is one of its ends, else its stored `from`', () => {
+    const ends = { from: 'b', to: 'a' };
+    assert.equal(aroundEdge({ kind: 'edge', edgeId: 'e', pickedFrom: 'a' }, ends), 'a');
+    assert.equal(aroundEdge({ kind: 'edge', edgeId: 'e', pickedFrom: 'b' }, ends), 'b');
+    assert.equal(aroundEdge({ kind: 'edge', edgeId: 'e', pickedFrom: 'z' }, ends), 'b');
+    assert.equal(aroundEdge({ kind: 'edge', edgeId: 'e' }, ends), 'b');
   });
 
   it('is pure: the same state and command twice give the same answer', () => {

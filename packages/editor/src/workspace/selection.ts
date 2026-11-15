@@ -48,7 +48,21 @@ export type WorkspaceSelection =
   | { readonly kind: 'issue'; readonly key: string }
   /** Two or more issues, in addition order. One issue is always `issue`. */
   | { readonly kind: 'issues'; readonly keys: readonly string[] }
-  | { readonly kind: 'edge'; readonly edgeId: string };
+  | EdgeSelection;
+
+/**
+ * One relationship, and the issue it was picked from when it was picked with
+ * one selected (q354): the list reads around that issue, so picking a
+ * relationship from #2283's "Blocks" leaves the list around #2283, not around
+ * the end the relationship is stored on. Absent when nothing was selected, or
+ * a set was. A NAME LIKE `edgeId`, NOT A RESOLVED ISSUE: a reader takes it only
+ * when it is one of the relationship's ends ({@link aroundEdge}).
+ */
+export interface EdgeSelection {
+  readonly kind: 'edge';
+  readonly edgeId: string;
+  readonly pickedFrom?: string;
+}
 
 /** Nothing selected. The state a freshly-loaded workspace is in. */
 export const INITIAL_SELECTION: WorkspaceSelection = { kind: 'none' };
@@ -140,7 +154,7 @@ export function selectionReducer(
     case 'select-edge':
       return selection.kind === 'edge' && selection.edgeId === command.edgeId
         ? INITIAL_SELECTION
-        : { kind: 'edge', edgeId: command.edgeId };
+        : edgeSelection(command.edgeId, pickedFrom(selection));
     case 'toggle-issue':
       return gestured(selection, { kind: 'toggle', key: command.key }, []);
     case 'range-issue':
@@ -150,6 +164,35 @@ export function selectionReducer(
     case 'clear':
       return INITIAL_SELECTION;
   }
+}
+
+/**
+ * The issue a relationship picked now was picked from: the one issue selected,
+ * or the issue the selected relationship was itself picked from, so moving
+ * from one relationship to the next keeps the list where it is.
+ */
+function pickedFrom(selection: WorkspaceSelection): string | undefined {
+  switch (selection.kind) {
+    case 'issue': return selection.key;
+    case 'edge': return selection.pickedFrom;
+    case 'none':
+    case 'issues':
+      return undefined;
+  }
+}
+
+function edgeSelection(edgeId: string, from: string | undefined): EdgeSelection {
+  return from === undefined ? { kind: 'edge', edgeId } : { kind: 'edge', edgeId, pickedFrom: from };
+}
+
+/**
+ * The issue a selected relationship is read around: the issue it was picked
+ * from when that is one of its two ends, else its stored `from` end, the end
+ * its stored order phrases it from (q349, q354).
+ */
+export function aroundEdge(selection: EdgeSelection, ends: { readonly from: string; readonly to: string }): string {
+  const { pickedFrom: picked } = selection;
+  return picked === ends.from || picked === ends.to ? picked : ends.from;
 }
 
 /**
