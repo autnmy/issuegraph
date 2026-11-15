@@ -4,6 +4,12 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/editor` `0.40.0`: the Work order head at every width, and two columns when nothing is selected (#330; Claude Design 7b8fcbc and 46cba3f, build-136's relay).** **Breaking for a host: `WorkspaceWords.workOrderRanked` and `workOrderAtATime` are new required words.** Additive: `WorkspaceOptions.runCap` (and on the mount).
+  - **The head.** The order zone heads itself at every width with "Work order" and "16 ranked · 2 at a time": the issues the order ranks (every member of a ranked unit), then the host's `runCap`, how many runs it works on at once in this repository (the repository's own limit, else the account's). With no limit at all the cap part is left out. The close button shows only on the folded panel.
+  - **Two columns with nothing selected.** At 1138 and up, with no selection, the Inspector column goes and the graph takes its room (the board's `.no-insp`, 336 | 1fr). The root's `data-inspector` now reads `empty` with nothing selected (it read `dismissed`), so a selection the reader dismissed keeps its Inspector at this width; the skeleton rests at `empty` too.
+  - **The panel shuts when the order stops folding.** Widened past the fold with the panel open, the mount shuts it, so the order is the plain zone again and is not announced as a dialog (review-41's P3 on PR 328).
+  - **Pinned** in the editor's styles, render and mount tests.
+
 - **`@issuegraph/editor` `0.39.1`: the Inspector zone is a tab stop, so a keyboard reader can scroll it (#331; axe `scrollable-region-focusable`, WCAG 2.1.1).** **No API change.** The zone scrolls, and with nothing selected it holds no control of its own, so a host that bounds the workspace could make it overflow with nothing inside to focus. Its frame now carries `tabindex="0"`, with an inset `:focus-visible` ring (the zone fills its column, so an outside ring would clip or cover the canvas). The mount's roving focus selects keyed rows only, so keyboard moves inside the zones are unchanged. The rail and the canvas gain no stop.
   - **Pinned** in `workspace/zone-focus.test.ts`. Also released as `0.33.2` from the `0.33` line for Descant's pin.
 

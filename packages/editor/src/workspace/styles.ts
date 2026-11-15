@@ -146,6 +146,19 @@ export const workspaceStylesheet = `
       1fr
       calc(var(--ig-char-width) * 41);
   }
+  /* NOTHING SELECTED, NO INSPECTOR COLUMN (#330; the board's .no-insp, 336 |
+     1fr): the graph takes the room an empty panel would hold. "empty", not
+     "dismissed": a selection's Inspector stays at this width, dismissed or
+     not, since nothing here lies over the graph to dismiss. */
+  .ig-workspace[data-inspector='empty'] {
+    grid-template-areas:
+      'header header'
+      'rail canvas';
+    grid-template-columns: calc(var(--ig-char-width) * 43) 1fr;
+  }
+  .ig-workspace[data-inspector='empty'] .ig-zone[data-zone='inspector'] {
+    display: none;
+  }
 }
 
 .ig-zone {
@@ -2033,8 +2046,12 @@ ${heldRailDeclarations}
   outline-offset: var(--ig-space-micro);
 }
 
+/* THE ORDER ZONE'S HEAD AT EVERY WIDTH (#330, RULES Graphs: each zone has a
+   48 head with its title and counts): "Work order", "16 ranked · 2 at a
+   time". Its close button belongs to the folded panel alone, so it shows only
+   there (the fold block below). */
 .ig-order-head {
-  display: none;
+  display: flex;
   align-items: center;
   gap: var(--ig-space-snug);
   min-block-size: calc(var(--ig-space-loose) * 3);
@@ -2054,6 +2071,7 @@ ${heldRailDeclarations}
 }
 
 .ig-order-head .ig-order-close {
+  display: none;
   margin-inline-start: auto;
 }
 
@@ -2114,8 +2132,8 @@ ${heldRailDeclarations}
     background: var(--ig-surface);
     box-shadow: var(--ig-elevation-overlay);
   }
-  .ig-workspace[data-inspector='lifted'][data-order-panel='open'] .ig-order-head {
-    display: flex;
+  .ig-workspace[data-inspector='lifted'][data-order-panel='open'] .ig-order-close {
+    display: inline-grid;
   }
   /* NO INSPECTOR ON SCREEN, SO THE LOG KEEPS THE CARD. */
   .ig-workspace[data-inspector='dismissed'] .ig-log-recovery[data-ig-inspected] {
@@ -2172,7 +2190,7 @@ ${heldRailDeclarations}
     background: none;
     box-shadow: none;
   }
-  .ig-workspace[data-inspector='lifted'][data-order-panel='open'] .ig-order-head {
+  .ig-workspace[data-inspector='lifted'][data-order-panel='open'] .ig-order-close {
     display: none;
   }
 
@@ -2193,7 +2211,8 @@ ${heldRailDeclarations}
   /* THE DISMISSAL MEANS NOTHING HERE, and saying so is the undo of the middle
      block's only conditional rule. The inspector is a zone again, so there is
      no overlay to have dismissed. */
-  .ig-workspace[data-inspector='dismissed'] .ig-zone[data-zone='inspector'] {
+  .ig-workspace[data-inspector='dismissed'] .ig-zone[data-zone='inspector'],
+  .ig-workspace[data-inspector='empty'] .ig-zone[data-zone='inspector'] {
     display: block;
   }
 

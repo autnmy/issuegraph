@@ -831,6 +831,8 @@ const WORKSPACE_WORDS: surface.WorkspaceWords = {
   workOrder: 'the order',
   showWorkOrder: 'show the order',
   closeWorkOrder: 'close the order',
+  workOrderRanked: 'placed in line',
+  workOrderAtATime: 'run together',
   nothingSelected: 'pick a row to inspect it',
   issuesSelected: (count: number) => `${String(count)} issues selected`,
   clearSelection: 'clear the selection',

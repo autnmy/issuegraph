@@ -954,7 +954,7 @@ describe("§17k's narrow layouts open and dismiss", () => {
   it('lifts the inspector on a selection and dismisses it on Escape', async () => {
     const page = await mounted();
     try {
-      assert.equal(root(page).dataset['inspector'], 'dismissed', 'lifted with nothing selected');
+      assert.equal(root(page).dataset['inspector'], 'empty', 'lifted with nothing selected');
 
       const row = page.rows()[0];
       assert.ok(row !== undefined);
@@ -1138,15 +1138,14 @@ describe('§17d and §17k share Escape, audit first', () => {
       await flush();
       assert.equal(root().dataset['inspector'], 'dismissed', 'the second press did not dismiss the panel');
 
-      // AND THE THIRD CHANGES NOTHING, which is all this asserts. Both reducers
-      // answer `unclaimed` with nothing open — but the press does NOT reach the
-      // host: it falls to `keyIntent`, which binds Escape to a cancel that is
-      // "ALWAYS AVAILABLE" and cancels it there. That predates this branch and
-      // is stated so the assertion below is not read as more than it is.
+      // AND THE THIRD CLEARS THE SELECTION, the last rung of the Escape ladder
+      // ("the selection clears last"). The root used to read `dismissed` for
+      // both a dismissed panel and no selection, which hid this step; it now
+      // says `empty` (#330, review-41 on PR 333).
       press();
       await flush();
       assert.equal(overlay(), null);
-      assert.equal(root().dataset['inspector'], 'dismissed');
+      assert.equal(root().dataset['inspector'], 'empty');
     } finally {
       page.handle.destroy();
     }

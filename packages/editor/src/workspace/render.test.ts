@@ -116,7 +116,7 @@ describe('the three zones render at their fixed positions', () => {
     // block reads, and the folded order its panel's state (#313).
     assert.match(
       result.markup,
-      /^<div class="ig-workspace" data-order="settled" data-canvas="strip" data-canvas-legend="[a-z]+" data-inspector="dismissed" data-order-panel="shut" data-tab="order">/,
+      /^<div class="ig-workspace" data-order="settled" data-canvas="strip" data-canvas-legend="[a-z]+" data-inspector="empty" data-order-panel="shut" data-tab="order">/,
     );
     assert.match(result.markup, /<\/div>$/);
   });
@@ -3647,8 +3647,21 @@ describe('the folded order\u2019s strip and panel head (#313, Design 7b8fcbc)', 
   it('heads the panel with its title, the order\u2019s count and a close button', () => {
     assert.match(
       markupOf(true),
-      /<div class="ig-order-head"><h2 class="ig-order-title">the order<\/h2><span class="ig-order-count">3<\/span><button type="button" class="ig-order-close" data-ig-command="order-close" aria-label="close the order" title="close the order">/,
+      /<div class="ig-order-head"><h2 class="ig-order-title">the order<\/h2><span class="ig-order-count">3 placed in line<\/span><button type="button" class="ig-order-close" data-ig-command="order-close" aria-label="close the order" title="close the order">/,
     );
+  });
+
+  it('counts the issues the order ranks and the host\u2019s run cap, and leaves the cap out with none (#330)', () => {
+    const count = (runCap: number | null): string | undefined =>
+      /<span class="ig-order-count">([^<]*)<\/span>/.exec(
+        renderWorkspace(document, { ...WORDS, selection: { kind: 'issue', key: 'i0001' }, runCap }).markup,
+      )?.[1];
+    assert.equal(count(2), '3 placed in line \u00b7 2 run together');
+    assert.equal(count(null), '3 placed in line');
+  });
+
+  it('draws the head with nothing selected, at the wide layout\u2019s two columns (#330)', () => {
+    assert.match(renderWorkspace(document, WORDS).markup, /<div class="ig-order-head"><h2 class="ig-order-title">the order<\/h2>/);
   });
 
   it('makes the open panel a dialog named by its title, and leaves the shut order a plain zone (review-219, PR 328)', () => {

@@ -1093,6 +1093,24 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     assert.match(overlay, /box-shadow:\s*none/);
   });
 
+  it('gives the wide layout two columns and no Inspector when nothing is selected (#330, the board\u2019s .no-insp)', () => {
+    const wide = containerBlock(css, 'width >= 1138px');
+    const tracks = wide.match(/\.ig-workspace\[data-inspector='empty'\]\s*\{[^}]*grid-template-columns:([^;]*);/)?.[1];
+    assert.equal(tracks?.trim(), 'calc(var(--ig-char-width) * 43) 1fr');
+    assert.match(wide, /\.ig-workspace\[data-inspector='empty'\] \.ig-zone\[data-zone='inspector'\]\s*\{\s*display:\s*none;/);
+    // A dismissed selection keeps its Inspector here (review-41, PR 333).
+    assert.equal(/data-inspector='dismissed'/.test(wide), false, 'the wide layout hides a selected issue\u2019s Inspector');
+  });
+
+  it('draws the order head at every width, its close button only on the folded panel (#330)', () => {
+    assert.match(css, /\.ig-order-head\s*\{\s*display:\s*flex;/);
+    assert.equal(/\.ig-order-head\s*\{\s*display:\s*none/.test(css), false, 'a layout hides the order head');
+    assert.match(css, /\.ig-order-head \.ig-order-close\s*\{\s*display:\s*none;/);
+    const close = /\[data-order-panel='open'\] \.ig-order-close\s*\{\s*display:\s*([a-z-]+);/;
+    assert.equal(containerBlock(css, 'width < 1138px').match(close)?.[1], 'inline-grid');
+    assert.equal(containerBlock(css, 'width < 800px').match(close)?.[1], 'none');
+  });
+
   it('undoes every folded-panel declaration where the order unfolds again (#313)', () => {
     // THE PRICE OF SINGLE-SIDED CONDITIONS, PINNED. The fold's rules also match
     // below 800, so the narrow block answers each one on the same selector.
@@ -1230,7 +1248,9 @@ describe('the zone rules reach their corners', () => {
       ['\\.ig-workspace-header', 'border-bottom'],
       ['\\.ig-canvas-toolbar', 'border-bottom'],
     ] as const) {
-      const block = new RegExp(`${selector} \\{([^}]*)\\}`).exec(css);
+      // The zone's OWN rule, at the top level: a layout's override of the zone
+      // (#330's wide `.no-insp`) is not where its seam is drawn.
+      const block = new RegExp(`^${selector} \\{([^}]*)\\}`, 'm').exec(css);
       assert.ok(block, `${selector} no longer has a rule of its own`);
       assert.match(block[1] as string, new RegExp(`${side}:`), `${selector} no longer draws its seam`);
     }
@@ -1301,7 +1321,8 @@ describe('the stylesheet and the markup account for each other', () => {
  * in which a sibling that declares no share of its own can be cut off.
  */
 describe("the inspector zone stays one track, so the mount's chrome cannot be clipped", () => {
-  const zone = /\.ig-zone\[data-zone='inspector'\]\s*\{([^}]*)\}/.exec(
+  // The zone's own top-level rule, not a layout's override of it (#330).
+  const zone = /^\.ig-zone\[data-zone='inspector'\]\s*\{([^}]*)\}/m.exec(
     withoutComments(workspaceStylesheet),
   )?.[1];
 

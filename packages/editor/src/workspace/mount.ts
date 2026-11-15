@@ -193,6 +193,8 @@ export interface MountWorkspaceOptions {
    * means and why a refused scheme draws no link.
    */
   readonly issueUrl?: WorkspaceOptions['issueUrl'];
+  /** The order head's "2 at a time" (#330), named here for the reason `issueUrl` states. See {@link WorkspaceOptions.runCap}. */
+  readonly runCap?: WorkspaceOptions['runCap'];
   /**
    * §17j's density escape hatch for the rail. See
    * {@link WorkspaceOptions.railDensity}, and `ViewerOptions.density` under it
@@ -541,6 +543,19 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   const measuresNarrow = (): boolean =>
     typeof element.getBoundingClientRect === 'function' && isNarrowBox(element.getBoundingClientRect());
   let narrow = measuresNarrow();
+  /**
+   * The state with #313's order panel shut once the order no longer folds
+   * (review-41, PR 328): widened past the fold, the panel is the plain order
+   * zone again, and left open it would still be drawn and announced as a
+   * dialog. Whether the order folds is the sheet's answer, read off the
+   * strip's computed display, as `inspectorIsLifted` reads its own.
+   */
+  const unfolded = (next: HostState): HostState => {
+    if (!next.orderPanel) return next;
+    const strip = surface.querySelector('.ig-order-strip');
+    const folds = strip !== null && doc.defaultView?.getComputedStyle(strip).display !== 'none';
+    return folds ? next : { ...next, orderPanel: false };
+  };
   /**
    * The state with its selection cut to the most recently added issue while
    * the root is narrow, and the same state otherwise, so a caller can tell by
@@ -1625,6 +1640,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       // is: the renderer keeps nothing across a redraw.
       auditOpen: state.auditOpen,
       issueUrl: current.issueUrl,
+      runCap: current.runCap,
       railDensity: current.railDensity,
       theme: resolved,
       themeSelector: current.themeSelector,
@@ -3220,7 +3236,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
           // A queued callback can still arrive after `disconnect()`.
           if (destroyed) return;
           narrow = measuresNarrow();
-          const next = narrowed(state);
+          const next = unfolded(narrowed(state));
           if (next === state) return;
           state = next;
           schedule();
