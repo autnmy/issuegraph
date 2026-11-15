@@ -306,7 +306,7 @@ describe('a write in flight labels the order and never re-ranks it', () => {
     // first and still carries `held`, which is the claim this test makes.
     assert.match(
       result.markup,
-      /^<div class="ig-workspace" data-order="held" data-canvas="strip" data-canvas-legend="[a-z]+" data-inspector="dismissed" data-tab="order">/,
+      /^<div class="ig-workspace" data-order="held" data-canvas="strip" data-canvas-legend="[a-z]+" data-inspector="dismissed" data-order-panel="shut" data-tab="order">/,
     );
   });
 

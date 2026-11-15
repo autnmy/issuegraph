@@ -1,6 +1,22 @@
 {
   "disclosure-shut": [
     {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "order-open",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {
+        "aria-expanded": "false",
+        "aria-controls": "resolves"
+      }
+    },
+    {
       "zone": "canvas",
       "channel": "data-ig-command",
       "control": "canvas-strip",
@@ -280,9 +296,38 @@
       "aria": {
         "aria-expanded": "false"
       }
+    },
+    {
+      "zone": "rail",
+      "channel": "data-ig-command",
+      "control": "order-close",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {}
     }
   ],
   "disclosure-open": [
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "order-open",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {
+        "aria-expanded": "false",
+        "aria-controls": "resolves"
+      }
+    },
     {
       "zone": "canvas",
       "channel": "data-ig-command",
@@ -552,9 +597,38 @@
         "aria-expanded": "true",
         "aria-controls": "resolves"
       }
+    },
+    {
+      "zone": "rail",
+      "channel": "data-ig-command",
+      "control": "order-close",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {}
     }
   ],
   "draft-open": [
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "order-open",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {
+        "aria-expanded": "false",
+        "aria-controls": "resolves"
+      }
+    },
     {
       "zone": "canvas",
       "channel": "data-ig-command",
@@ -887,9 +961,38 @@
       "aria": {
         "aria-expanded": "false"
       }
+    },
+    {
+      "zone": "rail",
+      "channel": "data-ig-command",
+      "control": "order-close",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {}
     }
   ],
   "search-open": [
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "order-open",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {
+        "aria-expanded": "false",
+        "aria-controls": "resolves"
+      }
+    },
     {
       "zone": "canvas",
       "channel": "data-ig-command",
@@ -1196,6 +1299,19 @@
       "aria": {
         "aria-expanded": "false"
       }
+    },
+    {
+      "zone": "rail",
+      "channel": "data-ig-command",
+      "control": "order-close",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {}
     }
   ],
   "first-pass-open": [
@@ -1250,6 +1366,22 @@
       "inert": false,
       "name": "text",
       "aria": {}
+    },
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "order-open",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {
+        "aria-expanded": "false",
+        "aria-controls": "resolves"
+      }
     },
     {
       "zone": null,
@@ -1531,9 +1663,38 @@
       "aria": {
         "aria-expanded": "false"
       }
+    },
+    {
+      "zone": "rail",
+      "channel": "data-ig-command",
+      "control": "order-close",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "none",
+      "inert": true,
+      "name": "aria-label",
+      "aria": {}
     }
   ],
   "refusal-tier": [
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "order-open",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {
+        "aria-expanded": "false",
+        "aria-controls": "resolves"
+      }
+    },
     {
       "zone": "canvas",
       "channel": "data-ig-command",
@@ -1890,9 +2051,38 @@
       "aria": {
         "aria-expanded": "false"
       }
+    },
+    {
+      "zone": "rail",
+      "channel": "data-ig-command",
+      "control": "order-close",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {}
     }
   ],
   "edge-selected": [
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "order-open",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {
+        "aria-expanded": "false",
+        "aria-controls": "resolves"
+      }
+    },
     {
       "zone": "canvas",
       "channel": "data-ig-command",
@@ -2207,9 +2397,38 @@
       "inert": false,
       "name": "text",
       "aria": {}
+    },
+    {
+      "zone": "rail",
+      "channel": "data-ig-command",
+      "control": "order-close",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {}
     }
   ],
   "isolated-shut": [
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "order-open",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {
+        "aria-expanded": "false",
+        "aria-controls": "resolves"
+      }
+    },
     {
       "zone": "canvas",
       "channel": "data-ig-command",
@@ -2492,9 +2711,38 @@
       "aria": {
         "aria-expanded": "false"
       }
+    },
+    {
+      "zone": "rail",
+      "channel": "data-ig-command",
+      "control": "order-close",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {}
     }
   ],
   "isolated-open": [
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "order-open",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {
+        "aria-expanded": "false",
+        "aria-controls": "resolves"
+      }
+    },
     {
       "zone": "canvas",
       "channel": "data-ig-command",
@@ -2778,9 +3026,38 @@
       "aria": {
         "aria-expanded": "false"
       }
+    },
+    {
+      "zone": "rail",
+      "channel": "data-ig-command",
+      "control": "order-close",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {}
     }
   ],
   "held-slot": [
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "order-open",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {
+        "aria-expanded": "false",
+        "aria-controls": "resolves"
+      }
+    },
     {
       "zone": "canvas",
       "channel": "data-ig-command",
@@ -3061,9 +3338,38 @@
       "aria": {
         "aria-expanded": "false"
       }
+    },
+    {
+      "zone": "rail",
+      "channel": "data-ig-command",
+      "control": "order-close",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {}
     }
   ],
   "audit-findings": [
+    {
+      "zone": null,
+      "channel": "data-ig-command",
+      "control": "order-open",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {
+        "aria-expanded": "false",
+        "aria-controls": "resolves"
+      }
+    },
     {
       "zone": "canvas",
       "channel": "data-ig-audit-filter",
@@ -3385,6 +3691,19 @@
       "aria": {
         "aria-expanded": "false"
       }
+    },
+    {
+      "zone": "rail",
+      "channel": "data-ig-command",
+      "control": "order-close",
+      "target": null,
+      "value": null,
+      "tag": "button",
+      "role": "button",
+      "tabStop": "tab",
+      "inert": false,
+      "name": "aria-label",
+      "aria": {}
     }
   ]
 }
