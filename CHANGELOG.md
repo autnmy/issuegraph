@@ -4,7 +4,7 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
-- **`@issuegraph/editor` `0.33.2` (patch line from `0.33.1`): the Inspector zone is a tab stop, so a keyboard reader can scroll it (#331; axe `scrollable-region-focusable`, WCAG 2.1.1).** **No API change.** The zone frame carries `tabindex="0"`; the rail and the canvas gain no stop. Main carries the same fix as `0.39.1` (PR 332).
+- **`@issuegraph/editor` `0.33.2` (patch line from `0.33.1`): the Inspector zone is a tab stop, so a keyboard reader can scroll it (#331; axe `scrollable-region-focusable`, WCAG 2.1.1).** **No API change.** The zone frame carries `tabindex="0"`, with an inset `:focus-visible` ring (the zone fills its column, so an outside ring would clip or cover the canvas); the rail and the canvas gain no stop. Main carries the same fix as `0.39.1` (PR 332).
 
 - **`@issuegraph/editor` `0.33.1` (patch line from `0.33.0`): a group card's accessible name opens with the card's own text (#322; axe `label-content-name-mismatch`, WCAG 2.5.3).** **No API change.** The group card's button used to be named "Draw the group around 906, <title>: 2 issues, 1 blocking, longest chain 3". It now reads "2 issues, Around #906 · <title>, Longest chain 3, 1 blocking relationship. Draw this group.": the drawn text in the drawn order, then the blocking count and the action. Cut from the published `0.33.0` commit with only this fix, for Descant's pin; main carries it as `0.35.2`.
 

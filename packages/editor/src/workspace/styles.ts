@@ -561,6 +561,14 @@ export const workspaceStylesheet = `
   border-left: var(--ig-stroke) solid var(--ig-line);
 }
 
+/* THE INSPECTOR IS A TAB STOP (#331), SO IT SHOWS WHERE THE FOCUS IS. The ring
+   is drawn INSET: the zone fills its column, so a ring outside it would be
+   clipped by the workspace or drawn over the canvas beside it. */
+.ig-zone[data-zone='inspector']:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: calc(var(--ig-focus-ring) * -1);
+}
+
 
 
 /* THE REGION SCROLLS; ITS MEMBERS DO NOT SHRINK. Both leaves declare
