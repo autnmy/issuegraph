@@ -476,15 +476,19 @@ describe('the density escape hatch overrides the crossover it is an escape from'
     );
   });
 
-  it('wraps a dense row\u2019s meta line whole rather than clipping its muted words (issue 252)', () => {
-    // review-219 on PR 338: at the 336 rail a caveat after "+N" was clipped to
-    // "◆ Pri". The line wraps, so the words drop whole, and nothing clips it.
+  it('keeps a dense row one line and ellipsizes only its muted words (issue 252, pick (a))', () => {
+    // The editor's rail is virtualized on a fixed pitch (review-41 on PR 338),
+    // so the meta line never wraps; a caveat that does not fit keeps its glyph
+    // and ends in an ellipsis, and the tag, the fact and "+N" never shrink.
+    const body = (scope: string, tail: string): string =>
+      rules().filter((rule) => rule.selector.split(',').map((one) => one.trim()).includes(`${scope} ${tail}`)).map((rule) => rule.body).join(';');
     for (const scope of [CONTAINER_SCOPE, ATTRIBUTE_SCOPE]) {
-      const meta = rules().filter((rule) => rule.selector === `${scope} .ig-slot .ig-row-meta`).map((rule) => rule.body).join(';');
-      assert.match(meta, /flex-wrap:\s*wrap/, `${scope}: the meta line does not wrap`);
-      assert.equal(/overflow:\s*hidden/.test(meta), false, `${scope}: the meta line clips`);
-      const badges = rules().filter((rule) => rule.selector === `${scope} .ig-slot .ig-row-meta .ig-badges`).map((rule) => rule.body).join(';');
-      assert.match(badges, /flex-wrap:\s*wrap/, `${scope}: the chips do not wrap`);
+      assert.match(body(scope, '.ig-slot .ig-row-meta'), /flex-wrap:\s*nowrap/, `${scope}: the meta line wraps`);
+      assert.match(body(scope, '.ig-slot .ig-row-meta .ig-badges > .ig-badge'), /flex:\s*none/, `${scope}: a chip can shrink`);
+      for (const kind of ['caveat', 'evidence']) {
+        assert.match(body(scope, `.ig-slot .ig-row-meta .ig-badges > .ig-badge[data-${kind}]`), /flex:\s*0 1 auto/, `${scope}: ${kind} cannot give way`);
+        assert.match(body(scope, `.ig-slot .ig-row-meta .ig-badges > .ig-badge[data-${kind}] > span:last-child`), /text-overflow:\s*ellipsis/, `${scope}: ${kind} is cut, not ellipsized`);
+      }
     }
   });
 

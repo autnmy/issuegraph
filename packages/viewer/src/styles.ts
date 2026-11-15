@@ -82,30 +82,48 @@ ${scope} .ig-slot .ig-row-body {
   min-width: 0;
 }
 
-/* LINE 2, ON THE IDENTITY'S LINE, AND IT WRAPS WHOLE WORDS (issue 252). The
-   chips sit on the identity's line ('#512 · P0 · ⊘ blocks #488'). The row is
-   the tag, one fact and "+N", so it fits a 336 rail; a muted caveat after it
-   that does not fit drops to a second line whole instead of being clipped to
-   "◆ Pri" (review-219 on PR 338). A taller row is the variable height the
-   rail's spacer already treats as approximate. */
+/* LINE 2, AND IT DOES NOT WRAP. The chips sit on the identity's line ('#512 ·
+   P0 · ⊘ blocks #488'), and 'nowrap' is what makes the 53px a property of the
+   ROW: the editor's rail is virtualized on that fixed pitch (review-41 on PR
+   338), so a second line would name the wrong row on scroll. */
 ${scope} .ig-slot .ig-row-meta {
-  /* BASELINE, so a wrapped row's number reads with its first line of chips
-     rather than floating between the two. */
-  align-items: baseline;
+  align-items: center;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: var(--ig-space-tight);
   line-height: var(--ig-row-meta-line);
   min-width: 0;
+  overflow: hidden;
 }
 
-/* THE CHIPS SHARE THE IDENTITY'S LINE AND WRAP INSIDE THEMSELVES: a zero
-   basis gives them the room after the number, so only what does not fit drops,
-   and the number never stands on a line of its own. */
+/* The chips stay on the line and take the room after the number. */
 ${scope} .ig-slot .ig-row-meta .ig-badges {
   flex: 1 1 0;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   min-width: 0;
+}
+
+/* THE TAG, THE FACT AND "+N" NEVER SHRINK; THE MUTED WORDS AFTER THEM DO
+   (issue 252, the redesign lead's pick (a)). A caveat or evidence that does not
+   fit keeps its glyph and the start of its words, ending in an ellipsis rather
+   than a cut word; its words stay whole as text for a screen reader and as the
+   chip's title. */
+${scope} .ig-slot .ig-row-meta .ig-badges > .ig-badge {
+  flex: none;
+}
+
+${scope} .ig-slot .ig-row-meta .ig-badges > .ig-badge[data-caveat],
+${scope} .ig-slot .ig-row-meta .ig-badges > .ig-badge[data-evidence] {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+${scope} .ig-slot .ig-row-meta .ig-badges > .ig-badge[data-caveat] > span:last-child,
+${scope} .ig-slot .ig-row-meta .ig-badges > .ig-badge[data-evidence] > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* The issue number never shrinks away — '17j' lists it among the five things
