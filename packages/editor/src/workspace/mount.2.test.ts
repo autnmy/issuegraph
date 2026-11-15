@@ -327,3 +327,52 @@ describe('the order panel shuts when the order stops folding (#330; review-41 on
     }
   });
 });
+
+describe('the open canvas shuts when its strip stops being drawn (#256)', () => {
+  // jsdom applies the sheet but no container query, so the canvas strip
+  // computes to the base `display: none`, as under 640 or past the fold.
+  it('shuts an open canvas on a resize to a width that draws no strip, so Escape is not spent on it', async () => {
+    const { handle, click, rootWatches } = await mountNarrowRule({ box: { width: 500, height: 900 } });
+    try {
+      click('1');
+      await flush();
+      handle.dispatch({ kind: 'control', name: 'canvas-strip' });
+      await flush();
+      assert.equal(handle.state.canvasOpen, true, 'the strip command did not open the canvas');
+      const dismissed = handle.state.inspectorDismissed;
+      soleRootWatch(rootWatches()).callback();
+      await flush();
+      assert.equal(handle.state.canvasOpen, false, 'the canvas stayed open where no strip is drawn');
+      assert.equal(handle.state.inspectorDismissed, dismissed, 'shutting the canvas dismissed the Inspector');
+      assert.deepEqual(handle.state.selection, { kind: 'issue', key: '1' }, 'shutting the canvas moved the selection');
+    } finally {
+      handle.destroy();
+    }
+  });
+
+  it('keeps the canvas open on a resize while its strip is drawn', async () => {
+    const { handle, click, rootWatches } = await mountNarrowRule({
+      box: { width: 700, height: 900 },
+      // The narrow block's answer, which jsdom cannot compute: the strip is drawn.
+      onWindow: (win) => {
+        const computed = win.getComputedStyle.bind(win);
+        Object.defineProperty(win, 'getComputedStyle', {
+          configurable: true,
+          value: (target: Element) =>
+            target.classList.contains('ig-canvas-strip') ? { ...computed(target), display: 'block' } : computed(target),
+        });
+      },
+    });
+    try {
+      click('1');
+      await flush();
+      handle.dispatch({ kind: 'control', name: 'canvas-strip' });
+      await flush();
+      soleRootWatch(rootWatches()).callback();
+      await flush();
+      assert.equal(handle.state.canvasOpen, true, 'a resize inside the narrow band shut the canvas');
+    } finally {
+      handle.destroy();
+    }
+  });
+});

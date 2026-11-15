@@ -4,6 +4,9 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/editor` `0.46.2`: a canvas opened from the narrow strip shuts when the strip stops being drawn, so Escape is not spent on a canvas nobody can see (#256).** **No API change.** The strip is drawn only between the phone layout and the graph's fold. A canvas left open there stayed open in state under 640 and past the fold, and Escape's narrow gate closed it there with nothing on screen to close. The mount now shuts it on the resize that hides its strip, as it already did for #313's order panel.
+  - **Pinned** in `workspace/mount.2.test.ts`.
+
 - **`@issuegraph/editor` `0.46.1`: under the fold, a selection that hides the rail hands its focus to the selected issue in the graph (#346; the design lead's call).** **No API change.** Selecting from the rail lifts the Inspector, which hides the rail, and a focused row dropped its focus to the page, where no key reaches the workspace: the keyboard loop (R, a kind key, the target search, Enter) stopped. Now the selected issue's node in the graph takes the focus, without scrolling, and only a focus the fold is hiding moves. When the rail comes back, a focus in the graph returns to the row.
   - **Pinned** in `workspace/mount.fold-focus.test.ts`. Also released as `0.42.2` from the `0.42` line for Descant's pin.
 
