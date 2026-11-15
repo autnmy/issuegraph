@@ -95,13 +95,36 @@ it('#303 q349: a selected row inside the fold opens nothing, so the list stays a
   assert.ok(shownNeighbours(blocks, []).includes(picked.to));
 });
 
-it('#303 q349: a relationship declared by the other end reads around its stored `from` end, every group with its count', () => {
+it('#303 q354: a relationship picked from the issue that did not declare it reads around that issue', () => {
   const document = hub(4);
   const declaredByOther = inspectorView(document, SUBJECT).relationships.find((relationship) => relationship.from !== 'i0001');
   assert.ok(declaredByOther !== undefined);
-  const block = onlyBlock(relatedListView(document, { kind: 'edge', edgeId: declaredByOther.edgeId }));
-  assert.equal(block.around, declaredByOther.from);
-  assert.deepEqual(block.groups.map((related) => related.selected), ['i0001']);
+  const block = onlyBlock(relatedListView(document, { kind: 'edge', edgeId: declaredByOther.edgeId, pickedFrom: 'i0001' }));
+  assert.equal(block.around, 'i0001');
+  const around = onlyBlock(relatedListView(document, SUBJECT));
+  assert.deepEqual(
+    block.groups.map((related) => [related.key, related.neighbours]),
+    around.groups.map((related) => [related.key, related.neighbours]),
+    'the list did not stay as it was around the issue it was picked from',
+  );
+  assert.ok(
+    block.groups.some((related) => related.selected === declaredByOther.from),
+    'the row was not the far end, under the head that names its kind',
+  );
+});
+
+it('#303 q349: picked with nothing selected, or from an issue that is not one of its ends, a relationship reads around its stored `from` end', () => {
+  const document = hub(4);
+  const declaredByOther = inspectorView(document, SUBJECT).relationships.find((relationship) => relationship.from !== 'i0001');
+  assert.ok(declaredByOther !== undefined);
+  for (const selection of [
+    { kind: 'edge', edgeId: declaredByOther.edgeId },
+    { kind: 'edge', edgeId: declaredByOther.edgeId, pickedFrom: 'nowhere' },
+  ] as const) {
+    const block = onlyBlock(relatedListView(document, selection));
+    assert.equal(block.around, declaredByOther.from);
+    assert.deepEqual(block.groups.map((related) => related.selected), ['i0001']);
+  }
 });
 
 /**

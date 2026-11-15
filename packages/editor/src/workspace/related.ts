@@ -30,7 +30,7 @@ import {
   inspectorView,
   issueRelationships,
 } from './inspector.ts';
-import type { WorkspaceSelection } from './selection.ts';
+import { type WorkspaceSelection, aroundEdge } from './selection.ts';
 
 /** One kind's group: the Inspector's group, and the issue each of its relationships reaches. */
 export interface RelatedGroup {
@@ -133,12 +133,11 @@ export function relatedListView(raw: ViewerDocument, selection: WorkspaceSelecti
     case 'issue':
       return listed([blockOf(subject.issue.key, inspected.relationships, null, '')]);
     // A SELECTED RELATIONSHIP LEAVES THE LIST AS IT WAS, around the issue it
-    // was picked from, with its row selected. The selection names only the
-    // edge, so that issue is read as its stored `from` end, the end its
-    // stored order phrases it from.
+    // was picked from, with its row selected (q349, q354).
     case 'edge': {
       const { relationship } = subject;
-      return listed([blockOf(relationship.from, issueRelationships(document, relationship.from), relationship.edgeId, '')]);
+      const around = selection.kind === 'edge' ? aroundEdge(selection, relationship) : relationship.from;
+      return listed([blockOf(around, issueRelationships(document, around), relationship.edgeId, '')]);
     }
     case 'issues':
       return listed(setBlocks(document, subject.issues.map((issue) => issue.key)));
