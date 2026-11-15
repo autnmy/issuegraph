@@ -938,7 +938,8 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     assert.match(row, /grid-template-columns:\s*minmax\(0, 1fr\) auto auto;/);
     const statement = css.match(/\.ig-relationship-select,\s*\.ig-relationship-name\s*\{([^}]*)\}/)?.[1];
     assert.ok(statement !== undefined, 'no rule for the statement');
-    assert.match(statement, /flex-wrap:\s*wrap/);
+    // The statement is one line of text that wraps anywhere, a long reference too.
+    assert.match(statement, /overflow-wrap:\s*anywhere/);
   });
 
   it('pushes the row\u2019s trailing controls out by the statement, not by a margin', () => {
@@ -947,9 +948,12 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     // declaration plus the draw order. Without it the control would sit against
     // the statement rather than where frame 17b draws it, and every assertion
     // about the markup would stay green.
-    const select = css.match(/\.ig-relationship-select,\s*\.ig-relationship-name\s*\{([^}]*)\}/)?.[1];
-    assert.ok(select !== undefined, 'nothing lays out the relationship row\u2019s statement');
-    assert.match(select, /flex:\s*1/);
+    // THE GRID PUTS IT THERE NOW (#308): the statement's track is the row's
+    // first, minmax(0, 1fr), and the flip has a column of its own at the end.
+    const row = css.match(/\.ig-relationship\s*\{([^}]*)\}/)?.[1];
+    assert.ok(row !== undefined, 'nothing lays out the relationship row');
+    assert.match(row, /grid-template-columns:\s*minmax\(0, 1fr\) auto auto;/);
+    assert.match(css, /\.ig-relationship > \.ig-relationship-flip\s*\{[^}]*grid-column:\s*3;/);
     const flip = css.match(/\.ig-relationship-flip\s*\{([^}]*)\}/)?.[1];
     assert.ok(flip !== undefined, 'the flip has no rule');
     assert.equal(/margin-left:\s*auto/.test(flip), false, 'an inert margin came back');

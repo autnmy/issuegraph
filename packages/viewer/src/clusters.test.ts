@@ -249,7 +249,7 @@ describe('a component says one thing about how its work runs', () => {
     );
     assert.equal(
       clusterReachLabel({ kind: 'no-chain', edges: 3 }),
-      '3 blocking relationships, which set no order',
+      '3 blocking relationships, none that set an order',
     );
   });
 

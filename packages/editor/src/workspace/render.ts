@@ -1885,7 +1885,7 @@ function refusalReason(code: InvalidCode, words: WorkspaceWords): ElementSpec {
 function relationshipDescription(
   relationship: InspectorRelationship,
   subject: string | null,
-): readonly ElementSpec[] {
+): readonly (ElementSpec | string)[] {
   const treatment = treatmentFor(relationship.field);
   const outgoing = subject === null || relationship.from === subject;
   // THE ROLE TRAVELS WITH THE REFERENCE, and it is not decoration. §17b's rule
@@ -1911,13 +1911,15 @@ function relationshipDescription(
   // what a reader hears. `inspector.ts` leaves out the one end that reads no
   // relationship (a parent's sub-issue), so the label is always there.
   const [glyph, label] = glyphAndLabel(treatment.glyph, labelFrom(treatment, outgoing) ?? treatment.label);
-  const kind = (...parts: readonly (ElementSpec | undefined)[]): ElementSpec =>
-    element('span', { class: 'ig-relationship-kind' }, parts.filter((part): part is ElementSpec => part !== undefined));
-  if (subject === null) return [kind(glyph, label), reference(relationship.from, 'from'), reference(relationship.to, 'to')];
+  const kind = (...parts: readonly (ElementSpec | string | undefined)[]): ElementSpec =>
+    element('span', { class: 'ig-relationship-kind' }, parts.filter((part) => part !== undefined));
+  // ONE TEXT SPACE between the phrase and its number, as the board writes
+  // "is blocked by <span class=num>#2240</span>" (review-219, PR 325).
+  if (subject === null) return [kind(glyph, label), ' ', reference(relationship.from, 'from'), ' ', reference(relationship.to, 'to')];
   const other = reference(outgoing ? relationship.to : relationship.from);
   // "#2250 is a duplicate of this" names the other issue first, after the
   // glyph's column, as the board draws it (#308).
-  return otherFirst(treatment, outgoing) ? [kind(glyph, other, label)] : [kind(glyph, label), other];
+  return otherFirst(treatment, outgoing) ? [kind(glyph, other, ' ', label)] : [kind(glyph, label), ' ', other];
 }
 
 /**
@@ -1962,10 +1964,13 @@ function otherLine(
 ): ElementSpec | null {
   if (subject === null) return null;
   const title = relationship.from === subject ? relationship.titles.to : relationship.titles.from;
-  const parts = [title, relationship.direction === 'incoming' ? words.inbound : null].filter(
-    (part): part is string => part !== null,
-  );
-  return parts.length === 0 ? null : element('span', { class: 'ig-relationship-other' }, [parts.join(' · ')]);
+  const note = relationship.direction === 'incoming' ? words.inbound : null;
+  if (title === null && note === null) return null;
+  // The title gives way to the note, which says why the row has no remove.
+  return element('span', { class: 'ig-relationship-other' }, [
+    title === null ? null : element('span', { class: 'ig-relationship-title' }, [title]),
+    note === null ? null : element('span', { class: 'ig-relationship-note' }, [title === null ? note : `\u00a0· ${note}`]),
+  ]);
 }
 
 /**

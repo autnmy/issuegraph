@@ -192,7 +192,7 @@ export function clusterReachLabel(reach: ClusterReach): string {
     // it: something blocks, and none of it puts the work in an order. It does
     // not name a loop either, for the reason the arm's own note gives.
     case 'no-chain':
-      return `${String(reach.edges)} blocking ${reach.edges === 1 ? 'relationship, which sets' : 'relationships, which set'} no order`;
+      return reach.edges === 1 ? '1 blocking relationship, which sets no order' : `${String(reach.edges)} blocking relationships, none that set an order`;
     case 'unblocked':
       return 'No blocking relationships';
   }

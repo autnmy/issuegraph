@@ -947,11 +947,13 @@ export const workspaceStylesheet = `
 
 .ig-relationship-list {
   list-style: none;
-  margin: 0;
+  /* The board's '.ig-rels': rows touch, and the list pulls out by a row's
+     inset so each glyph sits flush with the heading above (#308). */
+  margin: calc(var(--ig-space-micro) * -2) calc(var(--ig-space-snug) * -1) 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--ig-space-tight);
+  gap: 0;
 }
 
 /* ONE KIND'S GROUP (RULES, Graphs, Dense neighbourhoods): its words and count
@@ -1040,12 +1042,23 @@ export const workspaceStylesheet = `
 .ig-relationship-other {
   grid-column: 1;
   grid-row: 2;
+  display: flex;
   min-inline-size: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   padding-inline-start: calc(var(--ig-space-loose) + var(--ig-space-snug));
   color: var(--ig-text-muted);
+}
+
+/* THE TITLE GIVES WAY, THE NOTE DOES NOT: " · set on the other issue" says why
+   the row has no remove, so a long title cannot hide it (review-41, PR 325). */
+.ig-relationship-title {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ig-relationship-note {
+  flex: none;
 }
 
 .ig-relationship > .ig-relationship-remove,
@@ -1111,11 +1124,9 @@ export const workspaceStylesheet = `
    stands in for. */
 .ig-relationship-select,
 .ig-relationship-name {
-  flex: 1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ig-space-tight);
-  align-items: baseline;
+  display: block;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
 }
 
 /* The button fills its row, so the whole relationship is the hit target rather
@@ -1144,15 +1155,15 @@ export const workspaceStylesheet = `
    is the vocabulary's and this package does not add characters to it, which is
    the same rule the why-rank sentence's clauses are spaced by. */
 .ig-relationship-kind {
-  display: inline-flex;
-  gap: var(--ig-space-snug);
-  align-items: baseline;
   color: var(--ig-text);
 }
 
-/* THE GLYPH'S COLUMN, 16 wide in text-muted, as the board's icon column. */
+/* THE GLYPH'S COLUMN, 16 wide in text-muted and 8 from the words, as the
+   board's icon column; the phrase and its number are one text space apart. */
 .ig-relationship-kind > .ig-glyph {
+  display: inline-block;
   inline-size: var(--ig-space-loose);
+  margin-inline-end: var(--ig-space-snug);
   text-align: center;
   color: var(--ig-text-muted);
 }
