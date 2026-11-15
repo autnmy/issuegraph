@@ -41,6 +41,10 @@ import { heldRailDeclarations } from '../reevaluate/styles.ts';
 export const workspaceStylesheet = `
 .ig-workspace {
   display: grid;
+  /* THE CONTAINING BLOCK FOR §17d'S PANEL (issue 334): an absolutely positioned
+     grid child with a grid area set takes that area as its containing block,
+     so the panel hangs from the canvas's area without being inside its zone. */
+  position: relative;
   /* HEADER SPANS, THE THREE ZONES SIT UNDER IT. The audit count is ambient: it
      belongs to the whole workspace rather than to one zone, and putting it in a
      zone's own track would make it move when that zone resized. */
@@ -609,7 +613,7 @@ export const workspaceStylesheet = `
    the region, and a leaf that sized itself here would be wrong in every other
    composition. The region's own max-height is what bounds the pair; this is
    what makes the overflow it declares actually reachable. */
-.ig-zone[data-zone='canvas'] .ig-audit-overlay > * {
+.ig-workspace > .ig-audit-overlay > * {
   flex-shrink: 0;
 }
 
@@ -642,11 +646,12 @@ export const workspaceStylesheet = `
    the theme's two shadows are deliberately the only values carrying a colour,
    so a host retheming owns them and a literal here would be invisible to that.
 
-   SCOPED TO THE ZONE, and every declaration is in this one rule. Two reasons,
-   and the second is the sheet's own standing rule: an absolutely positioned
-   .ig-audit-overlay outside this zone has no containing block to hang from and
-   would anchor to the page, and the panel is a public export a consumer can
-   render standalone. The same argument the inspector's old share rule made. */
+   PLACED IN THE CANVAS'S GRID AREA, NOT INSIDE ITS ZONE (issue 334). The panel is
+   the workspace's own child so the phone layout can put it in the flow between
+   the head and the Tabs; here grid-area: canvas makes that area its containing
+   block, which keeps it off the rail exactly as the zone's box did. Scoped to
+   the workspace's child, because the panel is a public export a consumer can
+   render standalone. */
 /* BORDER-BOX, AND IT IS LOAD-BEARING. There IS a universal reset in this
    codebase and it does not reach here: viewer/src/styles.ts scopes it to
    .ig-viewer descendants, and this panel is a sibling of the rail's viewer
@@ -662,7 +667,8 @@ export const workspaceStylesheet = `
    container computes its overflow-x to auto and CLIPS the focus ring on every
    card's control: an outline is ink overflow, so it is cut rather than
    scrolled to. Each leaf's own padding gives those rings room. */
-.ig-zone[data-zone='canvas'] .ig-audit-overlay {
+.ig-workspace > .ig-audit-overlay {
+  grid-area: canvas;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -2270,7 +2276,7 @@ ${heldRailDeclarations}
     overflow: visible;
   }
 
-  .ig-workspace[data-canvas='strip'] .ig-zone[data-zone='canvas'] .ig-audit-overlay {
+  .ig-workspace[data-canvas='strip'] > .ig-audit-overlay {
     left: 0;
     right: auto;
     width: calc(var(--ig-char-width) * 66.67);
@@ -2328,14 +2334,20 @@ ${heldRailDeclarations}
   .ig-workspace {
     grid-template-areas:
       'header'
+      'audit'
+      'tabs'
       'view';
+    grid-template-rows: auto auto auto 1fr;
     grid-template-columns: 1fr;
   }
 
   .ig-workspace[data-canvas='open'] {
     grid-template-areas:
       'header'
+      'audit'
+      'tabs'
       'view';
+    grid-template-rows: auto auto auto 1fr;
     grid-template-columns: 1fr;
   }
 
@@ -2350,7 +2362,10 @@ ${heldRailDeclarations}
   .ig-workspace[data-inspector='lifted'][data-canvas='open'] {
     grid-template-areas:
       'header'
+      'audit'
+      'tabs'
       'view';
+    grid-template-rows: auto auto auto 1fr;
     grid-template-columns: 1fr;
   }
   .ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='rail'],
@@ -2450,13 +2465,6 @@ ${heldRailDeclarations}
     overflow: auto;
   }
 
-  .ig-workspace[data-canvas='strip'] .ig-zone[data-zone='canvas'] .ig-audit-overlay {
-    left: auto;
-    right: var(--ig-space-tight);
-    width: min(calc(var(--ig-char-width) * 66.67), calc(100% - var(--ig-space-tight) * 2));
-    max-height: calc(100% - var(--ig-space-tight) * 2);
-    box-shadow: var(--ig-elevation-overlay);
-  }
 
   /* RELATED GROUPS SHOWS ONLY ITS LIST. The graph beneath it is the wide
      layouts' view of the same relationships, and a line needs two columns. The
@@ -2479,39 +2487,33 @@ ${heldRailDeclarations}
     display: flex;
   }
 
-  /* THE PROBLEMS PANEL ON THE ORDER TAB IS IN FLOW, ABOVE THE ORDER (issue
-     296). The export's rules put the panel over the graph and never over the
-     order, at every width; here the order IS the view, so the overlay drawn
-     over it covered the rows a reader came to see, and hiding it left the
-     header's problems button opening nothing. So while the panel is open the
-     grid gains a row above the view, the canvas zone takes that row holding the
-     panel alone, and the panel is an ordinary box at full width: the order is
-     pushed down, never covered. The overlay is drawn only while open, so its
-     presence is the open state. Last in this block, so it wins the strip
-     layout's positioning of the same overlay on order. */
-  .ig-workspace[data-tab='order']:has(.ig-zone[data-zone='canvas'] > .ig-audit-overlay) {
-    grid-template-areas:
-      'header'
-      'audit'
-      'view';
-    grid-template-rows: auto auto 1fr;
-  }
-
-  .ig-workspace[data-tab='order'] .ig-zone[data-zone='canvas']:has(> .ig-audit-overlay) {
+  /* PROBLEMS TO FIX OPENS IN THE FLOW UNDER THE HEAD, ON EVERY TAB (issue 334,
+     Design 6b8a53e "Under 640: Problems to fix opens in the flow under the
+     head"). Between the head and the Tabs, full width, on the page's ground:
+     no fill of its own, a hairline under it, no radius, no shadow; the panel's
+     own padding is the gutter. The order and the graph are pushed down, never
+     covered, and the over-the-graph overlay is gone at this width. Its own
+     row in the grid ('audit'), which is empty while the panel is shut.
+     [data-canvas] so it outranks the strip layout's placement above. */
+  .ig-workspace[data-canvas] > .ig-audit-overlay {
     grid-area: audit;
-    overflow: visible;
-    visibility: visible;
-  }
-
-  .ig-workspace[data-tab='order'] .ig-zone[data-zone='canvas'] > :not(.ig-audit-overlay) {
-    display: none;
-  }
-
-  .ig-workspace[data-tab='order'] .ig-zone[data-zone='canvas'] > .ig-audit-overlay {
-    box-shadow: none;
-    max-height: none;
     position: static;
     width: auto;
+    max-height: none;
+    overflow: visible;
+    background: none;
+    border: 0;
+    border-bottom: var(--ig-hairline-width) solid var(--ig-hairline);
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .ig-workspace[data-canvas] > .ig-audit-overlay .ig-audit-panel {
+    border-bottom: 0;
+  }
+
+  .ig-workspace .ig-narrow-tabs {
+    grid-area: tabs;
   }
 }
 `;

@@ -4,6 +4,13 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/editor` `0.42.0`: under 640, Problems to fix opens in the flow under the head, on every tab (#334; Design 6b8a53e, relayed by build-136).** No API change; markup moves.
+  - **The panel and the narrow tabs are the workspace's own children** (the root's), no longer inside the canvas and header zones. At the wide and middle widths the sheet still hangs the panel over the graph, now from the canvas's grid area. The mount's tree swap no longer has to keep and restore it.
+  - **Under 640 the panel sits between the head and the Tabs**, full width, on the page's ground (no fill, no radius, no shadow, a hairline under it), on every tab, pushing the view down. Before, it was in flow on the Order tab only and over the graph on the others.
+  - **The head's count reads pressed while the panel is open**: the secondary fill, and `aria-controls` naming the panel (`ig-audit-panel`, with the mount's suffix) beside `aria-expanded`.
+  - A host stylesheet that reached the panel through `.ig-zone[data-zone='canvas'] .ig-audit-overlay`, or the tabs through the header zone, must reach them as the workspace's children.
+  - **Pinned** in the editor's styles, render and mount tests.
+
 - **`@issuegraph/editor` `0.41.0`: finding sentences carry "#", and a loop the page draws none of keeps a way on (#300; review-219 q261, Design 6b8a53e and content.md 70d5ff5 relayed by build-136).** **Breaking for a host: `AuditRemedyWords.openIssue` is a new required word.**
   - **"#" on every number in a finding's sentence**: "#2290 is blocked by #2280, which is closed…", the loop's members, the duplicate chain and the unreadable issue, through `issueNumber` as every other surface since #296.
   - **A loop's remedy.** "Pick one to remove" selects the first of the loop's issues the page draws (the walk's head when drawn, else the next; the members where no walk was named). When the page draws none, the note offers "Open #2301" (the host's `openIssue`, the first issue's number and the `↗`), an outward link to the first issue through the host's `issueUrl`, as the unreadable note's "Open the issue" is. Without an `issueUrl` there is still no control.

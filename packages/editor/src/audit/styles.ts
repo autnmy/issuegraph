@@ -58,12 +58,19 @@ export const auditStylesheet = `
   align-items: baseline;
   background: none;
   border: 0;
+  border-radius: var(--ig-radius-small);
   color: var(--ig-text);
   cursor: pointer;
   display: inline-flex;
   font: inherit;
   gap: var(--ig-space-tight);
   padding: 0;
+}
+
+/* PRESSED WHILE ITS PANEL IS OPEN (issue 334, Design 6b8a53e): the secondary fill,
+   as the order strip's button reads while its panel is open. */
+.ig-audit-toggle[aria-expanded='true'] {
+  background: var(--ig-surface-2);
 }
 
 /* THE WORDS ARE IN TEXT INK, as the export's state label is; only the

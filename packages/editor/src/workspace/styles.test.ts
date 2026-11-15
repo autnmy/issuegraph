@@ -1064,19 +1064,15 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     // it, and the overlay is anchored to the HEADER COUNT, which is drawn at
     // every width — so a control that is still there would open a panel that
     // is not.
-    const hidden = narrow.match(/> :not\(([^{]*)\)\s*\{[^}]*display:\s*none/);
-    assert.ok(hidden !== null, 'the collapsed canvas no longer hides its contents');
-    assert.match(
-      narrow,
-      /:not\(\.ig-canvas-strip\):not\(\.ig-audit-overlay\)/,
-      '§17d’s overlay goes down with the collapsed canvas',
-    );
+    // SINCE #334 IT IS NOT IN THE ZONE AT ALL: the workspace's own child,
+    // placed in the canvas's grid area, so the strip's hiding rule cannot reach it.
+    assert.match(css, /\.ig-workspace > \.ig-audit-overlay\s*\{[^}]*grid-area:\s*canvas;/);
 
     // AND THE ANCHOR FLIPS, which is the half that keeps §17k's rule. `right`
     // on a four-character containing block pushes a 520-wide panel over the
     // rail; `left` opens it the other way, into the room the inspector holds.
     const overlay = narrow.match(
-      /\.ig-workspace\[data-canvas='strip'\] \.ig-zone\[data-zone='canvas'\] \.ig-audit-overlay\s*\{([^}]*)\}/,
+      /\.ig-workspace\[data-canvas='strip'\] > \.ig-audit-overlay\s*\{([^}]*)\}/,
     )?.[1];
     assert.ok(overlay !== undefined, 'nothing re-anchors the overlay over a collapsed canvas');
     assert.match(overlay, /left:\s*0/);
@@ -1350,12 +1346,12 @@ describe("the inspector zone stays one track, so the mount's chrome cannot be cl
     const found: string[] = [];
     for (const match of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
       const selectors = (match[1] ?? '').split(',').map((one) => one.trim());
-      if (selectors.includes(".ig-zone[data-zone='canvas'] .ig-audit-overlay")) found.push(match[2] ?? '');
+      if (selectors.includes('.ig-workspace > .ig-audit-overlay')) found.push(match[2] ?? '');
     }
     return found;
   })();
 
-  it('declares the overlay exactly once, and scoped to the canvas zone', () => {
+  it('declares the overlay exactly once, and scoped to the workspace\u2019s own child (#334)', () => {
     // SCOPED IS THE POINT, not incidental, and the argument survived the move
     // from the inspector intact. `renderAuditPanel`, `renderEncodingRefusedBlock`
     // and `auditStylesheet` are all public exports, so a consumer can draw
@@ -1465,7 +1461,7 @@ describe("the inspector zone stays one track, so the mount's chrome cannot be cl
     const members: string[] = [];
     for (const match of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
       const selectors = (match[1] ?? '').split(',').map((one) => one.trim());
-      if (selectors.includes(".ig-zone[data-zone='canvas'] .ig-audit-overlay > *")) {
+      if (selectors.includes('.ig-workspace > .ig-audit-overlay > *')) {
         members.push(match[2] ?? '');
       }
     }
@@ -1735,7 +1731,7 @@ describe('the layout under 640', () => {
     }
   });
 
-  it('R1 under 640px the Order tab shows findings opened from the header, over the order', () => {
+  it('R1 under 640px the Order tab shows findings opened from the header, above the order (#334)', () => {
     const rules = rulesAt(sheet, 600);
     const page = pageOf(
       renderWorkspace(DOCUMENT, {
@@ -1756,11 +1752,11 @@ describe('the layout under 640', () => {
     );
     assert.equal(page.querySelector('[data-tab]')?.getAttribute('data-tab'), 'order');
     const canvas = zone(page, 'canvas');
-    const overlay = canvas.querySelector(':scope > .ig-audit-overlay') ?? assert.fail('no audit overlay');
+    // THE WORKSPACE'S OWN CHILD SINCE #334, so the canvas zone it is not in can stay hidden.
+    const overlay = page.querySelector('.ig-workspace > .ig-audit-overlay') ?? assert.fail('no audit overlay');
     assert.equal(hidden(overlay, rules), false, 'order: the opened findings are hidden');
     assert.equal(hidden(zone(page, 'rail'), rules), false, 'order: the rail is hidden');
     for (const child of canvas.children) {
-      if (child === overlay) continue;
       assert.equal(hidden(child, rules), true, `order: the canvas zone's ${child.className} is drawn`);
     }
   });
@@ -2219,26 +2215,24 @@ describe('on a phone the order stays the view (#296)', () => {
     return css.slice(at);
   })();
 
-  it('draws the problems panel on the Order tab in flow above the order, never over it', () => {
-    // The export's rules put the panel over the graph and never over the order,
-    // at every width. On the Order tab the order is the view, so the open panel
-    // takes a grid row of its own above it and is an ordinary box: the list is
-    // pushed down, and the header's problems button still opens something.
-    const order = "\\.ig-workspace\\[data-tab='order'\\]";
-    const canvas = "\\.ig-zone\\[data-zone='canvas'\\]";
-    assert.match(
-      narrow,
-      new RegExp(`${order}:has\\(${canvas} > \\.ig-audit-overlay\\) \\{\\s*grid-template-areas:\\s*'header'\\s*'audit'\\s*'view';\\s*grid-template-rows: auto auto 1fr;`),
-    );
-    assert.match(narrow, new RegExp(`${order} ${canvas}:has\\(> \\.ig-audit-overlay\\) \\{\\s*grid-area: audit;[^}]*visibility: visible;`));
-    const panel = new RegExp(`${order} ${canvas} > \\.ig-audit-overlay \\{([^}]*)\\}`).exec(narrow)?.[1] ?? '';
-    assert.match(panel, /position: static;/, 'the panel is still positioned over the order');
+  it('opens Problems to fix in the flow between the head and the Tabs, on every tab (#334)', () => {
+    // Design 6b8a53e: full width, on the page's ground, a hairline under it,
+    // no radius, no shadow; the view is pushed down, never covered.
+    assert.match(narrow, /\.ig-workspace \{\s*grid-template-areas:\s*'header'\s*'audit'\s*'tabs'\s*'view';\s*grid-template-rows: auto auto auto 1fr;/);
+    assert.match(narrow, /\.ig-workspace \.ig-narrow-tabs \{\s*grid-area: tabs;/);
+    const panel = /\.ig-workspace\[data-canvas\] > \.ig-audit-overlay \{([^}]*)\}/.exec(narrow)?.[1] ?? '';
+    assert.match(panel, /grid-area: audit;/);
+    assert.match(panel, /position: static;/, 'the panel is still positioned over the view');
     assert.match(panel, /width: auto;/);
     assert.match(panel, /max-height: none;/);
-    // NOTHING ELSE OF THE CANVAS COMES ALONG.
-    assert.match(narrow, new RegExp(`${order} ${canvas} > :not\\(\\.ig-audit-overlay\\) \\{\\s*display: none;`));
-    // AND THESE ARE THE LAST RULES ON IT: nothing after them positions it again.
-    const after = narrow.slice(narrow.indexOf("[data-tab='order'] .ig-zone[data-zone='canvas'] > .ig-audit-overlay"));
+    assert.match(panel, /background: none;/);
+    assert.match(panel, /border-radius: 0;/);
+    assert.match(panel, /box-shadow: none;/);
+    assert.match(panel, /border-bottom: var\(--ig-hairline-width\) solid var\(--ig-hairline\);/);
+    // NO TAB-SPECIFIC PLACEMENT IS LEFT: the panel is not in the canvas zone.
+    assert.equal(/:has\(\.ig-zone\[data-zone='canvas'\] > \.ig-audit-overlay\)/.test(narrow), false);
+    // AND NOTHING AFTER IT POSITIONS IT AGAIN.
+    const after = narrow.slice(narrow.indexOf("[data-canvas] > .ig-audit-overlay {"));
     assert.equal(/position: absolute/.test(after), false);
   });
 
