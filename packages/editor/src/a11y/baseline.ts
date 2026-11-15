@@ -460,18 +460,6 @@ function ariaOf(ids: ReadonlySet<string>, element: SurfaceElement): Readonly<Rec
   return out;
 }
 
-/**
- * Every control under `root`, in document order, sorted so the record is stable.
- *
- * Pure and total. SORTED RATHER THAN LEFT IN DOCUMENT ORDER: a baseline is
- * diffed by people, and a control moving between zones should read as one
- * changed line rather than as a reordering of the whole file. Document order is
- * a fact about layout, which the zone already carries.
- *
- * The bound it does NOT cover is stated where it can be checked: a control
- * publishing itself on some fourth attribute is invisible here, and
- * {@link CONTROL_ATTRIBUTES} is the list to extend.
- */
 /** Two or more controls one surface exposes under the same accessible name. */
 export interface SharedName {
   readonly name: string;
@@ -527,6 +515,18 @@ export function sharedNames(root: SurfaceElement): readonly SharedName[] {
     .map(([name, actions]) => ({ name, controls: [...actions] }));
 }
 
+/**
+ * Every control under `root`, in document order, sorted so the record is stable.
+ *
+ * Pure and total. SORTED RATHER THAN LEFT IN DOCUMENT ORDER: a baseline is
+ * diffed by people, and a control moving between zones should read as one
+ * changed line rather than as a reordering of the whole file. Document order is
+ * a fact about layout, which the zone already carries.
+ *
+ * The bound it does NOT cover is stated where it can be checked: a control
+ * publishing itself on some fourth attribute is invisible here, and
+ * {@link CONTROL_ATTRIBUTES} is the list to extend.
+ */
 export function controlSurface(root: SurfaceElement): readonly ControlEntry[] {
   const entries: ControlEntry[] = [];
   const seen = new Set<SurfaceElement>();
