@@ -905,10 +905,20 @@ interface TrunkLeg {
   readonly member: NodeBox;
   readonly hubIsEnd: boolean;
   readonly channel: Channel;
+  readonly direction: TrunkDirection;
   readonly group: string;
   /** Sorts a channel's groups: by the legend's kind order, then direction. */
   readonly order: number;
 }
+
+/**
+ * Where each direction's stub meets the selection, in half trunk steps from
+ * its centre: what comes in 10 above it, what goes out 10 below, and a kind
+ * that reads the same both ways at the centre (q353, as the board draws it).
+ * Half the step between two trunks, so the two stubs sit as far apart as two
+ * shared lines do.
+ */
+const HUB_STUB_OFFSET: Readonly<Record<TrunkDirection, number>> = { in: -1, both: 0, out: 1 };
 
 function trunkLeg(layout: GraphLayout, hub: NodeBox, edge: ViewerEdge): TrunkLeg | null {
   const from = layout.nodes.get(stationFor(layout, edge.from));
@@ -924,15 +934,66 @@ function trunkLeg(layout: GraphLayout, hub: NodeBox, edge: ViewerEdge): TrunkLeg
     member,
     hubIsEnd,
     channel,
+    direction,
     group: `${channel} ${edge.field} ${direction}`,
     order: LEGEND_ORDER.indexOf(edge.field) * DIRECTION_ORDER.length + DIRECTION_ORDER.indexOf(direction),
   };
 }
 
-/** The point on `box`'s bound facing a trunk at `x`, `fraction` of the way down. */
-function facingTrunk(box: NodeBox, x: number, fraction: number): { point: Point; side: 'left' | 'right' } {
+/** The point on `box`'s bound facing a trunk at `x`, `offset` below its centre. */
+function facingTrunk(box: NodeBox, x: number, offset: number): { point: Point; side: 'left' | 'right' } {
   const side = box.x + box.width <= x ? 'right' : 'left';
-  return { point: anchor(box, fraction, side), side };
+  const centre = anchor(box, 1 / 2, side);
+  return { point: { x: centre.x, y: centre.y + offset }, side };
+}
+
+/** One axis-aligned step's direction, each component -1, 0 or 1. */
+function heading(from: Point, to: Point): Point {
+  return { x: Math.sign(to.x - from.x), y: Math.sign(to.y - from.y) };
+}
+
+/**
+ * The path through `corner`, arriving from `from` and leaving towards `to`:
+ * square at `radius` 0, else a quarter turn of that radius.
+ */
+function turn(from: Point, corner: Point, to: Point, radius: number): string {
+  if (radius === 0) return ` L ${fixed(corner.x)} ${fixed(corner.y)}`;
+  const into = heading(from, corner);
+  const out = heading(corner, to);
+  const before = { x: corner.x - into.x * radius, y: corner.y - into.y * radius };
+  const after = { x: corner.x + out.x * radius, y: corner.y + out.y * radius };
+  return ` L ${fixed(before.x)} ${fixed(before.y)} Q ${fixed(corner.x)} ${fixed(corner.y)} ${fixed(after.x)} ${fixed(after.y)}`;
+}
+
+/**
+ * A route's path, written from the selection out: along its stub to the trunk
+ * at `x`, along the trunk, and along the neighbour's stub.
+ *
+ * A TURN AT AN END OF THE TRUNK IS ROUNDED; A TURN MID-TRUNK STAYS SQUARE
+ * (q353, the board's look). Mid-trunk, the other routes of the group carry on
+ * past the turn, so the board draws a T there; at an end the line turns and
+ * nothing carries on. A turn's radius never runs past half the trunk it turns
+ * onto or past its own stub, so two turns never overlap and a short stub stays
+ * a stub.
+ */
+function routePath(
+  hub: Point,
+  x: number,
+  member: Point,
+  rounded: { readonly hub: boolean; readonly member: boolean },
+  radius: number,
+): string {
+  const atHub = { x, y: hub.y };
+  const atMember = { x, y: member.y };
+  const room = Math.min(radius, Math.abs(member.y - hub.y) / 2);
+  const hubRadius = rounded.hub ? Math.min(room, Math.abs(x - hub.x)) : 0;
+  const memberRadius = rounded.member ? Math.min(room, Math.abs(x - member.x)) : 0;
+  return (
+    `M ${fixed(hub.x)} ${fixed(hub.y)}` +
+    turn(hub, atHub, atMember, hubRadius) +
+    turn(atHub, atMember, member, memberRadius) +
+    ` L ${fixed(member.x)} ${fixed(member.y)}`
+  );
 }
 
 /**
@@ -955,9 +1016,12 @@ function facingTrunk(box: NodeBox, x: number, fraction: number): { point: Point;
  * THE FIRST TRUNK IN A CHANNEL SITS `--ig-space-wide` RIGHT OF ITS LEFT EDGE,
  * each further one another step right — the board's 20, as the theme spells it.
  * A channel holding more trunks than fit at that step closes them up evenly
- * rather than running the last into the next column's cards. Each group meets
- * every card at its own fraction of the card's height, so two groups never run
- * one stub over another on a shared card.
+ * rather than running the last into the next column's cards.
+ *
+ * STUBS SIT WHERE THE BOARD DRAWS THEM (q353): a neighbour's at its card's
+ * centre, the selection's 10 above its centre for what comes in, 10 below for
+ * what goes out, and at the centre for a kind that reads the same both ways.
+ * Each trunk's ends turn on a rounded corner, a turn mid-trunk is a square T.
  */
 export function trunkRoutes(
   layout: GraphLayout,
@@ -987,23 +1051,42 @@ export function trunkRoutes(
     groups.forEach((group, index) => slots.set(group, { index, count: groups.length }));
   }
 
-  const ended = new Set<string>();
-  return legs.map((leg) => {
+  // Each route's two stub points: the selection's at its direction's offset
+  // from the centre, every neighbour's at its centre.
+  const step = metric(theme, '--ig-space-wide');
+  const placed = legs.map((leg) => {
     if (leg === null) return null;
     const slot = slots.get(leg.group) ?? { index: 0, count: 1 };
     const channel = channels[leg.channel];
-    const steps = slot.count + 1;
-    const x = channel.from + Math.min(metric(theme, '--ig-space-wide'), channel.width / steps) * (slot.index + 1);
-    const fraction = (slot.index + 1) / steps;
-    const atHub = facingTrunk(hub, x, fraction);
-    const atMember = facingTrunk(leg.member, x, fraction);
+    const x = channel.from + Math.min(step, channel.width / (slot.count + 1)) * (slot.index + 1);
+    const atHub = facingTrunk(hub, x, (HUB_STUB_OFFSET[leg.direction] * step) / 2);
+    const atMember = facingTrunk(leg.member, x, 0);
+    return { leg, x, atHub, atMember };
+  });
+
+  // Each group's trunk runs from its topmost stub to its bottommost.
+  const spans = new Map<string, { readonly top: number; readonly bottom: number }>();
+  for (const route of placed) {
+    if (route === null) continue;
+    const span = spans.get(route.leg.group);
+    const ys = [route.atHub.point.y, route.atMember.point.y, ...(span === undefined ? [] : [span.top, span.bottom])];
+    spans.set(route.leg.group, { top: Math.min(...ys), bottom: Math.max(...ys) });
+  }
+  const radius = metric(theme, '--ig-space-snug');
+
+  const ended = new Set<string>();
+  return placed.map((route) => {
+    if (route === null) return null;
+    const { leg, x, atHub, atMember } = route;
+    const span = spans.get(leg.group) ?? { top: atHub.point.y, bottom: atHub.point.y };
+    const atEnd = (y: number): boolean => y === span.top || y === span.bottom;
     const [start, end] = leg.hubIsEnd ? [atMember, atHub] : [atHub, atMember];
     const endKey = `${leg.group} ${leg.hubIsEnd ? hub.key : leg.member.key}`;
     const sharesEnd = ended.has(endKey);
     ended.add(endKey);
     return {
       geometry: {
-        d: `M ${fixed(atHub.point.x)} ${fixed(atHub.point.y)} L ${fixed(x)} ${fixed(atHub.point.y)} L ${fixed(x)} ${fixed(atMember.point.y)} L ${fixed(atMember.point.x)} ${fixed(atMember.point.y)}`,
+        d: routePath(atHub.point, x, atMember.point, { hub: atEnd(atHub.point.y), member: atEnd(atMember.point.y) }, radius),
         start: start.point,
         end: end.point,
         // ON THE TRUNK, halfway between the two stubs: `marks.ts` sets a mark

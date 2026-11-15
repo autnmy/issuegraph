@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { type ViewerDocument, type ViewerEdge, normalizeDocument } from './document.ts';
-import { edgeGeometry, layoutGraph, trunkRoutes } from './layout.ts';
+import { type TrunkRoute, edgeGeometry, layoutGraph, trunkRoutes } from './layout.ts';
 import { cardBlocks } from './parts.ts';
 import { fixtureDocument } from './testing/fixtures.ts';
 import { defaultTheme, extendTheme } from './theme.ts';
@@ -677,5 +677,57 @@ describe('trunkRoutes', () => {
     assert.equal(arriving.geometry.endAngle, Math.PI);
     assert.equal(arriving.sharesEnd, false);
     assert.ok(arriving.geometry.d.startsWith(`M ${(hub.x + hub.width).toFixed(2)} `), 'a route is written from the selection');
+  });
+
+  it('meets the selection 10 above its centre coming in and 10 below going out, a neighbour at its centre', () => {
+    const layout = layoutGraph(document, defaultTheme);
+    const hub = layout.nodes.get('h');
+    const above = layout.nodes.get('a1');
+    const below = layout.nodes.get('a2');
+    assert.ok(hub !== undefined && above !== undefined && below !== undefined);
+    const centre = (box: { y: number; height: number }): number => box.y + box.height / 2;
+    const [arriving, leaving] = trunkRoutes(layout, 'h', [into, outOf], defaultTheme);
+    assert.ok(arriving !== null && arriving !== undefined && leaving !== null && leaving !== undefined);
+    assert.equal(arriving.geometry.end.y, centre(hub) - 10);
+    assert.equal(arriving.geometry.start.y, centre(above));
+    assert.equal(leaving.geometry.start.y, centre(hub) + 10);
+    assert.equal(leaving.geometry.end.y, centre(below));
+  });
+
+  it('meets the selection at its centre for a kind that reads the same both ways', () => {
+    const layout = layoutGraph(document, defaultTheme);
+    const hub = layout.nodes.get('h');
+    assert.ok(hub !== undefined);
+    const [route] = trunkRoutes(layout, 'h', [{ field: 'serialize-with', from: 'h', to: 'a2' }], defaultTheme);
+    assert.ok(route !== null && route !== undefined);
+    assert.equal(route.geometry.start.y, hub.y + hub.height / 2);
+  });
+
+  it('rounds a turn at either end of its trunk with --ig-space-snug, and keeps a turn mid-trunk a square T', () => {
+    // a1 and a2 both serialize with h: one trunk from a1 above to a2 below,
+    // with h's stub meeting it midway.
+    const layout = layoutGraph(document, defaultTheme);
+    const routes = trunkRoutes(
+      layout,
+      'h',
+      [
+        { field: 'serialize-with', from: 'h', to: 'a1' },
+        { field: 'serialize-with', from: 'h', to: 'a2' },
+      ],
+      defaultTheme,
+    );
+    const curves = (route: TrunkRoute | null | undefined): number => route?.geometry.d.split(' Q ').length ?? 0;
+    // Each route turns twice: square at h (mid-trunk), rounded at its neighbour (an end).
+    assert.deepEqual(routes.map(curves), [2, 2]);
+    const [up] = routes;
+    assert.ok(up !== null && up !== undefined);
+    const x = up.geometry.control.x;
+    const top = up.geometry.end.y;
+    // Arriving along the trunk, the turn starts 8 short of the corner and ends 8 along the stub.
+    assert.ok(up.geometry.d.includes(` L ${x.toFixed(2)} ${(top + 8).toFixed(2)} Q ${x.toFixed(2)} ${top.toFixed(2)} ${(x - 8).toFixed(2)} ${top.toFixed(2)}`), up.geometry.d);
+
+    // A lone relationship's trunk ends at both turns, so both are rounded.
+    const [lone] = trunkRoutes(layout, 'h', [into], defaultTheme);
+    assert.equal(curves(lone), 3);
   });
 });
