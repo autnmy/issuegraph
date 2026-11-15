@@ -27,8 +27,8 @@ export const COLOR_TOKENS = Object.freeze([
   '--ig-surface-2',
   '--ig-line',
   // THE SEPARATOR'S COLOUR, apart from the line a graph draws: the boards
-  // split zones, heads and rows with a 1px hairline (`border-hairline` in the
-  // Descant theme) and keep the 1.5 stroke for graph lines (#308, q352).
+  // split zones, heads and rows with a 1px hairline (a host maps it to its own
+  // hairline role) and keep the 1.5 stroke for graph lines (#308, q352).
   '--ig-hairline',
   '--ig-text',
   '--ig-text-body',
