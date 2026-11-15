@@ -170,6 +170,13 @@ export async function a11ySurface(
     readonly refusalTier?: boolean;
     /** Select an edge, which is the only thing that renders the retype picker. */
     readonly selectEdge?: boolean;
+    /**
+     * Issue 3, the selected issue, declares two relationships and carries two
+     * refused edits, so the Inspector draws each repeated row control more
+     * than once: two removes, and a Discard on a refused row and on a capsule
+     * (#176). Folded into an existing surface, for #185's cost.
+     */
+    readonly crowded?: boolean;
     /** A backlog with nothing related, which is what draws the isolated chip. */
     readonly isolated?: boolean;
     /** Open that chip, so its other command is recorded too. */
@@ -217,6 +224,8 @@ export async function a11ySurface(
             makeEdge('blocked-by', String(index + 1), String(index + 2)),
           ),
         }
+      : options.crowded === true
+      ? { issues: SEED.issues, edges: [...SEED.edges, makeEdge('blocked-by', '3', '1'), makeEdge('serialize-with', '3', '2')] }
       : SEED;
   const source = createScriptedSource(seed, apply);
   const store = createStore({ source, derive: flatDeriver });
@@ -260,6 +269,15 @@ export async function a11ySurface(
     await source.whenPending(landing.mutationId);
     source.settleNext('applied');
     await landing.settled;
+  }
+
+  // TWO REFUSALS STATED ON 3: a create of a relationship 3 already declares,
+  // which keeps its row and gains the reason and a Discard, and a create
+  // naming an issue the backlog does not hold, drawn as a capsule. The store
+  // refuses both before any write, so nothing is dispatched.
+  if (options.crowded === true) {
+    void store.propose({ op: 'create', kind: 'blocked-by', from: '3', to: '1' });
+    void store.propose({ op: 'create', kind: 'blocked-by', from: '3', to: 'nope' });
   }
 
   const to = options.refusalTier === true ? '7' : '4';

@@ -310,18 +310,28 @@ function visibleText(element: SurfaceElement): string {
  * an id is host data, and interpolating one into a selector is the injection
  * this module already had to remove once.
  */
-function labelNames(root: SurfaceElement, element: SurfaceElement): boolean {
+function labelText(root: SurfaceElement, element: SurfaceElement): string {
   const wrapping = element.closest('label');
-  if (wrapping !== null && visibleText(wrapping) !== '') return true;
+  if (wrapping !== null && visibleText(wrapping) !== '') return visibleText(wrapping);
   const id = element.getAttribute('id');
-  if (id === null || id === '') return false;
+  if (id === null || id === '') return '';
   for (const label of root.querySelectorAll('label')) {
-    if (label.getAttribute('for') === id && visibleText(label) !== '') return true;
+    if (label.getAttribute('for') === id && visibleText(label) !== '') return visibleText(label);
   }
-  return false;
+  return '';
+}
+
+/** A control's accessible name, and where it came from. See {@link NameSource}. */
+interface AccessibleName {
+  readonly source: NameSource;
+  readonly text: string;
 }
 
 function nameSource(root: SurfaceElement, element: SurfaceElement): NameSource {
+  return accessibleName(root, element).source;
+}
+
+function accessibleName(root: SurfaceElement, element: SurfaceElement): AccessibleName {
   // AN EMPTY VALUE IS NOT A NAME, and it is not the same as no attribute.
   // `renderMarkup` omits only `undefined`, `null` and `false`, so
   // `aria-label=""` does reach the markup — the case the "omitted, never empty"
@@ -350,16 +360,18 @@ function nameSource(root: SurfaceElement, element: SurfaceElement): NameSource {
     for (const target of root.querySelectorAll('[id]')) {
       if (named.includes(target.getAttribute('id') ?? '')) text += visibleText(target);
     }
-    return text.trim() === '' ? 'empty' : 'aria-labelledby';
+    return { source: text.trim() === '' ? 'empty' : 'aria-labelledby', text: text.trim() };
   }
 
   const label = element.getAttribute('aria-label');
   // TRIMMED, because a name made of spaces is not a name: the browser exposes
   // an empty accessible name for `aria-label=" "`, which a template padding an
   // empty translation produces easily.
-  if (label !== null) return label.trim() === '' ? 'empty' : 'aria-label';
-  if (visibleText(element) !== '') return 'text';
-  return labelNames(root, element) ? 'label' : 'none';
+  if (label !== null) return { source: label.trim() === '' ? 'empty' : 'aria-label', text: label.trim() };
+  const own = visibleText(element);
+  if (own !== '') return { source: 'text', text: own };
+  const labelled = labelText(root, element);
+  return labelled === '' ? { source: 'none', text: '' } : { source: 'label', text: labelled };
 }
 
 function tabStopOf(element: SurfaceElement): TabStop {
@@ -446,6 +458,61 @@ function ariaOf(ids: ReadonlySet<string>, element: SurfaceElement): Readonly<Rec
       named.length > 0 && named.every((id) => ids.has(id)) ? 'resolves' : 'dangling';
   }
   return out;
+}
+
+/** Two or more controls one surface exposes under the same accessible name. */
+export interface SharedName {
+  readonly name: string;
+  /** Each control as `<channel>=<control>`, with its target when it has one. */
+  readonly controls: readonly string[];
+}
+
+/**
+ * The accessible names two or more controls in one surface share (#176).
+ *
+ * A SCREEN READER'S BUTTON LIST SHOWS NAMES WITH NOTHING AROUND THEM — no row,
+ * no card, no markup — so two controls under one name are two identical
+ * entries, whichever rows they sit on. This reads every control on the same
+ * channels {@link controlSurface} records and groups the ones a reader can
+ * reach by the name the browser would compute.
+ *
+ * NOT A LIST OF NAMES SOMEONE MAINTAINS. It asks the markup, so a new repeated
+ * control is caught the first time a surface draws two of it.
+ *
+ * A CONTROL NO READER REACHES IS LEFT OUT: inert, natively hidden or under
+ * `aria-hidden`, it is in no button list to collide in.
+ *
+ * ONE ACTION DRAWN FOR TWO LAYOUTS IS ONE CONTROL. A failed write's card is
+ * drawn in the Inspector and in the log, and the narrow tabs and the middle
+ * zone's switch send the same command; the stylesheet shows one of each pair
+ * at a width, which a DOM without container queries cannot see. Controls with
+ * the same channel, command, target and value do the same thing, so sharing a
+ * name is right for them, and they count once.
+ */
+export function sharedNames(root: SurfaceElement): readonly SharedName[] {
+  const byName = new Map<string, Set<string>>();
+  const seen = new Set<SurfaceElement>();
+  for (const channel of CONTROL_ATTRIBUTES) {
+    for (const element of root.querySelectorAll(`[${channel}]`)) {
+      const control = element.getAttribute(channel);
+      if (control === null || seen.has(element)) continue;
+      seen.add(element);
+      if (element.closest('[inert], [hidden], [aria-hidden="true"]') !== null) continue;
+      const { text } = accessibleName(root, element);
+      if (text === '') continue;
+      const action = [
+        `${channel}=${control}`,
+        element.getAttribute('data-ig-target'),
+        element.getAttribute('data-ig-value') ?? element.getAttribute('data-ig-kind'),
+      ]
+        .filter((part) => part !== null)
+        .join(' ');
+      byName.set(text, (byName.get(text) ?? new Set()).add(action));
+    }
+  }
+  return [...byName]
+    .filter(([, actions]) => actions.size > 1)
+    .map(([name, actions]) => ({ name, controls: [...actions] }));
 }
 
 /**

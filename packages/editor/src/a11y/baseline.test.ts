@@ -38,7 +38,7 @@ import { JSDOM } from 'jsdom';
 import { a11ySurface } from '../testing/a11y.ts';
 import { WORKSPACE_WORDS, backlogOf, keysOf } from '../testing/workspace.ts';
 import { renderWorkspace } from '../workspace/render.ts';
-import { type ControlEntry, controlSurface } from './baseline.ts';
+import { type ControlEntry, type SharedName, controlSurface, sharedNames } from './baseline.ts';
 
 const BASELINE_PATH = new URL('./baseline.json', import.meta.url);
 
@@ -76,10 +76,17 @@ const BASELINE_PATH = new URL('./baseline.json', import.meta.url);
  * three had no members in any surface, so a regression in an answer's
  * accessible name or keyboard reachability passed every rule here.
  */
-async function surfaces(): Promise<Record<string, readonly ControlEntry[]>> {
+interface Surfaces {
+  readonly entries: Record<string, readonly ControlEntry[]>;
+  /** The names two or more controls share, per surface, read while the page was live (#176). */
+  readonly shared: Record<string, readonly SharedName[]>;
+}
+
+async function surfaces(): Promise<Surfaces> {
   const out: Record<string, readonly ControlEntry[]> = {};
+  const shared: Record<string, readonly SharedName[]> = {};
   for (const [name, options] of [
-    ['disclosure-shut', { saved: true }],
+    ['disclosure-shut', { saved: true, crowded: true }],
     ['disclosure-open', { openDiff: true }],
     ['draft-open', { openDraft: true }],
     ['search-open', { openSearch: true }],
@@ -94,11 +101,12 @@ async function surfaces(): Promise<Record<string, readonly ControlEntry[]>> {
     const page = await a11ySurface(options);
     try {
       out[name] = controlSurface(page.root);
+      shared[name] = sharedNames(page.root);
     } finally {
       page.close();
     }
   }
-  return out;
+  return { entries: out, shared };
 }
 
 /**
@@ -119,10 +127,16 @@ async function surfaces(): Promise<Record<string, readonly ControlEntry[]>> {
  * The promise is memoized rather than the value, so concurrent callers await
  * one build instead of racing to start several.
  */
-let built: Promise<Record<string, readonly ControlEntry[]>> | null = null;
-function allSurfaces(): Promise<Record<string, readonly ControlEntry[]>> {
+let built: Promise<Surfaces> | null = null;
+async function allSurfaces(): Promise<Record<string, readonly ControlEntry[]>> {
   built ??= surfaces();
-  return built;
+  return (await built).entries;
+}
+
+/** Every surface's shared names, from the same one build. */
+async function allShared(): Promise<Record<string, readonly SharedName[]>> {
+  built ??= surfaces();
+  return (await built).shared;
 }
 
 /** Every entry across every surface, for a rule that holds of all of them. */
@@ -358,6 +372,22 @@ describe('rules that hold whatever the baseline says', () => {
         `${entry.channel}="${entry.control}" in ${entry.zone ?? 'no zone'} is not in the tab order (${entry.tabStop})`,
       );
     });
+  });
+
+  it('gives no two controls on one surface the same accessible name (#176)', async () => {
+    // A screen reader's button list shows the names alone, so a repeated name
+    // is two identical entries. Asked of the markup on every surface, never of
+    // a list of names.
+    const shared = Object.entries(await allShared()).filter(([, names]) => names.length > 0);
+    assert.deepEqual(shared, [], 'controls share an accessible name');
+    // AND A SURFACE THAT DRAWS THE REPEATS, or the rule holds of nothing: the
+    // crowded surface has two removes and two refusal Discards on one panel.
+    const crowded = (await allSurfaces())['disclosure-shut'] ?? [];
+    const removes = crowded.filter((entry) => entry.control === 'delete' && entry.zone === 'inspector');
+    assert.ok(removes.length >= 2, `the crowded surface draws ${String(removes.length)} remove controls`);
+    // The staged conflict's card is one target; each refusal is its own.
+    const discarded = new Set(crowded.filter((entry) => entry.control === 'discard').map((entry) => entry.target));
+    assert.ok(discarded.size >= 3, `the crowded surface draws Discards for ${String(discarded.size)} writes`);
   });
 
   it('gives every control an accessible name', async () => {

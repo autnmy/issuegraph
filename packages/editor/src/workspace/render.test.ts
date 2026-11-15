@@ -912,7 +912,8 @@ describe('a relationship row says what it is, and which way round', () => {
     // THE GLYPH CARRIES NO NAME. `✕` announces as whatever a screen reader's
     // character table calls it, so it is hidden and the host's word is the
     // button's `aria-label` — on the BUTTON, because a span takes the generic
-    // role and ARIA prohibits naming one.
+    // role and ARIA prohibits naming one. The row's own description follows
+    // the word (#176), so two rows' removes are two different names.
     const row = rowFor(panel, 'together-with');
     // COMPARED AS A STRING, NOT AS A PATTERN. `edgeIdentity` joins with `|`,
     // which is ALTERNATION inside a RegExp — so the same assertion written as
@@ -922,7 +923,7 @@ describe('a relationship row says what it is, and which way round', () => {
     // same trap once, on the canvas's edge ids.
     assert.ok(
       row.includes(
-        `<button type="button" class="ig-relationship-remove" data-ig-command="delete" data-ig-target="${edgeIdentity('together-with', 'i0001', 'i0003')}" aria-label="unlink this row"><span class="ig-glyph" aria-hidden="true">\u2715</span></button>`,
+        `<button type="button" class="ig-relationship-remove" data-ig-command="delete" data-ig-target="${edgeIdentity('together-with', 'i0001', 'i0003')}" aria-label="unlink this row goes together with i0003"><span class="ig-glyph" aria-hidden="true">\u2715</span></button>`,
       ),
       row,
     );
