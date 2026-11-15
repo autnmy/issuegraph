@@ -4,6 +4,10 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/editor` `0.47.3`: activating `+ add` puts the focus on the kind list it opened (#159).** **No API change.**
+  - `add` replaces itself with the kind list, so the mount's last-resort focus restore ran, and it took the zone's first command control: in the Inspector that is `clear`, drawn above the kind list, one press from discarding the selection. While the live draft is choosing a kind, the restore now lands on the first kind, wherever the chooser is drawn, and only otherwise falls back to the nearest control. The kind digits and `Escape` work from either spot, as before (#152 keeps where focus lands separate from what a press means).
+  - **Pinned** in `workspace/mount.writes.test.ts`, whose landing assertion moves from `clear` to the kind list.
+
 - **`@issuegraph/viewer` `0.29.1`: a malformed condition is a diagnostic, never a throw (#168).** **No API change; the diagnostic reads "has a missing or empty required string".**
   - `normalizeDocument` turns a malformed host fact into a diagnostic so a host can hand the viewer whatever it has. A condition missing one of its required fields (reachable from a JavaScript host, a condition read off the wire, or one built behind a cast) put `undefined` into the required-strings list and `.trim()` threw, taking the whole render with it. `requiredTextOf` now returns the values as `unknown`, the check asks `typeof` first, and a condition kind no arm knows reads as one missing field, so both are dropped whole with the diagnostic.
   - **Pinned** in the viewer's document tests, building the malformed shapes without a cast.
