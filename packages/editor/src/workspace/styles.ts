@@ -38,6 +38,31 @@
 
 import { heldRailDeclarations } from '../reevaluate/styles.ts';
 
+/**
+ * The board's zone widths, in px (#253; Claude Design 7b8fcbc): the order,
+ * the graph's floor and the Inspector. FIXED, not characters: they were 43 and
+ * 41 times --ig-char-width, so a theme with wider characters widened the order
+ * and the Inspector and squeezed the graph between them.
+ */
+export const ZONE_WIDTHS = Object.freeze({ order: 336, graphMin: 480, inspector: 320 });
+
+/**
+ * Where all three zones fit with the two hairlines between them: 336 + 480 +
+ * 320 + 2. Wider, the workspace draws all three; narrower, with something
+ * selected, the order folds into a strip (#313).
+ */
+export const ZONES_FIT = ZONE_WIDTHS.order + ZONE_WIDTHS.graphMin + ZONE_WIDTHS.inspector + 2;
+
+/**
+ * Below this the graph folds into its own strip and the order is 336 again.
+ * DESIGN'S NUMBER, not a zone sum (#313's ruling: "below 800 the graph folds;
+ * below 640, tabs").
+ */
+export const GRAPH_FOLDS_BELOW = 800;
+
+const ORDER_TRACK = `${String(ZONE_WIDTHS.order)}px`;
+const INSPECTOR_TRACK = `${String(ZONE_WIDTHS.inspector)}px`;
+
 export const workspaceStylesheet = `
 .ig-workspace {
   display: grid;
@@ -51,35 +76,15 @@ export const workspaceStylesheet = `
   grid-template-areas:
     'header header header'
     'rail canvas inspector';
-  /* The rail and the inspector are sized in TYPE, not in pixels: a host that
-     scales the type scales the zones with it, which a fixed track would not.
-
-     A LENGTH TIMES A UNITLESS COUNT, which is the viewer's own idiom
-     (styles.ts writes min-width: calc(var(--ig-char-width) * 4)). An earlier
-     version multiplied --ig-char-width by --ig-label-char-width, having read
-     the second as "how many characters wide a label is". It is not: it is the
-     average width OF one character, and themeCss renders every metric with px
-     — so the expression was calc(7.8px * 6px), which is not a length. CSS
-     discards a declaration it cannot parse, so the whole template went with it
-     and all three zones fell back to auto columns: long content could then
-     squeeze the canvas, which is the one thing fixed positions exist to stop.
-     Nothing failed loudly, because an invalid declaration is simply absent.
-
-     40 is a reading measure for a title plus its id, in characters.
-
-     THIS IS THE PRE-17k FALLBACK, and it is deliberately the OLD equal measure. 17k
-     gives 390 / 1fr / 330 for widths at or above 1360 and something else
-     entirely below it: the inspector lifts to an overlay from 1120, and under
-     that the canvas collapses to a strip. Neither of those exists yet, so
-     applying the wide proportions at every width squeezes the canvas instead
-     of collapsing it — measured at 990px, where the canvas fell to 248px. That
-     is the one rule 17k states outright inverted: "the rail never yields, the
-     canvas yields first." Below the breakpoint the old equal tracks are the
-     honest placeholder. */
+  /* THE BOARD'S ZONES AS THE FALLBACK, for a host whose browser has no
+     container queries: every width the bands below cover overrides this. The
+     order and the Inspector are fixed in px (ZONE_WIDTHS, issue 253), not in
+     characters, so a theme's character width cannot widen them and squeeze the
+     graph; the graph takes the rest. */
   grid-template-columns:
-    calc(var(--ig-char-width) * 40)
+    ${ORDER_TRACK}
     1fr
-    calc(var(--ig-char-width) * 40);
+    ${INSPECTOR_TRACK};
   grid-template-rows: auto 1fr;
   /* NO GAP, BECAUSE THE SEAMS ARE DRAWN RULES AND A RULE HAS TO REACH ITS
      CORNER. The tracks used to be separated by --ig-space, and every rule on
@@ -127,28 +132,18 @@ export const workspaceStylesheet = `
    is a box a host places, and a package that reads the window cannot be
    dropped into someone else's page.
 
-   1360 IS 17k's OWN NUMBER, not a chosen one — the table's first row reads
-   "at or above 1360: 390 / 1fr / 330, three zones, as 17a".
-
-   THE TWO ZONES ARE NOT THE SAME WIDTH, AND THAT IS THE POINT OF THIS RULE.
-   Both tracks were 40 characters, which is one reading measure applied twice;
-   17a draws 1292 = 390 + 572 + 330, a rail WIDER than the inspector. The rail
-   carries a rank, a title, a meta line and a delta chip on one row while the
-   inspector carries a column of stacked blocks — not the same problem, and
-   sizing them alike shortchanged the surface 17k says must never yield.
-
-   50 AND 42 CHARACTERS, NOT 390px AND 330px, because this file sizes zones in
-   TYPE on purpose: a host that scales its type scales the zones with it, and a
-   fixed track would not. At the shipped --ig-char-width of 7.8 that is 390 and
-   327.6 — the rail exact, the inspector 2.4px under 17k's figure. Stated
-   rather than rounded away; the type-relative property is worth more than the
-   2.4px, and it is the same BYO argument layer 1's row query rests on. */
-@container ig-workspace (width >= 1138px) {
+   THE BOARD'S ZONES (Design 7b8fcbc): the order 336, the graph the rest (at
+   least 480), the Inspector 320, and the band starts where the three and their
+   two hairlines fit (ZONES_FIT). The order is wider than the Inspector: it
+   carries a rank, a title and a meta line on one row, the Inspector a column of
+   stacked blocks. Fixed in px (issue 253) so a theme's character width cannot
+   widen them and squeeze the graph. */
+@container ig-workspace (width >= ${ZONES_FIT}px) {
   .ig-workspace {
     grid-template-columns:
-      calc(var(--ig-char-width) * 43)
+      ${ORDER_TRACK}
       1fr
-      calc(var(--ig-char-width) * 41);
+      ${INSPECTOR_TRACK};
   }
   /* NOTHING SELECTED, NO INSPECTOR COLUMN (#330; the board's .no-insp, 336 |
      1fr): the graph takes the room an empty panel would hold. "empty", not
@@ -158,7 +153,7 @@ export const workspaceStylesheet = `
     grid-template-areas:
       'header header'
       'rail canvas';
-    grid-template-columns: calc(var(--ig-char-width) * 43) 1fr;
+    grid-template-columns: ${ORDER_TRACK} 1fr;
   }
   .ig-workspace[data-inspector='empty'] .ig-zone[data-zone='inspector'] {
     display: none;
@@ -1048,7 +1043,7 @@ export const workspaceStylesheet = `
 
 /* IT WRAPS RATHER THAN TRUNCATES, which is '.ig-picker-direction''s rule
    inherited along with §17b's statement. A qualified reference is long —
-   'owner/repo#602' — the inspector is a fixed 40-character track with no
+   'owner/repo#602' — the inspector is a fixed 320-wide track with no
    horizontal scroll, and a row that cannot wrap pushes its trailing controls
    out of the zone entirely. A statement whose object is cut off says something
    other than what the format holds, and a flip a reader cannot reach is the
@@ -1767,30 +1762,27 @@ ${heldRailDeclarations}
    BETWEEN. Because the canvas is already the zone designed to refuse (17f) and
    the inspector is the edit path that survives without it (17b).
 
-       at or above 1360   390 / 1fr / 330, three zones, as 17a
-       1120 - 1359        rail unchanged; the inspector lifts to a 330 overlay
-                          over the canvas, opened by selection, Escape to dismiss
-       below 1120         rail unchanged; the canvas collapses to a strip that
-                          opens full-width on demand; the inspector returns inline
+       at or above 1138   336 / 1fr / 320, three zones (two with nothing
+                          selected)
+       800 - 1137         with a selection the order folds into a strip and
+                          opens as a panel over the graph (#313)
+       below 800          the canvas folds into a strip that opens on demand;
+                          the order is 336 again
 
        below 640          one view at a time, picked from three tabs: the
                           order, the selection's Related groups, or the
                           Sub-issues tree; the inspector is not drawn
 
-   THE RAIL IS THE SAME 50 CHARACTERS IN ALL THREE. That is the whole rule, and
-   it is the one thing to check when touching this block: measured on the demo
-   at 1440, 1280 and 1000 the rail track reads 390 at every one of them. The
-   layout before this shipped read 390 / 698 / 328 at 1440 and 312 / 632 / 312
-   at 1280 — the rail giving up 78 of its 390 to keep a three-column template
-   alive, which is the rule upside down.
+   THE ORDER IS 336 WHEREVER IT IS A ZONE. Folded, it is a strip and a panel of
+   the same 336; it never shrinks to keep a three-column template alive.
 
    WHY THESE ARE RANGE CONDITIONS AND NOT max-width/min-width PAIRS. A
-   container's inline size is NOT AN INTEGER. Written as (min-width: 1360px)
-   and (max-width: 1359px), a box measured at 1359.5 satisfies NEITHER — so the
-   base fallback comes back, the rail drops to its 40-character measure, and
+   container's inline size is NOT AN INTEGER. Written as (min-width: 1138px)
+   and (max-width: 1137px), a box measured at 1137.5 satisfies NEITHER — so the
+   base fallback comes back, and
    the one rule 17k states outright is broken at exactly the widths a resize
-   drags through. The same hole sits at 1119.5. 'width < 1360' and
-   'width >= 1360' are complements with nothing between them, which is the
+   drags through. The same hole sits at 799.5. 'width < 1138' and
+   'width >= 1138' are complements with nothing between them, which is the
    property the layouts need and the only reason the syntax changed.
 
    THE BASE STAYS THE THREE-ZONE TEMPLATE, because a surface rendered WITHOUT a
@@ -2002,7 +1994,7 @@ ${heldRailDeclarations}
    four of the five entries are LINE styles and the rail draws no lines, only
    badges, so the key belongs beside the strokes it is about. It is the cheaper
    zone to spend it in, too: one or two wrapped rows of a wide column against
-   four rows of a 390 rail the order needs.
+   four rows of a 336 rail the order needs.
 
    REACHING A VIEWER CLASS, FROM INSIDE THIS SURFACE'S OWN ROOT, FOR A STATE
    THAT PACKAGE DOES NOT MODEL — which is the exemption reevaluate/styles.ts
@@ -2092,10 +2084,10 @@ ${heldRailDeclarations}
 
 /* THE ORDER FOLDS (#313, Claude Design 7b8fcbc, RULES "The workspace").
 
-   THE BOARD'S ZONES: the order 336, the graph at least 480, the Inspector 320
-   (43 and 41 characters at the shipped --ig-char-width, sized in type so a
-   host that scales its type scales the zones). Narrower than the three with
-   their hairlines (1138), and with something selected, the order folds into
+   THE BOARD'S ZONES: the order 336, the graph at least 480, the Inspector 320,
+   fixed in px (ZONE_WIDTHS, issue 253) so a theme's character width cannot
+   move them. Narrower than the three with their hairlines (ZONES_FIT, 1138),
+   and with something selected, the order folds into
    a 40 strip so the graph keeps its room and nothing runs under the
    Inspector: 40 | minmax(0, 1fr) | 320. The strip holds one button, "Show the
    work order", which opens the order over the graph as a panel 336 wide; a
@@ -2106,13 +2098,13 @@ ${heldRailDeclarations}
    THE PANEL IS PLACED IN THE CANVAS'S GRID AREA, at its start, not positioned
    by an offset: the strip is a different area, so the panel begins at the
    strip's edge however the tracks change. */
-@container ig-workspace (width < 1138px) {
+@container ig-workspace (width < ${ZONES_FIT}px) {
   .ig-workspace {
     grid-template-areas:
       'header header'
       'rail canvas';
     grid-template-columns:
-      calc(var(--ig-char-width) * 43)
+      ${ORDER_TRACK}
       1fr;
   }
   .ig-workspace .ig-zone[data-zone='inspector'] {
@@ -2125,7 +2117,7 @@ ${heldRailDeclarations}
     grid-template-columns:
       calc(var(--ig-space-wide) * 2)
       minmax(0, 1fr)
-      calc(var(--ig-char-width) * 41);
+      ${INSPECTOR_TRACK};
   }
   .ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='inspector'] {
     display: block;
@@ -2142,7 +2134,7 @@ ${heldRailDeclarations}
     display: block;
     grid-area: canvas;
     justify-self: start;
-    inline-size: calc(var(--ig-char-width) * 43);
+    inline-size: ${ORDER_TRACK};
     z-index: 2;
     background: var(--ig-surface);
     box-shadow: var(--ig-elevation-overlay);
@@ -2165,12 +2157,12 @@ ${heldRailDeclarations}
    settles it — that is the price of single-sided conditions, paid in full and
    in one place.
 
-   THE STRIP IS 4 CHARACTERS. The canvas is the zone designed to refuse (17f),
-   so what it yields is everything except the handle that brings it back; the
-   inspector takes 1fr, which at 1000 is 550 and at 860 is 418 — both above the
-   330 the wide layout gives it, so the zone that yields in between is not
-   yielding here at all. That is the order the rule names. */
-@container ig-workspace (width < 800px) {
+   THE STRIP IS 40 WIDE. The canvas is the zone designed to refuse (17f), so
+   what it yields is everything except the handle that brings it back; the
+   inspector takes 1fr, which at 799 is about 420, above the 320 the wide layout
+   gives it, so the zone that yields in between is not yielding here at all.
+   That is the order the rule names. */
+@container ig-workspace (width < ${GRAPH_FOLDS_BELOW}px) {
   /* THE RAIL TAKES THE KEY BACK, BECAUSE THERE IS NO CANVAS TO CARRY IT. Below
      this width §17k collapses the canvas to a four-character strip, so the zone
      the rule above defers to is not on screen — and the station fills the rail
@@ -2187,7 +2179,7 @@ ${heldRailDeclarations}
       'header header header'
       'rail canvas inspector';
     grid-template-columns:
-      calc(var(--ig-char-width) * 43)
+      ${ORDER_TRACK}
       calc(var(--ig-space-wide) * 2)
       1fr;
   }
@@ -2311,7 +2303,7 @@ ${heldRailDeclarations}
       'header header'
       'rail canvas';
     grid-template-columns:
-      calc(var(--ig-char-width) * 43)
+      ${ORDER_TRACK}
       1fr;
   }
 

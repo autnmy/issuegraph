@@ -4,6 +4,13 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/editor` `0.43.0`: the workspace zones are fixed at 336 and 320 px and no longer follow `--ig-char-width` (#253; the redesign tracker #248).** Additive: `ZONE_WIDTHS`, `ZONES_FIT` and `GRAPH_FOLDS_BELOW` are exported from the workspace styles.
+  - **Fixed zones.** The order track is `336px` and the Inspector `320px` in every band, the folded panel and the fallback grid, where they were 43 and 41 times `--ig-char-width`. A theme with wider characters used to widen both and squeeze the graph between them.
+  - **Thresholds from the zones.** The wide band starts at `ZONES_FIT` (336 + 480 + 320 + the two hairlines = 1138), read from the constants rather than written twice. Below `GRAPH_FOLDS_BELOW` (800, Design's number from #313) the graph folds.
+  - The rest of #253 landed earlier: the 336 / 1fr / 320 zones and the fold below 1138 in #313 (the Inspector no longer lifts over the graph, by Design's ruling there), and the two-column wide layout with nothing selected in #330.
+  - Comments that stated the old 390 / 330 / 1360 / 1120 figures are rewritten, including the viewer's 430 crossover note.
+  - **Pinned** in the editor's styles tests.
+
 - **`@issuegraph/viewer` `0.27.0`: an order row is the priority tag, one fact and "+N", with nothing a narrow rail drops (#252; the redesign tracker #248).** No API change. Reaches the editor's rail, which draws its rows through the viewer.
   - **One fact after the tag.** A held row's not-ready mark is its one fact, so it names no relationship and counts them all ("⊘ not ready +2"); a ready row names its first relationship and counts the rest, as before. It was the mark and a relationship and "+N".
   - **The board's order**: the tag and its raise, the one fact, "+N", then evidence and the caveats as the muted words #293 made them, never counted.
