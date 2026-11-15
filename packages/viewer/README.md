@@ -71,6 +71,7 @@ Roughly half of what the design draws is not derivable from the graph. The forma
 | `now · <title> · Review · 12m` | `host.running[]` — `{ key, phase, elapsed }` | one NOW row per job above the order (linear) and above the stage (graph), from the issue's own title and identity |
 | `as of 14:32 · 2m ago` · `stale` · refresh | `host.freshness` — `{ asOf, age?, stale?, refresh? }` | the stamp verbatim, `data-stale`, and a `button[data-ig-command="refresh"]` only when a label is supplied |
 | `claimed` · `parked` in the footer | `TrackerHold.label` on a slot's hold | a chip before the hold's sentence, and the words in the footer title |
+| `Assigned` `to maya-chen` in the footer | `TrackerHold.detail` beside its `label` | muted words right after the tag, verbatim and with no separator, and in the row's accessible name (after the reason, joined by ` · `); drawn only when the hold has a `label` |
 | `matched ordered query 1 · label:P0` | `ViewerIssue.provenance` (`matched-query`) | already shipped |
 | `◐ preview-only` | `ViewerIssue.previewOnly` — `{ note }` | a badge and the host's note, one line under provenance |
 | `◆ signals disagree` | `ViewerIssue.disagreement` — `{ used, ignored: { carrier, value } }` | a badge and `ranked by … · … declares ~~value~~`, only the losing value struck |

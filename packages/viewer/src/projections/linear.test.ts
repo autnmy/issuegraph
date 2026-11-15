@@ -838,3 +838,62 @@ describe('the order rows a list draws in place of the graph (#303)', () => {
     assert.ok(edgeBadgesIn(render()).length > 0);
   });
 });
+
+describe('a tracker hold that names who it is held on (#305)', () => {
+  // Design q321 (issue-graph-states e1d0445, content.md f58baed): an issue assigned on the tracker keeps the
+  // plain tag "Assigned", followed by the assignee in muted text with no separator, as the board draws
+  // `<span class="tag plain">Assigned</span><span>to maya-chen</span>` (review-219 on PR 337).
+  const assigned = {
+    issues: [
+      { key: '2261', title: 'Assigned work', open: true, priority: 2 as const },
+      { key: '2262', title: 'Parked work', open: true, priority: 2 as const },
+      { key: '2263', title: 'Unlabelled hold', open: true, priority: 2 as const },
+    ],
+    edges: [],
+    order: {
+      slots: [
+        {
+          rank: null,
+          lead: '2261',
+          members: ['2261'],
+          ready: false,
+          holds: [{ family: 'tracker' as const, reason: 'Assigned on the tracker', label: 'Assigned', detail: 'to maya-chen' }],
+        },
+        {
+          rank: null,
+          lead: '2262',
+          members: ['2262'],
+          ready: false,
+          holds: [{ family: 'tracker' as const, reason: 'Parked by its owner', label: 'Parked' }],
+        },
+        {
+          rank: null,
+          lead: '2263',
+          members: ['2263'],
+          ready: false,
+          holds: [{ family: 'tracker' as const, reason: 'Held on the tracker', detail: 'to nobody drawn' }],
+        },
+      ],
+      excluded: [],
+    },
+    cycles: [],
+  };
+
+  it('draws the detail muted straight after the tag, with no separator, as the board does', () => {
+    assert.match(
+      row(render(assigned), '2261'),
+      /<span class="ig-badge" data-hold="Assigned">Assigned<\/span><span class="ig-hold-detail">to maya-chen<\/span>/,
+    );
+  });
+
+  it('reads the detail in the row’s accessible name, after the reason', () => {
+    assert.match(row(render(assigned), '2261'), /aria-label="[^"]* — Assigned on the tracker · to maya-chen"/);
+  });
+
+  it('draws no detail where the host sent none, or where there is no tag for it to continue', () => {
+    const markup = render(assigned);
+    assert.equal(row(markup, '2262').includes('ig-hold-detail'), false);
+    assert.equal(row(markup, '2263').includes('ig-hold-detail'), false);
+    assert.equal(row(markup, '2263').includes('to nobody drawn'), false);
+  });
+});

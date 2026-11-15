@@ -4,6 +4,11 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/viewer` `0.26.0`: a tracker hold can name who it is held on, after its tag (#305; Design q321, issue-graph-states e1d0445, content.md f58baed, RULES a38612c).** Additive: `TrackerHold.detail`.
+  - **`detail`** is host-authored and verbatim, like `reason`. The footer draws it straight after the hold's tag, with no separator, in `--ig-text-muted` at the number's size, unwrapped, as the board draws `<span class="tag plain">Assigned</span><span>to maya-chen</span>` (content.md; review-219): `label: 'Assigned'`, `detail: 'to maya-chen'`. It is drawn only beside a `label`; a blank detail draws nothing.
+  - **The row's accessible name reads it** after the hold's reason, joined by " · ", in the list's footer and the graph's (one row, `footerRow`).
+  - **Pinned** in the linear and graph footer tests and the stylesheet test (`.ig-hold-detail`).
+
 - **`@issuegraph/editor` `0.42.0`: under 640, Problems to fix opens in the flow under the head, on every tab (#334; Design 6b8a53e, relayed by build-136).** No API change; markup moves.
   - **The panel and the narrow tabs are the workspace's own children** (the root's), no longer inside the canvas and header zones. At the wide and middle widths the sheet still hangs the panel over the graph, now from the canvas's grid area. The mount's tree swap no longer has to keep and restore it.
   - **Under 640 the panel sits between the head and the Tabs**, full width, on the page's ground (no fill, no radius, no shadow, a hairline under it), on every tab, pushing the view down. Before, it was in flow on the Order tab only and over the graph on the others.

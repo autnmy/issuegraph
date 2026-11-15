@@ -504,14 +504,19 @@ export function footerRow(
     (hold): hold is Extract<ViewerHold, { family: 'tracker' }> =>
       hold.family === 'tracker' && hold.label !== undefined && hold.label !== '',
   );
+  // THE TAG'S CONTINUATION (#305): the host's words after the tag, drawn as the board draws them, a plain
+  // span with no separator (content.md: `<span class="tag plain">Assigned</span><span>to maya-chen</span>`).
+  // Only a labelled hold carries one, and a blank detail is no detail, as a blank label is no label.
+  const detail = labelled?.detail === undefined || labelled.detail.trim() === '' ? null : labelled.detail;
+  // The name reads the reason, then the tag's continuation, joined by " · " so a listener hears two phrases.
+  const spoken = [because, detail].filter((part): part is string => part !== null && part !== '').join(' · ');
   return element(
     'li',
     {
       class: 'ig-footer-row',
       'data-ig-key': slot.lead,
       'aria-current': isSelectedKey(options.selected, slot.lead) ? 'true' : 'false',
-      'aria-label':
-        because === '' ? slotLabel(document, slot) : `${slotLabel(document, slot)} — ${because}`,
+      'aria-label': spoken === '' ? slotLabel(document, slot) : `${slotLabel(document, slot)} — ${spoken}`,
       tabindex: options.focused === slot.lead ? 0 : -1,
     },
     footerEntry(
@@ -521,6 +526,7 @@ export function footerRow(
         ? null
         : element('span', { class: 'ig-badge', 'data-hold': labelled.label }, [labelled.label]),
       footerRelationships(document, slot.members, relationships),
+      detail === null ? null : element('span', { class: 'ig-hold-detail' }, [detail]),
     ),
   );
 }
@@ -545,6 +551,8 @@ function footerEntry(
   id: ElementSpec | null,
   status: ElementSpec | null,
   relationships: ElementSpec | null,
+  // The host's words after the status tag (#305), muted; null for every row with no tag to continue.
+  detail: ElementSpec | null = null,
 ): readonly ElementSpec[] {
   return [
     element('div', { class: 'ig-rank-cell' }, [station('dashed')]),
@@ -554,7 +562,7 @@ function footerEntry(
     element('div', { class: 'ig-row-body' }, [
       element('div', { class: 'ig-row-head' }, [
         element('span', { class: 'ig-title' }, [title]),
-        element('div', { class: 'ig-row-meta' }, [id, status, relationships]),
+        element('div', { class: 'ig-row-meta' }, [id, status, detail, relationships]),
       ]),
     ]),
   ];

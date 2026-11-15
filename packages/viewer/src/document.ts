@@ -119,6 +119,16 @@ export interface TrackerHold extends HoldBase {
   readonly family: 'tracker';
   /** The runner's own word for the hold — `claimed`, `parked`. Rendered as a chip before `reason`. */
   readonly label?: string | undefined;
+  /**
+   * Host-authored words that continue the tag: the footer draws them right after it in muted text at the
+   * meta line's size, and the row's accessible name reads them. The board's "Assigned to maya-chen" is
+   * `label: 'Assigned'`, `detail: 'to maya-chen'` (#305).
+   *
+   * VERBATIM AND HOST-AUTHORED, like `reason`: the viewer draws the words as given, with no separator. DRAWN
+   * ONLY BESIDE A `label`, because it reads as the tag's continuation and has nothing to follow without
+   * one. Optional, so a host that sends `{ family: 'tracker', label, reason }` still type-checks.
+   */
+  readonly detail?: string | undefined;
 }
 
 /**

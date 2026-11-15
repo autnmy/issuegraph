@@ -1127,6 +1127,17 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   font-variant-numeric: tabular-nums;
 }
 
+/* THE TAG'S CONTINUATION (#305): the host's words after a hold's tag, "Assigned" then "to maya-chen", in
+   the meta line's muted ink at the number's size, so the line reads as one run: the number, the tag,
+   then who or what it is held on. It never breaks mid-phrase: the footer's meta line wraps, so a
+   detail too long for the row moves to the line's next row whole, beside the relationship chips. */
+.ig-hold-detail {
+  color: var(--ig-text-muted);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size);
+  white-space: nowrap;
+}
+
 /* A LINK IN RUNNING TEXT IS UNDERLINED AT REST. An issue number sits inside
    its row's line, in the line's own ink, so colour alone cannot tell it
    apart, and the host's accessibility audit refuses a link in a line of text
