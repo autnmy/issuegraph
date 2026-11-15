@@ -300,7 +300,9 @@ export const WORKSPACE_WORDS: MountWords = {
     view: 'View',
     closeSheet: 'Close',
     around: 'Around',
-    noSelection: 'Select an issue to list its relationships.',
+    // Design content.md 82b78fd (#315): a picked group, and nothing related.
+    noSelection: 'Select an issue to see its relationships.',
+    nothingRelated: 'No issue has relationships yet. Select an issue to add one.',
   },
   // §17a's inspector explains the position before it lists the relationships.
   // The frame draws the heading in caps; the caps are the stylesheet's, so the

@@ -847,6 +847,7 @@ const WORKSPACE_WORDS: surface.WorkspaceWords = {
     closeSheet: 'fold the sheet down',
     around: 'centred on',
     noSelection: 'select an issue to list its links',
+    nothingRelated: 'nothing here is linked yet',
   },
   whyRank: 'why rank',
   whyHeld: 'why held',

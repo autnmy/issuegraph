@@ -4,6 +4,12 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/editor` `0.45.0`: the narrow Related list words its two empty cases apart (#315; Design content.md 82b78fd, relayed by build-136).** **Breaking for a host: `NarrowWords.nothingRelated` is a new required word.**
+  - **A picked group the canvas draws** keeps `noSelection` ("Select an issue to see its relationships."): its issues are what the reader picks from, so the line names the next step.
+  - **No issue has a relationship yet** takes `nothingRelated` ("No issue has relationships yet. Select an issue to add one."), echoing the order preview's foot.
+  - The package picks by the document: the first relationship a reader adds turns one case into the other with no remount, so the host cannot choose. Both are the same muted line in the same place.
+  - **Pinned** in the editor's render and narrow styles tests.
+
 - **`@issuegraph/viewer` `0.28.0` / `@issuegraph/editor` `0.44.0`: the rail row keeps its priority tag's pill at the board's 56, spacing on the 4 grid, the header's problems in the host's words, and a chain counted in issues (#295; review-219 against the export, the redesign lead on the chain count).** Additive: `AuditHeaderOptions.label`.
   - **The tag keeps its pill in the dense rail.** At 430 or less, or `data-density='dense'`, every chip but the priority tag drops its chrome; the board draws "tag plain" P0 on every order row in its 336 column. The dense row is the board's 8 + 20 + 20 + 8 = 56 (`--ig-row-height-dense` 56, padding 8, title and meta lines 20, no line gap), where it was 9 + 17 + 3 + 15 + 9 = 53.
   - **Spacing on the 4 grid.** `--ig-space-tight` is 4 (was 6); the meta line's gap is `--ig-space-snug`, 8, as the board's `.ig-meta`.
