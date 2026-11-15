@@ -1129,7 +1129,8 @@ ${railDensity(".ig-viewer[data-density='dense']")}
 
 /* THE TAG'S CONTINUATION (#305): the host's words after a hold's tag, "Assigned" then "to maya-chen", in
    the meta line's muted ink at the number's size, so the line reads as one run: the number, the tag,
-   then who or what it is held on. It never wraps mid-phrase; a long detail clips with the line. */
+   then who or what it is held on. It never breaks mid-phrase: the footer's meta line wraps, so a
+   detail too long for the row moves to the line's next row whole, beside the relationship chips. */
 .ig-hold-detail {
   color: var(--ig-text-muted);
   font-family: var(--ig-font-ui);
