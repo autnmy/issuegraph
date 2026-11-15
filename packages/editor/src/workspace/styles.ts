@@ -870,12 +870,6 @@ export const workspaceStylesheet = `
   color: var(--ig-text-body);
 }
 
-/* Each clause keeps a space after it so the sentence does not run together.
-   A margin rather than a literal space in the markup: the text is host-authored
-   and the package does not add characters to it. */
-.ig-why-rank-sentence > * + * {
-  margin-left: var(--ig-space-micro);
-}
 
 
 /* THE PANEL'S TWO QUIET BUTTONS SHARE ONE TREATMENT — clear and cancel. They

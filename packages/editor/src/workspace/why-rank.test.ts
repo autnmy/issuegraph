@@ -31,6 +31,12 @@ function withProvenance(document: ViewerDocument, key: string): ViewerDocument {
   };
 }
 
+/** The Position sentence as a reader hears it: its text, tags stripped. */
+function sentenceOf(markup: string): string {
+  const sentence = /<p class="ig-why-rank-sentence">([\s\S]*?)<\/p>/.exec(markup)?.[1] ?? '';
+  return sentence.replace(/<[^>]+>/g, '');
+}
+
 function inspectorMarkupFor(document: ViewerDocument, key: string): string {
   const result = renderWorkspace(document, {
     words: WORKSPACE_WORDS,
@@ -52,8 +58,10 @@ describe('the inspector states why the issue sits where it does', () => {
     const markup = inspectorMarkupFor(document, 'i0002');
 
     assert.match(markup, /class="ig-why-rank"/, 'no why-rank block at all');
-    assert.match(markup, /class="ig-why-rank-heading">why rank 2</, 'the heading names no rank');
+    // RULES (#308): the heading is "Position" alone, and the rank opens the sentence.
+    assert.match(markup, /class="ig-why-rank-heading">why rank</);
     assert.match(markup, /data-held="false"/);
+    assert.equal(sentenceOf(markup), '2 of 3. Matched ordering query 1, label:P0.');
 
     // AE3: the clause is layer 1's, byte for byte. A second wording in this
     // package would pass a "mentions the query" assertion and still drift from
@@ -106,7 +114,14 @@ describe('the inspector states why the issue sits where it does', () => {
     };
 
     const markup = inspectorMarkupFor(placed, 'i0002');
-    assert.match(markup, /class="ig-why-rank-heading">why rank 2</, 'the heading names no rank');
+    assert.match(markup, /class="ig-why-rank-heading">why rank</);
+    // RULES' sentence: the rank, the query, then the unit and what it waits on,
+    // each clause ending on its stop and one space between (#308: the clauses
+    // ran together as "...P0worked together with...").
+    assert.equal(
+      sentenceOf(markup),
+      '2 of 3. Matched ordering query 1, label:P0. Worked with i0003 as one unit, after i0001 closes.',
+    );
     assert.match(markup, /data-held="true"/, 'a held slot was drawn as unheld');
     assert.match(markup, /class="ig-inspector-holds"/, 'the hold went missing with the em dash');
   });
@@ -140,7 +155,8 @@ describe('the inspector states why the issue sits where it does', () => {
       false,
       'a ready slot was told it is held, with no hold to show for it',
     );
-    assert.match(markup, /class="ig-why-rank-heading">why rank —</);
+    assert.match(markup, /class="ig-why-rank-heading">why rank</);
+    assert.equal(sentenceOf(markup), 'Matched ordering query 1, label:P0.', 'a slot placed nowhere was given a rank');
     assert.equal(
       /class="ig-inspector-holds"/.test(markup),
       false,
@@ -170,15 +186,25 @@ describe('the inspector states why the issue sits where it does', () => {
    * members are the only place that fact can come from.
    */
   it('names the rest of a together unit, and never the subject itself', () => {
-    const markup = inspectorMarkupFor(HELD_IN_A_UNIT, 'i0002');
-    const unit = /class="ig-why-rank-unit">([\s\S]*?)<\/span><\/p>/.exec(markup)?.[1] ?? '';
-    assert.ok(unit.includes('i0003'), 'the unit partner is not named');
-    assert.equal(unit.includes('i0002'), false, 'the subject was named as its own partner');
+    const sentence = sentenceOf(inspectorMarkupFor(HELD_IN_A_UNIT, 'i0002'));
+    assert.ok(sentence.includes('Worked with i0003 as one unit'), 'the unit partner is not named');
+    assert.equal(sentence.includes('i0002'), false, 'the subject was named as its own partner');
   });
 
   it('draws no unit clause for an ordinary slot', () => {
     const markup = inspectorMarkupFor(backlogOf(3), 'i0002');
-    assert.equal(/class="ig-why-rank-unit"/.test(markup), false);
+    assert.equal(sentenceOf(markup).includes('as one unit'), false);
+  });
+
+  it('#308 ends on the open issues it waits on, counted past one', () => {
+    const blocked = withProvenance(
+      backlogOf(4, { edges: [['blocked-by', 'i0004', 'i0001'], ['blocked-by', 'i0004', 'i0002']] }),
+      'i0004',
+    );
+    assert.equal(
+      sentenceOf(inspectorMarkupFor(blocked, 'i0004')),
+      '4 of 4. Matched ordering query 1, label:P0. After the 2 issues that block it close.',
+    );
   });
 
   /**
