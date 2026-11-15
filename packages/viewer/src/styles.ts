@@ -277,11 +277,8 @@ ${scope} .ig-now-row .ig-title {
   white-space: nowrap;
 }
 
-${scope} .ig-now-row .ig-id {
+${scope} .ig-now-meta {
   line-height: var(--ig-row-meta-line);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* HIDDEN HERE, AND NOT YET EXPANDABLE — WHICH IS HALF OF WHAT 17j ASKS FOR.
@@ -823,6 +820,29 @@ export const viewerStylesheet = `
   grid-template-columns: auto 1fr auto;
   align-items: center;
   padding: var(--ig-space) var(--ig-space-wide);
+}
+
+/* THE KEY GIVES WAY, THE CLOCK DOES NOT (issue 219): the line is a row of two,
+   the key shrinking to an ellipsis and the phase and elapsed time kept whole,
+   their leading separator space preserved. */
+.ig-now-meta {
+  display: flex;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.ig-now-meta > .ig-id {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ig-now-clock {
+  color: var(--ig-text-muted);
+  flex: none;
+  font-size: var(--ig-font-size);
+  font-variant-numeric: tabular-nums;
+  white-space: pre;
 }
 
 .ig-now-mark {

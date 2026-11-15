@@ -252,7 +252,7 @@ describe('the refresh control reaches the host', () => {
       // the row's own metadata line, beside the identity, which is where §16a
       // draws it.
       const elapsed = (): string | null | undefined =>
-        win.document.querySelector('#workspace .ig-now-row .ig-row-head .ig-id')?.textContent;
+        win.document.querySelector('#workspace .ig-now-row .ig-row-head .ig-now-meta')?.textContent;
       // THE STAMP THE WORKSPACE DRAWS IS THE READ'S, not the mount's: the store
       // notifies its subscribers before `hydrate()` resolves, so without the
       // mount's own redraw the drawn stamp was one read behind.

@@ -113,7 +113,9 @@ describe('the host-facts port', () => {
     // the band — which is what shipped — the row being worked read as LESS
     // structured than the queued rows under it.
     assert.match(markup, /<span class="ig-now-mark" aria-hidden="true">now<\/span><div class="ig-row-head"><span class="ig-title">Tidy the changelog<\/span>/);
-    assert.match(markup, /· Review · 12m<\/span><\/div>/);
+    // THE KEY GIVES WAY, THE CLOCK DOES NOT (#219): the identity and the phase
+    // and elapsed time are two spans, so a long key cannot cut the clock.
+    assert.match(markup, /<span class="ig-now-meta"><span class="ig-id">[^]*?<\/span><span class="ig-now-clock"> · Review · 12m<\/span><\/span><\/div>/);
     assert.match(markup, /<span class="ig-now-phase"><span class="ig-now-pulse" aria-hidden="true"><\/span>working<\/span>/);
     // ONE ELEMENT PER KEY CARRIES THE FOCUS ATTRIBUTE. 110 also holds no slot
     // here, but a running issue that did would otherwise be indexed twice.

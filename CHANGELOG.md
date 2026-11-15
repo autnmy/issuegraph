@@ -4,6 +4,12 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/viewer` `0.29.0`: the NOW row keeps its clock, and the tier sentence names no queries a host does not have (#219).** **Additive: `RankProvenance`'s `declared-tier` arm gains an optional `queried`.** Markup changes on the NOW row's meta line.
+  - **The key gives way, the clock does not.** The NOW row printed the key and ` · phase · elapsed` in one span that shrank from the end, so a long key cut the phase and the elapsed time first. The meta line is now `.ig-now-meta`, the identity (`.ig-id`, which ellipsizes) and `.ig-now-clock` (kept whole, in the identity's muted type).
+  - **Two tier sentences, one per case (the redesign lead's call).** The board's "No query matched, so it goes by its priority, P0." stays where the board drew it, ordering queries that matched nothing. A host with no ordering queries configured passes `queried: false` and its reader sees "Ranked by its priority, P0.", which claims no queries. Left out, `queried` keeps the board's sentence.
+  - Items 2 and 3 of the issue (the doubled "claimed" label and the fixed workspace widths) were already fixed on main by #296 and the workspace's container bands.
+  - **Pinned** in the viewer's parts and host tests and the demo's host test.
+
 - **`@issuegraph/editor` `0.47.1`: no two controls on one surface share an accessible name (#176).** **No API change; the remove control's and the refusal Discard's `aria-label` change**, so a host matching on either reads the new names.
   - A screen reader's button list shows names with nothing around them, so every relationship row's `✕` read as the same entry. The remove control's name is now the host's `WorkspaceWords.remove`, then the row's own description ("unlink this row is blocked by #1"), appended in the renderer so the host's word stays row-independent. The refusal Discard (from 0.47.0) is named the same way, or by its reason where no relationship is drawn.
   - **Pinned by a rule, not a list.** The accessibility baseline's test computes every control's accessible name on every recorded surface (`sharedNames` in `a11y/baseline.ts`) and fails on any name two controls share. One action drawn for two layouts (a write's card in the Inspector and the log, the narrow tabs and the middle switch) counts once. The `disclosure-shut` surface now draws two declared relationships and two refusals on the selected issue, so the rule sees the repeats; the baseline is regenerated for that surface only.
