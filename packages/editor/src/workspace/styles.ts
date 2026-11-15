@@ -1009,15 +1009,54 @@ export const workspaceStylesheet = `
    drop to a second line rather than overflow; '.ig-relationship-select' below
    wraps so the reference pair does the same inside it. Wrapping one without the
    other leaves the other overflowing. */
+/* THE BOARD'S UNBOXED TWO-LINE ROW (RULES, Relationships; '.ig-rel', #308):
+   the phrase and number, then the other issue's title in text-muted, with the
+   row's controls on the right across both lines. No box: hover takes the
+   secondary fill and the selected row the strong fill. */
 .ig-relationship {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ig-space-tight);
-  align-items: baseline;
-  padding: var(--ig-space-tight);
-  border: var(--ig-stroke) solid var(--ig-line);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  column-gap: var(--ig-space-snug);
+  align-items: center;
+  padding: var(--ig-space-snug);
   border-radius: var(--ig-radius);
-  background: var(--ig-surface);
+}
+
+.ig-relationship:hover {
+  background: var(--ig-surface-2);
+}
+
+.ig-relationship[data-ig-selected='true'] {
+  background: var(--ig-fill-strong);
+}
+
+.ig-relationship > .ig-relationship-select,
+.ig-relationship > .ig-relationship-name {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+/* The second line starts under the phrase, past the glyph's column. */
+.ig-relationship-other {
+  grid-column: 1;
+  grid-row: 2;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-inline-start: calc(var(--ig-space-loose) + var(--ig-space-snug));
+  color: var(--ig-text-muted);
+}
+
+.ig-relationship > .ig-relationship-remove,
+.ig-relationship > .ig-relationship-state {
+  grid-column: 2;
+  grid-row: 1 / 3;
+}
+
+.ig-relationship > .ig-relationship-flip {
+  grid-column: 3;
+  grid-row: 1 / 3;
 }
 
 /* HUE BY FIELD, ONCE, FOR EVERY ELEMENT THAT CARRIES 'data-edge'. From the
@@ -1106,24 +1145,28 @@ export const workspaceStylesheet = `
    the same rule the why-rank sentence's clauses are spaced by. */
 .ig-relationship-kind {
   display: inline-flex;
-  gap: var(--ig-space-micro);
+  gap: var(--ig-space-snug);
   align-items: baseline;
-  color: var(--ig-text-body);
+  color: var(--ig-text);
 }
 
-.ig-relationship-ref {
-  font-family: var(--ig-font-mono);
+/* THE GLYPH'S COLUMN, 16 wide in text-muted, as the board's icon column. */
+.ig-relationship-kind > .ig-glyph {
+  inline-size: var(--ig-space-loose);
+  text-align: center;
   color: var(--ig-text-muted);
 }
 
-/* THE RIGHT-HAND SLOT, WHOSE THREE OCCUPANTS ARE EXCLUSIVE. Two of them are
-   statements and one is a control, and they are drawn as such: the state and
-   the inbound marker are quiet label text, the remove is a button.
-   '.ig-relationship-flip' below is NOT one of the three: it sits beside the
-   slot on the selected row, because it is neither a statement about the row nor
-   a destructive act on it. */
-.ig-relationship-state,
-.ig-relationship-inbound {
+/* The number reads with its phrase, in the phrase's ink and tabular digits. */
+.ig-relationship-ref {
+  color: var(--ig-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* THE RIGHT-HAND SLOT: the remove, or on the selected row the spoken state.
+   An inbound row has neither; its second line says it is set on the other
+   issue (#308). '.ig-relationship-flip' below sits beside the slot. */
+.ig-relationship-state {
   align-self: center;
   color: var(--ig-text-muted);
   font-size: var(--ig-font-size-small);
@@ -1226,8 +1269,7 @@ export const workspaceStylesheet = `
    the block above, and a shorthand here would overwrite it and take the row's
    one colour channel away on exactly the rows carrying the most information. */
 .ig-relationship[data-ig-code] {
-  flex-wrap: wrap;
-  border-style: dotted;
+  border: var(--ig-stroke) dotted var(--ig-line);
 }
 
 /* THE KIND STEP'S OWN BOX — the heading, the numbered list and the cancel that

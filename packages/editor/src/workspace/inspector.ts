@@ -81,6 +81,13 @@ export interface InspectorRelationship {
    * "my end" to be relative to.
    */
   readonly direction: 'outgoing' | 'incoming' | null;
+  /**
+   * Each end's title, as the document gives it: the Inspector row's second
+   * line names the other issue by its title (RULES: "the phrase and number,
+   * then the other issue's title in `text-muted`", #308). `null` for a key the
+   * document lists no issue for.
+   */
+  readonly titles: { readonly from: string | null; readonly to: string | null };
 }
 
 /** What the inspector knows about the selected issue's position. */
@@ -213,11 +220,13 @@ function relationshipsOf(
   document: ViewerDocument,
   subject: string | null,
 ): readonly InspectorRelationship[] {
+  const title = new Map(document.issues.map((issue) => [issue.key, issue.title]));
   return document.edges.map((edge) => ({
     edgeId: edgeIdentity(edge.field, edge.from, edge.to),
     field: edge.field,
     from: edge.from,
     to: edge.to,
+    titles: { from: title.get(edge.from) ?? null, to: title.get(edge.to) ?? null },
     direction:
       subject === null ||
       isSymmetricEdgeField(edge.field) ||

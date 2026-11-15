@@ -930,13 +930,15 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     // zone, and the control §17b calls the guard against the most common
     // encoding mistake becomes unreachable.
     //
-    // BOTH CONTAINERS, because wrapping one leaves the other overflowing: the
-    // row wraps its trailing controls, the statement wraps its reference pair.
-    for (const selector of ['\\.ig-relationship', '\\.ig-relationship-select,\\s*\\.ig-relationship-name']) {
-      const rule = css.match(new RegExp(`${selector}\\s*\\{([^}]*)\\}`))?.[1];
-      assert.ok(rule !== undefined, `no rule for ${selector}`);
-      assert.match(rule, /flex-wrap:\s*wrap/, selector);
-    }
+    // THE ROW IS THE BOARD'S GRID NOW (#308): the statement's column shrinks
+    // to nothing before the controls' columns give way, so the controls stay in
+    // the zone, and the statement wraps its reference pair inside its column.
+    const row = css.match(/\.ig-relationship\s*\{([^}]*)\}/)?.[1];
+    assert.ok(row !== undefined, 'no rule for the row');
+    assert.match(row, /grid-template-columns:\s*minmax\(0, 1fr\) auto auto;/);
+    const statement = css.match(/\.ig-relationship-select,\s*\.ig-relationship-name\s*\{([^}]*)\}/)?.[1];
+    assert.ok(statement !== undefined, 'no rule for the statement');
+    assert.match(statement, /flex-wrap:\s*wrap/);
   });
 
   it('pushes the row\u2019s trailing controls out by the statement, not by a margin', () => {
