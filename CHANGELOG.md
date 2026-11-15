@@ -4,6 +4,11 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/editor` `0.37.0` / `@issuegraph/viewer` `0.24.0`: a log row whose relationship the graph isn't drawing ends with "Show #2239" (#308, part D2b; Design a78fb15, RULES 3e1741b).** **Breaking for a host: `LogWords.show` is a new required word.** Additive: a pending `WorkspaceLogEntry` may carry `carrier` and `edgeId`, which `writeLog` fills; the colour tokens `--ig-link` and `--ig-link-hover` (a text control's ink, default the accent; a host maps them to its action colour).
+  - **Show #n.** A saving or not-saved row whose line the graph is not drawing ends with a button styled as a link (`.ig-log-show`: no box, no padding, the accent ink, underlined) worded with the host's `show` and the carrying issue's number, in `--ig-link` with no underline at rest and a 1 underline on hover. It sends `reveal-issue` for that issue, so the graph redraws around it with the line and its mark, and the Inspector shows it. A row whose line the canvas draws gets none. Only the graph draws lines: past 60, where the list stands in for it, and with nothing selected, where it draws the groups, every row offers Show. A write's mark attaches only to a drawn line, so a marked line counts as drawn.
+  - The row's own words are unchanged here; RULES' row words are issuegraph#304.
+  - **Pinned** in the editor's render and log tests.
+
 - **`@issuegraph/viewer` `0.23.3` / `@issuegraph/editor` `0.36.1`: selecting a unit keeps its partners' lines (#308, part D2a; build-136's ruling).** **No API change.**
   - **The canvas and legend read the whole unit when the unit is selected.** Selecting a together-with unit (its lead, the card) makes the editor's canvas and its legend counts and switches read every member's relationships, each once (a partner's blocker draws into the unit's card). Selecting one member reads that member's own relationships, the same rule as the viewer's recede (review-41 and review-219, PR 326). The Inspector still lists the selected issue's own relationships.
   - **The viewer keeps the whole card for the unit.** Selecting a unit's lead (the card the order and the canvas draw) no longer recedes a partner's lines or its neighbours. Selecting one member still reads that member alone, as before.

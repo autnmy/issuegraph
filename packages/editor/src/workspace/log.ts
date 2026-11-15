@@ -55,7 +55,17 @@ export function writeLog(
 function entryFor(record: WriteRecord, context: WriteLogContext): readonly WorkspaceLogEntry[] {
   switch (record.state) {
     case 'pending':
-      return [{ kind: 'pending', mutationId: record.mutationId, write: loggedWrite(record.mutation, context.landed) }];
+      return [
+        {
+          kind: 'pending',
+          mutationId: record.mutationId,
+          // Which issue states it and which line it marks, so the log can offer
+          // "Show #n" when the graph is not drawing that line (#308).
+          carrier: context.carriers.get(record.mutationId) ?? null,
+          edgeId: context.markedBy.get(record.mutationId) ?? null,
+          write: loggedWrite(record.mutation, context.landed),
+        },
+      ];
     case 'invalid':
       return [];
     case 'failed':

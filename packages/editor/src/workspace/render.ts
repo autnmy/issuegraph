@@ -704,6 +704,12 @@ export interface LogWords {
   readonly label: string;
   /** Leads an entry whose write has not settled yet. */
   readonly saving: string;
+  /**
+   * The word of a log row's "Show #2239", which selects the issue carrying a
+   * write whose line the graph is not drawing (#308; the package appends the
+   * number).
+   */
+  readonly show: string;
   /** One word per operation a write can carry. */
   readonly ops: Readonly<Record<Proposal['op'], string>>;
   /** Sits between a retyped edge and the kind it is changed to. */
@@ -845,6 +851,10 @@ export type WorkspaceLogEntry =
   | {
       readonly kind: 'pending';
       readonly mutationId: MutationId;
+      /** The issue whose panel states the write: what the log's "Show #n" selects. */
+      readonly carrier?: string | null;
+      /** The line the projection marks for it: whether the graph draws it. */
+      readonly edgeId?: EdgeId | null;
       readonly write: WorkspaceLoggedWrite;
     }
   | WorkspaceRecovery;
@@ -2982,11 +2992,36 @@ function loggedWriteSpecs(write: WorkspaceLoggedWrite, words: LogWords): readonl
   ];
 }
 
+/**
+ * "Show #2239" on a log row whose line the graph is not drawing (Design, #308):
+ * it selects the issue that carries the write, so the graph redraws around it
+ * with the line and its mark. `drawn` is every line the canvas draws; a row
+ * whose line is among them gets nothing.
+ */
+function showSpec(
+  carrier: string | null,
+  edgeId: EdgeId | null,
+  drawn: ReadonlySet<string>,
+  words: LogWords,
+): ElementSpec | null {
+  if (carrier === null || edgeId === null || drawn.has(edgeId)) return null;
+  return element(
+    'button',
+    { type: 'button', class: 'ig-log-show', 'data-ig-command': 'reveal-issue', 'data-ig-target': carrier },
+    [`${words.show} ${issueNumber(carrier)}`],
+  );
+}
+
 /** A write still saving: the saving word, then what the write does. */
-function savingEntrySpec(mutationId: MutationId, write: WorkspaceLoggedWrite, words: LogWords): ElementSpec {
-  return element('li', { class: 'ig-log-entry', 'data-ig-state': 'pending', 'data-mutation': mutationId }, [
+function savingEntrySpec(
+  entry: Extract<WorkspaceLogEntry, { readonly kind: 'pending' }>,
+  drawn: ReadonlySet<string>,
+  words: LogWords,
+): ElementSpec {
+  return element('li', { class: 'ig-log-entry', 'data-ig-state': 'pending', 'data-mutation': entry.mutationId }, [
     element('span', {}, [words.saving]),
-    ...loggedWriteSpecs(write, words),
+    ...loggedWriteSpecs(entry.write, words),
+    showSpec(entry.carrier ?? null, entry.edgeId ?? null, drawn, words),
   ]);
 }
 
@@ -3004,6 +3039,7 @@ function recoveryEntrySpec(
   words: WorkspaceWords,
   diffOpen: MutationId | null,
   scope: PanelScope,
+  drawn: ReadonlySet<string>,
 ): ElementSpec {
   return element('li', {
     class: 'ig-log-recovery',
@@ -3019,7 +3055,10 @@ function recoveryEntrySpec(
     // it is never marked.
     'data-ig-inspected': statedHere(scope, recovery) ? 'true' : null,
   }, [
-    element('div', { class: 'ig-log-write' }, loggedWriteSpecs(recovery.write, words.log)),
+    element('div', { class: 'ig-log-write' }, [
+      ...loggedWriteSpecs(recovery.write, words.log),
+      showSpec(recovery.carrier, recovery.edgeId, drawn, words.log),
+    ]),
     element('ul', { class: 'ig-recovery-list' }, [recoveryCard(recovery, words.recovery, diffOpen, 'log', null)]),
   ]);
 }
@@ -3046,6 +3085,7 @@ function logSpec(
   words: WorkspaceWords,
   diffOpen: MutationId | null,
   scope: PanelScope,
+  drawn: ReadonlySet<string>,
 ): ElementSpec {
   return element('div', { class: 'ig-workspace-log' }, [
     changeLine,
@@ -3056,8 +3096,8 @@ function logSpec(
           { class: 'ig-recovery-list', 'aria-label': words.log.label },
           log.map((entry) =>
             entry.kind === 'pending'
-              ? savingEntrySpec(entry.mutationId, entry.write, words.log)
-              : recoveryEntrySpec(entry, words, diffOpen, scope),
+              ? savingEntrySpec(entry, drawn, words.log)
+              : recoveryEntrySpec(entry, words, diffOpen, scope, drawn),
           ),
         ),
   ]);
@@ -3891,6 +3931,7 @@ export function renderWorkspace(
   const isolatedListId =
     options.surfaceId === undefined ? undefined : `ig-isolated-list-${options.surfaceId}`;
 
+  const drawing = canvasDrawing(document, selection, options.switchedKinds ?? [], options.words);
   const canvas = renderScaleLadder(document, {
     state: options.scale ?? INITIAL_SCALE_STATE,
     theme,
@@ -3926,8 +3967,18 @@ export function renderWorkspace(
     projected: options.projected,
     // ONLY THE SELECTION'S OWN RELATIONSHIPS, through the kinds switched on
     // (RULES, Graphs, Dense neighbourhoods). See `canvasDrawing`.
-    ...canvasDrawing(document, selection, options.switchedKinds ?? [], options.words),
+    ...drawing,
   });
+  // THE LINES THE CANVAS ACTUALLY DRAWS, for the log's "Show #n" (#308). Only
+  // the direct tier draws a graph: past 60 the list stands in for it and draws
+  // no line, though the ladder's document still holds them, so no line counts
+  // as drawn there (review-41, PR 327). A write's mark attaches only to a line
+  // in that same document (`overlaysFor`), so a marked line is among these.
+  const drawnLines: ReadonlySet<string> = new Set(
+    canvas.ladder.tier === 'direct'
+      ? canvas.ladder.canvas.edges.map((edge) => edgeIdentity(edge.field, edge.from, edge.to))
+      : [],
+  );
 
   const inspector = inspectorView(document, selection);
   const relatedView = relatedListView(document, selection);
@@ -4175,6 +4226,7 @@ export function renderWorkspace(
             // THE INSPECTOR'S OWN SCOPE, so the log marks exactly the writes
             // the Inspector draws.
             panelScope(inspector),
+            drawnLines,
           ),
         ),
         // THE TABS ARE THE HEADER'S LAST CHILD, because the header is the one

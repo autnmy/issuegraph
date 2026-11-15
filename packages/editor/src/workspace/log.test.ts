@@ -144,6 +144,9 @@ test('writeLog lists pending, failed and conflicted writes in ledger order and s
   assert.deepEqual(pending, {
     kind: 'pending',
     mutationId: 'm-pending',
+    // No carrier or mark recorded for it in this context (#308's "Show #n" reads both).
+    carrier: null,
+    edgeId: null,
     write: { op: 'create', edge: makeEdge('duplicate-of', '3', '2') },
   });
 });

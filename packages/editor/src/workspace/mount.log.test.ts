@@ -631,7 +631,9 @@ describe('the log under the head, mounted', () => {
       assert.equal(card.querySelector('.ig-recovery-reason')?.textContent, forged, 'the reason was not drawn as its own text');
       assert.equal(header.querySelector('img'), null, 'the reason opened an element in the log');
 
-      const targets = [...header.querySelectorAll('[data-ig-target]')].map((node) => node.getAttribute('data-ig-target'));
+      // "Show #n" names the ISSUE that carries the write, not a write (#308), so
+      // it is left out of the write controls checked here.
+      const targets = [...header.querySelectorAll('[data-ig-target]:not(.ig-log-show)')].map((node) => node.getAttribute('data-ig-target'));
       assert.ok(targets.length > 0, 'the log card names no write on its controls');
       assert.deepEqual(new Set(targets), new Set([write.mutationId]), 'a control in the log names a write the store never made');
     } finally {

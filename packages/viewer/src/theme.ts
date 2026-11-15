@@ -34,6 +34,10 @@ export const COLOR_TOKENS = Object.freeze([
   '--ig-text-body',
   '--ig-text-muted',
   '--ig-accent',
+  // A TEXT CONTROL'S INK, at rest and hovered (Design on PR 327, #308): its own
+  // role, apart from the accent, so a host maps it to its action colour.
+  '--ig-link',
+  '--ig-link-hover',
   '--ig-focus',
   '--ig-station-ready',
   '--ig-station-pending',
@@ -311,6 +315,8 @@ export const defaultTheme: Theme = Object.freeze({
     '--ig-text-body': '#AEB9C0',
     '--ig-text-muted': '#75848E',
     '--ig-accent': '#17BCEE',
+    '--ig-link': '#17BCEE',
+    '--ig-link-hover': '#17BCEE',
     '--ig-focus': '#17BCEE',
     '--ig-station-ready': '#17BCEE',
     '--ig-station-pending': '#AEB9C0',

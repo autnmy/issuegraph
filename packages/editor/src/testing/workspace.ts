@@ -38,6 +38,7 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
   log: {
     label: 'writes not yet settled',
     saving: 'still being written',
+    show: 'show',
     ops: {
       create: 'putting in place',
       delete: 'taking out',

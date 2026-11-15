@@ -1011,6 +1011,31 @@ export const workspaceStylesheet = `
    drop to a second line rather than overflow; '.ig-relationship-select' below
    wraps so the reference pair does the same inside it. Wrapping one without the
    other leaves the other overflowing. */
+/* "SHOW #2239" IS A BUTTON STYLED AS A LINK (Design's 'button.link', #308): no
+   box, no padding, the accent ink, underlined, at the row's own size. */
+.ig-log-show {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--ig-link);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+/* The board's '.link': no underline at rest; hovered, a 1 underline 3 below. */
+.ig-log-show:hover {
+  color: var(--ig-link-hover);
+  text-decoration: underline;
+  text-decoration-thickness: var(--ig-hairline-width);
+  text-underline-offset: calc(var(--ig-space-micro) * 1.5);
+}
+
+.ig-log-show:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-micro);
+}
+
 /* THE BOARD'S UNBOXED TWO-LINE ROW (RULES, Relationships; '.ig-rel', #308):
    the phrase and number, then the other issue's title in text-muted, with the
    row's controls on the right across both lines. No box: hover takes the

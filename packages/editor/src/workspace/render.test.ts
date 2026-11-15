@@ -5,6 +5,7 @@ import { buildModel } from '@issuegraph/reader';
 import { EDGE_FIELDS, type EdgeField, edgeIdentity, isSymmetricEdgeField } from '@issuegraph/core';
 import { KEY_ATTRIBUTE, type ViewerHold, labelFrom, treatmentFor } from '@issuegraph/viewer';
 import { normalizeDocument, recedingOf } from '@issuegraph/viewer';
+import { makeEdge } from '@issuegraph/store';
 
 import { RELATE_KEY, keyIntent } from '../create/keys.ts';
 import { AUDIT_SEVERITY_ATTRIBUTE } from '../audit/surface.ts';
@@ -12,7 +13,7 @@ import { treatmentForState } from '../overlay/grammar.ts';
 import type { AuditGraph, AuditInput } from '../audit/findings.ts';
 import { type WorkspaceRecovery, ZONES, renderWorkspace } from './render.ts';
 import type { ViewerDocument } from '@issuegraph/viewer';
-import { selectionReducer } from './selection.ts';
+import { type WorkspaceSelection, selectionReducer } from './selection.ts';
 import type { WorkspaceWords } from '../index.ts';
 import type { WorkspaceLogEntry } from '../index.ts';
 import { WORKSPACE_WORDS, backlogOf, drawnKeys, zonesIn } from '../testing/workspace.ts';
@@ -3594,3 +3595,54 @@ describe('an issue a query placed (#303)', () => {
     assert.match(prioritized, /<span class="ig-badge" data-priority="tier">P0<\/span>/);
   });
 });
+
+describe('the log offers "Show #n" for a write the graph is not drawing (#308, Design a78fb15)', () => {
+  // i0001 is blocked by i0002; i0003 serializes with i0004, outside i0001's neighbourhood.
+  const document = backlogOf(4, { edges: [['blocked-by', 'i0001', 'i0002'], ['serialize-with', 'i0003', 'i0004']] });
+  const entry = (edgeId: string, carrier: string): WorkspaceLogEntry => ({
+    kind: 'pending',
+    mutationId: `m-${carrier}`,
+    carrier,
+    edgeId,
+    write: { op: 'create', edge: makeEdge('serialize-with', carrier, 'i0004') },
+  });
+  const header = (selection: WorkspaceSelection, log: readonly WorkspaceLogEntry[]): string =>
+    renderWorkspace(document, { ...WORDS, selection, log }).markup;
+
+  it('selects the carrying issue from a row whose line the graph does not draw', () => {
+    const away = header({ kind: 'issue', key: 'i0001' }, [entry('serialize-with|i0003|i0004', 'i0003')]);
+    assert.match(away, /<button type="button" class="ig-log-show" data-ig-command="reveal-issue" data-ig-target="i0003">show i0003<\/button>/);
+  });
+
+  it('offers Show on every row past 60, where the list stands in for the graph and draws no line (review-41, PR 327)', () => {
+    // i0001 with 61 neighbours: the listed tier.
+    const big = backlogOf(62, { edges: relatedHubEdges(61) });
+    const [first] = big.edges;
+    assert.ok(first !== undefined);
+    const markup = renderWorkspace(big, {
+      ...WORDS,
+      selection: { kind: 'issue', key: 'i0001' },
+      log: [
+        {
+          kind: 'pending',
+          mutationId: 'm-near',
+          carrier: 'i0001',
+          edgeId: edgeIdentity(first.field, first.from, first.to),
+          write: { op: 'delete', edge: edgeIdentity(first.field, first.from, first.to) },
+        },
+      ],
+    }).markup;
+    assert.match(markup, /class="ig-log-show"[^>]*data-ig-target="i0001"/);
+  });
+
+  it('offers nothing on a row the graph already draws', () => {
+    const drawn = header({ kind: 'issue', key: 'i0001' }, [entry('blocked-by|i0001|i0002', 'i0001')]);
+    assert.doesNotMatch(drawn, /ig-log-show/);
+  });
+
+  it('offers Show with nothing selected, where the graph draws the groups and no line', () => {
+    const groups = header({ kind: 'none' }, [entry('serialize-with|i0003|i0004', 'i0003')]);
+    assert.match(groups, /class="ig-log-show"[^>]*data-ig-target="i0003"/);
+  });
+});
+
