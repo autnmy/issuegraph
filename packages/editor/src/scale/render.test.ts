@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import { edgeIdentity } from '@issuegraph/core';
 import type { EdgeState } from '@issuegraph/store';
-import { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET } from '@issuegraph/viewer';
+import { CLUSTER_ONLY_BUDGET, GRAPH_NODE_BUDGET, clusterReachLabel, issueNumber } from '@issuegraph/viewer';
 
 import { componentKey, componentsSumming, documentOf } from '../testing/documents.ts';
 import { INITIAL_SCALE_STATE } from './commands.ts';
@@ -162,18 +162,21 @@ describe('the refusal, as a reader sees it', () => {
     const result = renderScaleLadder(relatedDocument(GRAPH_NODE_BUDGET + 1));
     const capsule = result.ladder.capsules[0];
     assert.ok(capsule !== undefined);
-    assert.match(
-      result.markup,
-      new RegExp(
-        `aria-label="Draw the group around ${capsule.lead}, ${capsule.name}: ${String(capsule.size)} issues, ` +
-          `${String(capsule.blockedByEdges)} blocking, longest chain ${String(capsule.chainDepth)}"`,
+    // OPENS WITH THE CARD'S OWN TEXT, IN ITS ORDER (#322): WCAG 2.5.3 asks
+    // that the visible text sit inside the name, so it comes first, and what
+    // only the name carries (the blocking count, the action) comes after.
+    assert.ok(
+      result.markup.includes(
+        `aria-label="${String(capsule.size)} issues, Around ${issueNumber(capsule.lead)} \u00b7 ${capsule.name}, ` +
+          `${clusterReachLabel(capsule.reach)}, ${String(capsule.blockedByEdges)} blocking. Draw this group."`,
       ),
+      'the capsule name does not open with the card text',
     );
     // DISTINCT BY CONSTRUCTION, not by this fixture's titles happening to
     // differ. `name` is the lead's TITLE, which two components can share; the
     // lead KEY cannot be, because components partition the document's keys — so
     // every name carries one.
-    const labels = [...result.markup.matchAll(/aria-label="(Draw the group [^"]+)"/g)].map((m) => m[1]);
+    const labels = [...result.markup.matchAll(/aria-label="(\d+ issues?, [^"]+ Draw this group\.)"/g)].map((m) => m[1]);
     assert.ok(labels.length > 1);
     assert.equal(new Set(labels).size, labels.length);
     for (const each of result.ladder.capsules) {
@@ -183,7 +186,7 @@ describe('the refusal, as a reader sees it', () => {
       // asserted is still "every accessible name carries its lead key", which
       // is what makes two components with the same title tell apart.
       assert.ok(
-        labels.some((label) => label?.includes(`around ${each.lead},`)),
+        labels.some((label) => label?.includes(`Around ${issueNumber(each.lead)} \u00b7 `)),
         `no accessible name carries the lead ${each.lead}`,
       );
     }

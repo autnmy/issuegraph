@@ -212,7 +212,7 @@ describe('the group card draws the export’s four parts (#296 design read)', ()
     const markup = renderScaleLadder(documentOf({ components: [40, 30] })).markup;
     assert.equal(markup.includes('ig-capsule-load'), false, 'a card still draws its blocked count');
     assert.equal(/⊘/.test(markup), false);
-    assert.match(markup, /aria-label="Draw the group around [^"]*, \d+ blocking, /);
+    assert.match(markup, /aria-label="[^"]*, \d+ blocking\. Draw this group\."/);
     assert.equal(/\.ig-capsule-load\b/.test(scaleLadderStylesheet.replace(/\/\*[\s\S]*?\*\//g, '')), false, 'the blocked count keeps a rule');
   });
 });
