@@ -196,17 +196,6 @@ export interface MountWorkspaceOptions {
   /** The order head's "2 at a time" (#330), named here for the reason `issueUrl` states. See {@link WorkspaceOptions.runCap}. */
   readonly runCap?: WorkspaceOptions['runCap'];
   /**
-   * §17j's density escape hatch for the rail. See
-   * {@link WorkspaceOptions.railDensity}, and `ViewerOptions.density` under it
-   * for the rule and the default.
-   *
-   * NAMED HERE FOR THE REASON `issueUrl` ABOVE STATES: this interface does not
-   * extend `WorkspaceOptions`, and the render options are built field by field,
-   * so an option added one file over reaches nothing mounted until it is named
-   * here too.
-   */
-  readonly railDensity?: WorkspaceOptions['railDensity'];
-  /**
    * Called once per change of the selection, with the whole selection: on a
    * click or key press that changes it, and on a reconciliation that drops a
    * selected member, and on a resize that narrows the root element under 640
@@ -1646,7 +1635,6 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       auditOpen: state.auditOpen,
       issueUrl: current.issueUrl,
       runCap: current.runCap,
-      railDensity: current.railDensity,
       theme: resolved,
       themeSelector: current.themeSelector,
       // THE WRITE STATES ONLY. The workspace holds the one selection, and the
