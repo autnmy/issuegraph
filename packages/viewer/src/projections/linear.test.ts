@@ -160,7 +160,7 @@ describe('the linear projection', () => {
     const unit = row(markup, '1');
 
     // The other issue carries its "#" (#296).
-    assert.match(unit, /data-edge="blocked-by"[^>]*aria-label="blocked by #3"/);
+    assert.match(unit, /data-edge="blocked-by"[^>]*aria-label="is blocked by #3"/);
   });
 
   it('counts an edge internal to a unit once, not once per member', () => {
@@ -250,9 +250,10 @@ describe('the linear projection', () => {
 
   it('bounds the badges a dense document draws by its rows, not its edges', () => {
     // EXACT, not an upper bound: the hub draws one, and every other row draws
-    // the one incoming badge it owns (`1` has two, its blocked-by and the
-    // decomposed-from, and counts the second). An inequality here was
-    // satisfied by the unbudgeted render too.
+    // the one incoming badge it owns. `1` also holds the hub's decomposed-from,
+    // read from the parent, which is the Sub-issues tree's and no badge (#308),
+    // so it counts nothing. An inequality here was satisfied by the unbudgeted
+    // render too.
     const count = 400;
     const markup = render(denseRowDocument(count));
     // COUNTED ON THE BADGE CLASS. The legend draws a SAMPLE of each edge now —
@@ -265,7 +266,7 @@ describe('the linear projection', () => {
 
     assert.equal(badges, ROW_RELATIONSHIPS + count);
     assert.match(row(markup, 'hub'), new RegExp(`data-omitted="${String(count + 1 - ROW_RELATIONSHIPS)}"`));
-    assert.match(row(markup, '1'), /data-omitted="1"/);
+    assert.doesNotMatch(row(markup, '1'), /data-omitted/);
   });
 
   it('counts an omitted intra-unit edge once, after the dedupe', () => {

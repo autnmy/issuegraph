@@ -19,7 +19,7 @@ import type {
 } from './document.ts';
 import { type ElementSpec, type SpecChild, element, svg } from './element.ts';
 import { GROUP_ATTRIBUTE } from './scene.ts';
-import { EDGE_ORDER, type EdgeTerminal, dashArrayFor, labelFrom, treatmentFor } from './vocabulary.ts';
+import { EDGE_ORDER, type EdgeTerminal, dashArrayFor, phraseFrom, treatmentFor } from './vocabulary.ts';
 
 /**
  * The attribute a control the viewer publishes but does not wire carries. The
@@ -1026,9 +1026,7 @@ export function caveatText(issue: ViewerIssue | undefined): string {
  * `keyAt` walks target-upward. That is the intended half of "an edge is pointable
  * in every projection", and it is what the canvas already does for an arc.
  */
-function edgeBadge(field: EdgeField, edgeId: string, label: string, key: string): ElementSpec {
-  // THE OTHER ISSUE AS A READER SEES IT, "#512" (#296).
-  const other = issueNumber(key);
+function edgeBadge(field: EdgeField, edgeId: string, phrase: string): ElementSpec {
   const treatment = treatmentFor(field);
   return element(
     'span',
@@ -1036,8 +1034,8 @@ function edgeBadge(field: EdgeField, edgeId: string, label: string, key: string)
       class: 'ig-badge',
       'data-edge': field,
       [GROUP_ATTRIBUTE]: edgeId,
-      title: `${label} ${other}`,
-      'aria-label': `${label} ${other}`,
+      title: phrase,
+      'aria-label': phrase,
     },
     // WORDED, NOT GLYPH-AND-NUMBER. `⊘ 512` asks a reader to hold a five-glyph
     // legend in their head while scanning a column of rows; `⊘ blocked by #512`
@@ -1045,7 +1043,7 @@ function edgeBadge(field: EdgeField, edgeId: string, label: string, key: string)
     // one of the four channels the colour-blind-safety claim rests on — and the
     // label it now shows is the same string the accessible name already used,
     // so what is announced and what is drawn cannot drift.
-    glyphAndLabel(treatment.glyph, `${label} ${other}`),
+    glyphAndLabel(treatment.glyph, phrase),
   );
 }
 
@@ -1171,20 +1169,21 @@ export function edgeBadgeList(
         // reaches later fields, so the budget is spent in the format's own
         // order: `blocked-by` first, because that is the relationship a
         // reader asking "why is this held" is looking for.
-        if (badges.length >= budget) {
-          omitted += 1;
-          continue;
-        }
         const treatment = treatmentFor(field);
         // A symmetric edge states one fact whichever end you read it from, so it
         // is announced as one relationship rather than as two directions.
         const outgoing = mine.has(edge.from);
-        const other = outgoing ? edge.to : edge.from;
-        // THE VOCABULARY WORDS IT, not this loop. `labelFrom` is the one
-        // construction of "which verb, read from which end", and §17a's
-        // inspector row draws the same edge from it one zone away.
-        const label = labelFrom(treatment, outgoing);
-        badges.push(edgeBadge(field, edgeId, label, other));
+        // THE VOCABULARY WORDS IT, not this loop: the Inspector row draws the
+        // same edge from `phraseFrom` one zone away. `null` is a relationship
+        // this end does not read (a parent's sub-issue), so it is no badge and
+        // spends nothing of the budget.
+        const phrase = phraseFrom(treatment, outgoing, issueNumber(outgoing ? edge.to : edge.from));
+        if (phrase === null) continue;
+        if (badges.length >= budget) {
+          omitted += 1;
+          continue;
+        }
+        badges.push(edgeBadge(field, edgeId, phrase));
       }
     }
   }
@@ -1362,7 +1361,7 @@ export function legend(switcher?: LegendSwitch): ElementSpec {
         // exists to prevent.
         //
         // THE EXPORT'S WORDS, in its order (#296): the legend's own phrase.
-        ...glyphAndLabel(treatment.glyph, treatment.legendLabel),
+        ...glyphAndLabel(treatment.glyph, treatment.label),
       ]);
     }),
     element('span', { class: 'ig-legend-keys' }, [
@@ -1501,7 +1500,7 @@ function legendSwitch(switcher: Extract<LegendSwitch, { kind: 'switch' }>): Elem
 function countedKind(kind: LegendCount): readonly SpecChild[] {
   return [
     legendSample(kind.field),
-    element('span', {}, [treatmentFor(kind.field).legendLabel]),
+    element('span', {}, [treatmentFor(kind.field).label]),
     ' ',
     element('span', { class: 'ig-legend-count' }, [String(kind.count)]),
   ];

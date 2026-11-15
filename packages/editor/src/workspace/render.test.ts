@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import { buildModel } from '@issuegraph/reader';
 import { EDGE_FIELDS, type EdgeField, edgeIdentity, isSymmetricEdgeField } from '@issuegraph/core';
-import { KEY_ATTRIBUTE, type ViewerHold, labelFrom, legendLabelFrom, treatmentFor } from '@issuegraph/viewer';
+import { KEY_ATTRIBUTE, type ViewerHold, labelFrom, treatmentFor } from '@issuegraph/viewer';
 import { normalizeDocument, recedingOf } from '@issuegraph/viewer';
 
 import { RELATE_KEY, keyIntent } from '../create/keys.ts';
@@ -817,7 +817,7 @@ describe('a relationship row says what it is, and which way round', () => {
   it('words an outgoing edge from the subject\u2019s end, and draws the other end', () => {
     const row = rowFor(panel, 'blocked-by');
     assert.match(row, /data-direction="outgoing"/);
-    assert.match(row, /<span class="ig-glyph" aria-hidden="true">\u2298<\/span><span>blocked by<\/span>/);
+    assert.match(row, /<span class="ig-glyph" aria-hidden="true">\u2298<\/span><span>is blocked by<\/span>/);
     assert.match(row, /<span class="ig-relationship-ref">i0002<\/span>/);
     // AND NOT THE SUBJECT BACK. The row used to draw the field's machine name
     // and BOTH endpoints, one of which is the issue whose panel this is.
@@ -832,9 +832,12 @@ describe('a relationship row says what it is, and which way round', () => {
     // fix a reader can apply in their head.
     const row = rowFor(panel, 'duplicate-of');
     assert.match(row, /data-direction="incoming"/);
-    assert.match(row, /<span class="ig-glyph" aria-hidden="true">\u2261<\/span><span>duplicated by<\/span>/);
-    assert.match(row, /<span class="ig-relationship-ref">i0004<\/span>/);
-    assert.equal(/>duplicate of</.test(row), false, 'the inbound row took the forward label');
+    // "#2250 is a duplicate of this" (#308): the other issue first, then the phrase.
+    assert.match(
+      row,
+      /<span class="ig-relationship-ref">i0004<\/span><span class="ig-relationship-kind"><span class="ig-glyph" aria-hidden="true">\u2261<\/span><span>is a duplicate of this<\/span><\/span>/,
+    );
+    assert.equal(/>is a duplicate of</.test(row), false, 'the inbound row took the forward label');
   });
 
   it('claims no direction for a symmetric kind, at either end', () => {
@@ -842,7 +845,7 @@ describe('a relationship row says what it is, and which way round', () => {
     // there is no reverse verb to take and no direction to publish.
     const row = rowFor(panel, 'together-with');
     assert.equal(/data-direction/.test(row), false, 'a symmetric edge claimed a direction');
-    assert.match(row, /<span class="ig-glyph" aria-hidden="true">\u29c9<\/span><span>together with<\/span>/);
+    assert.match(row, /<span class="ig-glyph" aria-hidden="true">\u29c9<\/span><span>goes together with<\/span>/);
     assert.match(row, /<span class="ig-relationship-ref">i0003<\/span>/);
 
     // BOTH ENDS, AND THE FIXTURE HAS TO ALLOW TWO. "At either end" was asserted
@@ -866,7 +869,7 @@ describe('a relationship row says what it is, and which way round', () => {
     assert.match(toEnd, /<span class="ig-relationship-ref">i0001<\/span>/, 'the two ends render one panel');
     for (const end of ends) {
       assert.equal(/data-direction/.test(end), false, end);
-      assert.match(end, /<span class="ig-glyph" aria-hidden="true">\u21c4<\/span><span>serialized with<\/span>/);
+      assert.match(end, /<span class="ig-glyph" aria-hidden="true">\u21c4<\/span><span>serializes with<\/span>/);
       // NO DIRECTION MEANS NO INBOUND SLOT EITHER. A symmetric edge read as
       // incoming loses its remove control, which is the visible half of the
       // same defect and the half a reader would report.
@@ -935,7 +938,7 @@ describe('a relationship row says what it is, and which way round', () => {
     // to be inferred, which is exactly what §17b's statement exists to stop —
     // `directionSpec` published these two roles before the statement became
     // this row, and the row publishes them now.
-    assert.match(row, /<span>blocked by<\/span><\/span><span class="ig-relationship-ref" data-ig-role="from">i0001<\/span><span class="ig-relationship-ref" data-ig-role="to">i0002<\/span>/);
+    assert.match(row, /<span>is blocked by<\/span><\/span><span class="ig-relationship-ref" data-ig-role="from">i0001<\/span><span class="ig-relationship-ref" data-ig-role="to">i0002<\/span>/);
   });
 
   it('states an empty list rather than drawing none', () => {
@@ -1005,7 +1008,7 @@ describe('the create path begins in the panel, and its digits are the keyboard\u
     // wordings of one kind on one screen.
     // AE5: §17a's ORDER, glyph then word then the digit chip. The kind is what
     // the reader is choosing between, so it is read first and the key follows.
-    assert.match(panel, /<span class="ig-glyph" aria-hidden="true">\u2298<\/span><span>blocked by<\/span><span class="ig-kind-digit">1<\/span>/);
+    assert.match(panel, /<span class="ig-glyph" aria-hidden="true">\u2298<\/span><span>is blocked by<\/span><span class="ig-kind-digit">1<\/span>/);
   });
 
   it('shows one step at a time, and none of it while a canvas drop is in flight', () => {
@@ -1270,7 +1273,7 @@ describe('a refused relationship is drawn where the reader was building it', () 
     // below for the control half.
     assert.match(
       capsule,
-      /<span class="ig-relationship-name"><span class="ig-relationship-kind"><span class="ig-glyph" aria-hidden="true">⊘<\/span><span>blocked by<\/span><\/span><span class="ig-relationship-ref">i0002<\/span><\/span>/,
+      /<span class="ig-relationship-name"><span class="ig-relationship-kind"><span class="ig-glyph" aria-hidden="true">⊘<\/span><span>is blocked by<\/span><\/span><span class="ig-relationship-ref">i0002<\/span><\/span>/,
     );
 
     // AND IT IS NOT ALSO AN ORDINARY ROW. A refused edit is not a relationship:
@@ -2226,7 +2229,7 @@ describe('the log names each write still saving in the host words', () => {
       'i0001',
       'i0002',
     ]);
-    assert.equal(entry.includes(labelFrom(treatmentFor('blocked-by'), true)), false, 'the viewer label named the kind');
+    assert.equal(entry.includes(treatmentFor('blocked-by').label), false, 'the viewer label named the kind');
   });
 
   it('names a saving reversal with the kind word between its from and to ends', () => {
@@ -2943,9 +2946,9 @@ describe('the narrow tabs and the Related groups list', () => {
           [...group.matchAll(/<li class="ig-(?:slot|footer-row)" data-ig-key="([^"]+)"/g)].map((match) => match[1] ?? ''),
         ] as const);
     };
-    // The heads are the legend's words from the selection's end: what the selection does, or has done to it.
+    // The heads are the kind's words from the selection's end: what the selection does, or has done to it.
     const head = (field: EdgeField, outgoing: boolean): string => {
-      const phrase = legendLabelFrom(treatmentFor(field), outgoing);
+      const phrase = labelFrom(treatmentFor(field), outgoing) ?? '';
       return `${phrase.charAt(0).toUpperCase()}${phrase.slice(1)}`;
     };
     // RULES, Graphs, Dense neighbourhoods: "order rows (rank, readiness, title, number and tag) under the

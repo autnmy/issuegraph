@@ -35,43 +35,31 @@ export interface EdgeTreatment {
   readonly glyph: string;
   /** The custom property carrying this edge's hue. Never a literal colour. */
   readonly hueToken: string;
-  /** Announced to a screen reader, and used as the badge's accessible name. */
+  /**
+   * The relationship's phrase, as RULES words it everywhere a kind is named:
+   * a row, the Inspector, the legend and an accessible name ("is blocked by",
+   * "serializes with", "goes together with", "is a duplicate of", "was
+   * decomposed from"). One set of words (#308): the row vocabulary that read
+   * "blocked by" beside a legend reading "is blocked by" is gone.
+   */
   readonly label: string;
   /**
-   * The same relationship read from the OTHER end.
+   * The same relationship read from the OTHER end: #488 is what #512 is
+   * blocked by, and #512 is what #488 BLOCKS, so the vocabulary carries the
+   * plain reading rather than asking a reader to invert a sentence.
    *
-   * A directed edge states one fact, and which end you stand at decides the
-   * verb: #488 is what #512 is blocked by, and #512 is what #488 BLOCKS. The
-   * badge that shipped said "blocked by #512 (incoming)" on #488's row —
-   * technically true, and it asks a reader to invert a sentence in their head
-   * on the row where the plain reading was available. §16a draws the plain
-   * reading, so the vocabulary carries it.
-   *
-   * A symmetric edge reads the same both ways and carries none: `undefined`
-   * here is what says so, rather than a duplicate of {@link label}.
+   * A symmetric edge reads the same both ways and carries none. So does
+   * `decomposed-from`: read from the parent its other end is a sub-issue,
+   * listed in the Sub-issues tree and never as a relationship (build-136's
+   * #308 ruling, RULES "Relationships"), so it has no reverse phrase at all.
    */
   readonly reverseLabel?: string;
   /**
-   * The words the legend prints beside the line, as the export's legend draws
-   * them (#296): "is blocked by", "serializes with", "goes together with", "is
-   * a duplicate of", "was decomposed from". A legend names a kind rather than
-   * one edge, so it reads as the verb a phrase about one issue would take.
-   *
-   * ITS OWN FIELD FOR NOW, and that is a stated gap: the export's rules give
-   * the badges and the Inspector these words too, and moving {@link label} to
-   * them is a wider change than the legend.
+   * Whether the reverse phrase names the other issue FIRST: "#2250 is a
+   * duplicate of this" (build-136's #308 ruling, matching Design 5b5f1cc),
+   * where every other phrase is followed by the number.
    */
-  readonly legendLabel: string;
-  /**
-   * The legend's phrase read from the OTHER end, for a directed kind: what the
-   * Inspector heads a group of incoming relationships with (#303), "blocks"
-   * and "is a duplicate of this". {@link reverseLabel}'s "duplicated by" is
-   * not the board's word for it.
-   *
-   * ABSENT ON `decomposed-from` ON PURPOSE: its other end is a sub-issue, and
-   * sub-issues are listed in the Sub-issues tree, never as a relationship.
-   */
-  readonly reverseLegendLabel?: string;
+  readonly reverseOtherFirst?: true;
   readonly ordering: OrderingEffect;
   /**
    * Whether the edge reads the same both ways. A symmetric edge is drawn once
@@ -92,10 +80,8 @@ export const EDGE_TREATMENTS = Object.freeze({
     terminal: 'arrow',
     glyph: '⊘',
     hueToken: '--ig-edge-blocked-by',
-    label: 'blocked by',
+    label: 'is blocked by',
     reverseLabel: 'blocks',
-    legendLabel: 'is blocked by',
-    reverseLegendLabel: 'blocks',
     ordering: 'strict-directed',
     symmetric: false,
   },
@@ -104,8 +90,7 @@ export const EDGE_TREATMENTS = Object.freeze({
     terminal: 'none',
     glyph: '⇄',
     hueToken: '--ig-edge-serialize-with',
-    label: 'serialized with',
-    legendLabel: 'serializes with',
+    label: 'serializes with',
     ordering: 'exclusive-unordered',
     symmetric: true,
   },
@@ -114,8 +99,7 @@ export const EDGE_TREATMENTS = Object.freeze({
     terminal: 'enclosure',
     glyph: '⧉',
     hueToken: '--ig-edge-together-with',
-    label: 'together with',
-    legendLabel: 'goes together with',
+    label: 'goes together with',
     ordering: 'shares-rank',
     symmetric: true,
   },
@@ -124,10 +108,9 @@ export const EDGE_TREATMENTS = Object.freeze({
     terminal: 'hollow-circle',
     glyph: '≡',
     hueToken: '--ig-edge-duplicate-of',
-    label: 'duplicate of',
-    reverseLabel: 'duplicated by',
-    legendLabel: 'is a duplicate of',
-    reverseLegendLabel: 'is a duplicate of this',
+    label: 'is a duplicate of',
+    reverseLabel: 'is a duplicate of this',
+    reverseOtherFirst: true,
     ordering: 'never-worked',
     symmetric: false,
   },
@@ -136,9 +119,7 @@ export const EDGE_TREATMENTS = Object.freeze({
     terminal: 'tee',
     glyph: '⑃',
     hueToken: '--ig-edge-decomposed-from',
-    label: 'decomposed from',
-    reverseLabel: 'decomposed into',
-    legendLabel: 'was decomposed from',
+    label: 'was decomposed from',
     ordering: 'provenance-only',
     symmetric: false,
   },
@@ -150,39 +131,38 @@ export function treatmentFor(field: EdgeField): EdgeTreatment {
 }
 
 /**
- * A relationship's word, read from the end the reader is standing at.
- *
- * THE VERB CHANGES, NOT THE NOUN. Read from the far end an asymmetric edge has
- * its own plain wording and the vocabulary carries it, so a surface never has
- * to say "(incoming)" and leave the reader to invert a sentence in their head.
+ * A relationship's phrase, read from the end the reader is standing at: "is
+ * blocked by" or "blocks". `null` where that end reads no relationship: a
+ * `decomposed-from` read from the parent, whose sub-issues are the Sub-issues
+ * tree's (#308).
  *
  * IT IS A FUNCTION HERE RATHER THAN A TEST AT EACH CALL SITE, and that is the
- * whole reason it exists: the badge row in `parts.ts` and §17a's inspector row
- * in `@issuegraph/editor` draw the SAME edge one zone apart on one screen, and
- * two copies of this expression would be free to disagree the moment either was
- * edited. They were, briefly, and a comment at one of them claimed to be "layer
- * 1's own expression" while being a second copy of it — which is the failure
- * this package names everywhere else: not a wrong answer, a second answer.
+ * whole reason it exists: the order row, the Inspector row and the Inspector's
+ * group heads draw the SAME edge on one screen, and two copies of this
+ * expression would be free to disagree the moment either was edited.
  *
  * A symmetric kind takes {@link EdgeTreatment.label} at either end, because
- * `serialize-with` and `together-with` state one fact whichever way round they
- * are stored; `reverseLabel` is `undefined` on them for that reason rather than
- * by omission. The `??` is not a second answer to that question — it is what
- * the optional field's type requires, and it lands on the same string.
+ * `serialize-with` and `together-with` state one fact whichever way round.
  */
-export function labelFrom(treatment: EdgeTreatment, outgoing: boolean): string {
-  return outgoing || treatment.symmetric ? treatment.label : (treatment.reverseLabel ?? treatment.label);
+export function labelFrom(treatment: EdgeTreatment, outgoing: boolean): string | null {
+  if (outgoing || treatment.symmetric) return treatment.label;
+  return treatment.reverseLabel ?? null;
 }
 
 /**
- * The legend's phrase, read from the end the reader is standing at: "is
- * blocked by" or "blocks". What heads a kind's group in the Inspector (#303),
- * and {@link labelFrom}'s rule for the same reason: one expression, not one
- * per call site. A kind with no reverse phrase keeps its own, which a
- * symmetric kind states either way round.
+ * A relationship's phrase about one other issue, read from the reader's end:
+ * "is blocked by #2240", or, for the one phrase that names the other issue
+ * first, "#2250 is a duplicate of this". `null` where {@link labelFrom} is.
  */
-export function legendLabelFrom(treatment: EdgeTreatment, outgoing: boolean): string {
-  return outgoing ? treatment.legendLabel : (treatment.reverseLegendLabel ?? treatment.legendLabel);
+export function phraseFrom(treatment: EdgeTreatment, outgoing: boolean, other: string): string | null {
+  const label = labelFrom(treatment, outgoing);
+  if (label === null) return null;
+  return otherFirst(treatment, outgoing) ? `${other} ${label}` : `${label} ${other}`;
+}
+
+/** Whether the phrase read from this end names the other issue before its words. */
+export function otherFirst(treatment: EdgeTreatment, outgoing: boolean): boolean {
+  return !outgoing && !treatment.symmetric && treatment.reverseOtherFirst === true;
 }
 
 /**
