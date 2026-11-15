@@ -689,12 +689,12 @@ export const workspaceStylesheet = `
   right: var(--ig-space-tight);
   width: min(calc(var(--ig-char-width) * 66.67), calc(100% - var(--ig-space-tight) * 2));
   max-height: calc(100% - var(--ig-space-tight) * 2);
-  /* --ig-surface IS THE RAISED ONE. The first draft wrote --ig-raised, which
-     does not exist; the sheet's own guard listed it as a property nothing
-     resolves, and an unresolved custom property is not an error in CSS — it
-     computes to nothing and the panel would have been transparent over the
-     graph. */
-  background: var(--ig-surface);
+  /* AN OVERLAY STANDS ON THE CARD'S OWN GROUND, --ig-bg (#340). It was
+     --ig-surface, which is also the ground of a filled control and a selected
+     tab, and a host may map that one to a translucent fill (Descant's
+     fill-strong is 8% ink), so the panel showed the graph through it. The
+     board draws an overlay opaque, on card; the elevation sets it apart. */
+  background: var(--ig-bg);
   border: var(--ig-stroke) solid var(--ig-line);
   border-radius: var(--ig-radius);
   box-shadow: var(--ig-elevation-overlay);
@@ -2144,7 +2144,8 @@ ${heldRailDeclarations}
     justify-self: start;
     inline-size: calc(var(--ig-char-width) * 43);
     z-index: 2;
-    background: var(--ig-surface);
+    /* ON THE CARD, OPAQUE (#340): see the audit overlay's note. */
+    background: var(--ig-bg);
     box-shadow: var(--ig-elevation-overlay);
   }
   .ig-workspace[data-inspector='lifted'][data-order-panel='open'] .ig-order-close {

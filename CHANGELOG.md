@@ -4,6 +4,8 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/editor` `0.42.1` (patch line from `0.42.0`): the open work-order panel and the audit overlay stand on the card's ground, `--ig-bg` (#340).** **No API change.** They painted `--ig-surface`, which a host may map to a translucent fill, so the graph read through the open panel. Main carries the same fix as `0.43.1` (PR 342).
+
 - **`@issuegraph/viewer` `0.26.0`: a tracker hold can name who it is held on, after its tag (#305; Design q321, issue-graph-states e1d0445, content.md f58baed, RULES a38612c).** Additive: `TrackerHold.detail`.
   - **`detail`** is host-authored and verbatim, like `reason`. The footer draws it straight after the hold's tag, with no separator, in `--ig-text-muted` at the number's size, unwrapped, as the board draws `<span class="tag plain">Assigned</span><span>to maya-chen</span>` (content.md; review-219): `label: 'Assigned'`, `detail: 'to maya-chen'`. It is drawn only beside a `label`; a blank detail draws nothing.
   - **The row's accessible name reads it** after the hold's reason, joined by " · ", in the list's footer and the graph's (one row, `footerRow`).
