@@ -177,10 +177,18 @@ export function canvasNeighbourhood(
       return { around: { centre: keys, edges, reach: edges }, kinds: null };
     }
     case 'issue': {
-      // A UNIT IS DRAWN WHOLE: its partners' lines with the selected member's.
+      // ONE RULE WITH THE VIEWER'S RECEDE (review-41, PR 326): selecting the
+      // unit (its lead, the card) draws every member's lines; selecting one
+      // member draws that member's alone.
+      const normalized = normalizeDocument(document).document;
+      const selectedKey = selection.kind === 'issue' ? selection.key : subject.issue.key;
       const unit = [subject.issue.key, ...(subject.whyRank?.unitPartners ?? [])];
       const relationships =
-        unit.length > 1 ? relationshipsAround(normalizeDocument(document).document, unit) : inspected.relationships;
+        selectedKey === subject.issue.key
+          ? unit.length > 1
+            ? relationshipsAround(normalized, unit)
+            : inspected.relationships
+          : issueRelationships(normalized, selectedKey);
       const on = drawnKinds(
         relationships.map((relationship) => relationship.field),
         switched,

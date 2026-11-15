@@ -5,7 +5,7 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 ## Unreleased
 
 - **`@issuegraph/viewer` `0.23.3` / `@issuegraph/editor` `0.36.1`: selecting a unit keeps its partners' lines (#308, part D2a; build-136's ruling).** **No API change.**
-  - **The canvas and legend read the whole unit.** Around a selected together-with unit, the editor's canvas and its legend counts and switches read every member's relationships, each once (a partner's blocker draws into the unit's card). The Inspector still lists the selected issue's own relationships.
+  - **The canvas and legend read the whole unit when the unit is selected.** Selecting a together-with unit (its lead, the card) makes the editor's canvas and its legend counts and switches read every member's relationships, each once (a partner's blocker draws into the unit's card). Selecting one member reads that member's own relationships, the same rule as the viewer's recede (review-41 and review-219, PR 326). The Inspector still lists the selected issue's own relationships.
   - **The viewer keeps the whole card for the unit.** Selecting a unit's lead (the card the order and the canvas draw) no longer recedes a partner's lines or its neighbours. Selecting one member still reads that member alone, as before.
   - **Pinned** in the editor's neighbourhood test and the viewer's recede tests.
 
