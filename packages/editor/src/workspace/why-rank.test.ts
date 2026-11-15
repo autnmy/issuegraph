@@ -110,7 +110,12 @@ describe('the inspector states why the issue sits where it does', () => {
       ...document,
       order: {
         ...document.order,
-        slots: document.order.slots.map((slot) => ({ ...slot, rank: (rank += 1) })),
+        // Its graph hold names the blocker the sentence names, as a derived one does.
+        slots: document.order.slots.map((slot) => ({
+          ...slot,
+          rank: (rank += 1),
+          holds: slot.holds.map((hold) => ({ ...hold, subject: 'i0001' })),
+        })),
       },
     };
 
@@ -144,6 +149,21 @@ describe('the inspector states why the issue sits where it does', () => {
     assert.ok(kept.includes('claimed by a run'));
     const list = /<ul class="ig-inspector-holds">([\s\S]*?)<\/ul>/.exec(kept)?.[1] ?? '';
     assert.equal(list.includes('a blocker is open'), false, 'the graph hold the sentence states was repeated');
+
+    // A graph hold on something the sentence never names (a serialized peer
+    // being worked) stays (review-41, PR 324).
+    const peer: ViewerDocument = {
+      ...placed,
+      order: {
+        ...placed.order,
+        slots: placed.order.slots.map((slot) =>
+          slot.lead === 'i0002'
+            ? { ...slot, holds: [...slot.holds, { family: 'graph' as const, reason: 'its serialized peer is being worked', subject: 'i0004' }] }
+            : slot,
+        ),
+      },
+    };
+    assert.ok(inspectorMarkupFor(peer, 'i0002').includes('its serialized peer is being worked'), 'an unstated graph hold was dropped');
   });
 
   /**

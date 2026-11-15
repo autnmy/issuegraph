@@ -1726,17 +1726,19 @@ function rowSlot(
   relationship: InspectorRelationship,
   selected: string | null,
   words: WorkspaceWords,
-): ElementSpec {
+): ElementSpec | null {
   if (relationship.edgeId === selected) {
+    // SPOKEN, NOT DRAWN: the row's strong fill shows the selection, as the
+    // board draws it, and the word stays for a screen reader.
     return element(
       'span',
-      { class: 'ig-relationship-state', 'data-ig-state': 'selected' },
+      { class: 'ig-relationship-state ig-hidden-words', 'data-ig-state': 'selected' },
       [treatmentForState('selected').label],
     );
   }
-  if (relationship.direction === 'incoming') {
-    return element('span', { class: 'ig-relationship-inbound' }, [words.inbound]);
-  }
+  // AN INBOUND ROW HAS NO REMOVE: the relationship is set on the other
+  // issue, which its second line says (#308, {@link otherLine}).
+  if (relationship.direction === 'incoming') return null;
   // THE GLYPH IS HIDDEN AND THE NAME IS AN ATTRIBUTE. `glyphAndLabel` draws a
   // VISIBLE word beside its glyph, which is right for the kind and wrong here:
   // the frame's slot is a bare `✕`. So the mark is layer 1's `hiddenGlyph` —
@@ -1883,7 +1885,7 @@ function refusalReason(code: InvalidCode, words: WorkspaceWords): ElementSpec {
 function relationshipDescription(
   relationship: InspectorRelationship,
   subject: string | null,
-): readonly ElementSpec[] {
+): readonly (ElementSpec | string)[] {
   const treatment = treatmentFor(relationship.field);
   const outgoing = subject === null || relationship.from === subject;
   // THE ROLE TRAVELS WITH THE REFERENCE, and it is not decoration. §17b's rule
@@ -1899,22 +1901,25 @@ function relationshipDescription(
   // subject by `labelFrom`, so a `from`/`to` on it would name an end of the
   // stored pair while the words name an end of the reader's sentence, and those
   // are not always the same one.
+  // THE NUMBER AS A READER SEES IT, "#2240", as the order row and the board
+  // print it (#308).
   const reference = (ref: string, role?: 'from' | 'to'): ElementSpec =>
-    element('span', { class: 'ig-relationship-ref', 'data-ig-role': role }, [ref]);
+    element('span', { class: 'ig-relationship-ref', 'data-ig-role': role }, [issueNumber(ref)]);
   // LAYER 1's PAIRING, not a second one. The glyph is one of the four
   // channels the colour-blind-safety claim rests on and is `aria-hidden`
   // because it announces as a character description; the word beside it is
   // what a reader hears. `inspector.ts` leaves out the one end that reads no
   // relationship (a parent's sub-issue), so the label is always there.
-  const kind = element(
-    'span',
-    { class: 'ig-relationship-kind' },
-    glyphAndLabel(treatment.glyph, labelFrom(treatment, outgoing) ?? treatment.label),
-  );
-  if (subject === null) return [kind, reference(relationship.from, 'from'), reference(relationship.to, 'to')];
+  const [glyph, label] = glyphAndLabel(treatment.glyph, labelFrom(treatment, outgoing) ?? treatment.label);
+  const kind = (...parts: readonly (ElementSpec | string | undefined)[]): ElementSpec =>
+    element('span', { class: 'ig-relationship-kind' }, parts.filter((part) => part !== undefined));
+  // ONE TEXT SPACE between the phrase and its number, as the board writes
+  // "is blocked by <span class=num>#2240</span>" (review-219, PR 325).
+  if (subject === null) return [kind(glyph, label), ' ', reference(relationship.from, 'from'), ' ', reference(relationship.to, 'to')];
   const other = reference(outgoing ? relationship.to : relationship.from);
-  // "#2250 is a duplicate of this" names the other issue first (#308).
-  return otherFirst(treatment, outgoing) ? [other, kind] : [kind, other];
+  // "#2250 is a duplicate of this" names the other issue first, after the
+  // glyph's column, as the board draws it (#308).
+  return otherFirst(treatment, outgoing) ? [kind(glyph, other, ' ', label)] : [kind(glyph, label), ' ', other];
 }
 
 /**
@@ -1943,6 +1948,29 @@ function relationshipHead(
     },
     relationshipDescription(relationship, subject),
   );
+}
+
+/**
+ * A row's second line: the other issue's title in `text-muted`, and for a
+ * relationship set on the other issue, " · set on the other issue" (RULES,
+ * Relationships; the board's `.ig-rel .ot`, #308). None with no issue subject,
+ * where the row names both ends itself, or for an issue the document does not
+ * list and an outgoing row with nothing to add.
+ */
+function otherLine(
+  relationship: InspectorRelationship,
+  subject: string | null,
+  words: WorkspaceWords,
+): ElementSpec | null {
+  if (subject === null) return null;
+  const title = relationship.from === subject ? relationship.titles.to : relationship.titles.from;
+  const note = relationship.direction === 'incoming' ? words.inbound : null;
+  if (title === null && note === null) return null;
+  // The title gives way to the note, which says why the row has no remove.
+  return element('span', { class: 'ig-relationship-other' }, [
+    title === null ? null : element('span', { class: 'ig-relationship-title' }, [title]),
+    note === null ? null : element('span', { class: 'ig-relationship-note' }, [title === null ? note : `\u00a0· ${note}`]),
+  ]);
 }
 
 /**
@@ -1986,9 +2014,12 @@ function relationshipSpec(
       // selection has no "my end", and `data-direction=""` would claim one.
       'data-direction': relationship.direction ?? undefined,
       'data-ig-code': refused,
+      // THE SELECTED ROW IS THE STRONG FILL, as an order row is (RULES).
+      'data-ig-selected': relationship.edgeId === selected ? 'true' : undefined,
     },
     [
       relationshipHead(relationship, subject),
+      otherLine(relationship, subject, words),
       refused === undefined ? null : refusalReason(refused, words),
       rowSlot(relationship, selected, words),
       // A PEER OF THE SLOT RATHER THAN A FOURTH OCCUPANT OF IT. The slot's
@@ -2256,14 +2287,15 @@ function kindListSpec(words: WorkspaceWords, source: string | null): ElementSpec
 
 /**
  * The holds the Position sentence does not already state. A slot the order
- * places nowhere keeps every hold ("Why it is held"). A placed slot whose
- * sentence names its open blockers drops its graph holds, which are those
- * blockers in the graph's words, and keeps a runner's or tracker's hold
- * (claimed, parked), which the sentence never states.
+ * places nowhere keeps every hold ("Why it is held"). A placed slot drops only
+ * a graph hold whose subject is one of the open blockers its sentence names;
+ * a graph hold on a serialized peer or an unready member, and a runner's or
+ * tracker's hold (claimed, parked), stay (review-41 and review-219, PR 324).
  */
 function unstatedHolds(why: InspectorWhyRank): readonly ViewerHold[] {
-  const blockersStated = why.rank !== null && why.openBlockers.length > 0;
-  return why.holds.filter((hold) => !(blockersStated && hold.family === 'graph'));
+  const stated = (hold: ViewerHold): boolean =>
+    why.rank !== null && hold.family === 'graph' && hold.subject !== undefined && why.openBlockers.includes(hold.subject);
+  return why.holds.filter((hold) => !stated(hold));
 }
 
 /**

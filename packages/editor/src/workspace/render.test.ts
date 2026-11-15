@@ -835,7 +835,7 @@ describe('a relationship row says what it is, and which way round', () => {
     // "#2250 is a duplicate of this" (#308): the other issue first, then the phrase.
     assert.match(
       row,
-      /<span class="ig-relationship-ref">i0004<\/span><span class="ig-relationship-kind"><span class="ig-glyph" aria-hidden="true">\u2261<\/span><span>is a duplicate of this<\/span><\/span>/,
+      /<span class="ig-relationship-kind"><span class="ig-glyph" aria-hidden="true">\u2261<\/span><span class="ig-relationship-ref">i0004<\/span> <span>is a duplicate of this<\/span><\/span>/,
     );
     assert.equal(/>is a duplicate of</.test(row), false, 'the inbound row took the forward label');
   });
@@ -879,14 +879,23 @@ describe('a relationship row says what it is, and which way round', () => {
 
   it('gives an inbound row no remove control, and every other row one', () => {
     // AN INBOUND EDGE'S FIELD IS IN THE OTHER ISSUE'S BODY, so this panel's
-    // subject cannot declare it away. The slot carries the word instead.
+    // subject cannot declare it away. Its second line says so, after the other
+    // issue's title, as the board's ".ot" does (#308).
     const inbound = rowFor(panel, 'duplicate-of');
     assert.equal(/ig-relationship-remove/.test(inbound), false, 'an inbound row offers a remove');
-    assert.match(inbound, /<span class="ig-relationship-inbound">declared elsewhere<\/span>/);
+    // The note keeps its own span, so a long title cannot hide it (review-41, PR 325).
+    assert.match(
+      inbound,
+      /<span class="ig-relationship-other"><span class="ig-relationship-title">Issue i0004<\/span><span class="ig-relationship-note">\u00a0· declared elsewhere<\/span><\/span>/,
+    );
 
     for (const field of ['blocked-by', 'together-with']) {
       assert.match(rowFor(panel, field), /class="ig-relationship-remove"/, field);
     }
+  });
+
+  it('#308 names the other issue by its title on the row\u2019s second line', () => {
+    assert.match(rowFor(panel, 'blocked-by'), /<span class="ig-relationship-other"><span class="ig-relationship-title">Issue i0002<\/span><\/span>/);
   });
 
   it('addresses the remove control at its OWN row, and names it as an attribute', () => {
@@ -929,7 +938,9 @@ describe('a relationship row says what it is, and which way round', () => {
       }).markup,
     );
     const row = rowFor(selected, 'blocked-by');
-    assert.match(row, /<span class="ig-relationship-state" data-ig-state="selected">selected<\/span>/);
+    // The strong fill shows it (RULES); the word stays for a screen reader (#308).
+    assert.match(row, /^<li class="ig-relationship"[^>]* data-ig-selected="true">/);
+    assert.match(row, /<span class="ig-relationship-state ig-hidden-words" data-ig-state="selected">selected<\/span>/);
     assert.equal(/ig-relationship-remove/.test(row), false);
     // WITH NO ISSUE SUBJECT THERE IS NO "OTHER END", so both are drawn and the
     // kind takes its plain forward wording.
@@ -938,7 +949,7 @@ describe('a relationship row says what it is, and which way round', () => {
     // to be inferred, which is exactly what §17b's statement exists to stop —
     // `directionSpec` published these two roles before the statement became
     // this row, and the row publishes them now.
-    assert.match(row, /<span>is blocked by<\/span><\/span><span class="ig-relationship-ref" data-ig-role="from">i0001<\/span><span class="ig-relationship-ref" data-ig-role="to">i0002<\/span>/);
+    assert.match(row, /<span>is blocked by<\/span><\/span> <span class="ig-relationship-ref" data-ig-role="from">i0001<\/span> <span class="ig-relationship-ref" data-ig-role="to">i0002<\/span>/);
   });
 
   it('states an empty list rather than drawing none', () => {
@@ -1273,7 +1284,7 @@ describe('a refused relationship is drawn where the reader was building it', () 
     // below for the control half.
     assert.match(
       capsule,
-      /<span class="ig-relationship-name"><span class="ig-relationship-kind"><span class="ig-glyph" aria-hidden="true">⊘<\/span><span>is blocked by<\/span><\/span><span class="ig-relationship-ref">i0002<\/span><\/span>/,
+      /<span class="ig-relationship-name"><span class="ig-relationship-kind"><span class="ig-glyph" aria-hidden="true">⊘<\/span><span>is blocked by<\/span><\/span> <span class="ig-relationship-ref">i0002<\/span><\/span>/,
     );
 
     // AND IT IS NOT ALSO AN ORDINARY ROW. A refused edit is not a relationship:

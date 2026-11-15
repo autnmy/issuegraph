@@ -185,16 +185,16 @@ export function clusterReachLabel(reach: ClusterReach): string {
     case 'cyclic':
       return reach.held === reach.of
         ? 'Nothing can start'
-        : `${String(reach.held)} of ${String(reach.of)} stuck in a loop`;
+        : `${String(reach.held)} of ${String(reach.of)} in a loop`;
     case 'chain':
       return `Longest chain ${String(reach.depth)}`;
     // NAMES THE EDGES, so the sentence cannot contradict the count drawn beside
     // it: something blocks, and none of it puts the work in an order. It does
     // not name a loop either, for the reason the arm's own note gives.
     case 'no-chain':
-      return `${String(reach.edges)} blocking ${reach.edges === 1 ? 'relationship' : 'relationships'}, none that set an order`;
+      return reach.edges === 1 ? '1 blocking relationship, which sets no order' : `${String(reach.edges)} blocking relationships, none that set an order`;
     case 'unblocked':
-      return 'Nothing blocks anything';
+      return 'No blocking relationships';
   }
 }
 
