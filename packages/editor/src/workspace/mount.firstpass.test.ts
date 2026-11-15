@@ -303,6 +303,43 @@ describe('the first pass, composed behind §17a’s entry', () => {
     }
   });
 
+  it('leaves on Enter or Space at the exit control, and leaves the answers to their own keys (#161)', async () => {
+    for (const key of ['Enter', ' ']) {
+      const page = await firstPassPage();
+      try {
+        const entry = page.control('first-pass');
+        assert.ok(entry !== null);
+        page.click(entry);
+        await flush();
+        await page.answer();
+        assert.equal(overlayOf(page)?.getAttribute('data-ig-firstpass'), 'open');
+
+        // AN ANSWER IS NOT A COMMAND CONTROL: the queue's y/n/s map owns it, so
+        // Enter on a focused answer is handed back and answers nothing.
+        const answer = page.element.querySelector<HTMLElement>('[data-ig-answer]');
+        assert.ok(answer !== null, 'the queue draws no answer control');
+        answer.focus();
+        const onAnswer = new page.dom.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+        answer.dispatchEvent(onAnswer);
+        await flush();
+        assert.equal(onAnswer.defaultPrevented, false, `${JSON.stringify(key)} on an answer was taken`);
+        assert.equal(overlayOf(page)?.getAttribute('data-ig-firstpass'), 'open');
+
+        const exit = page.control('first-pass-close');
+        assert.ok(exit !== null);
+        exit.focus();
+        const press = new page.dom.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+        exit.dispatchEvent(press);
+        await flush();
+        assert.equal(press.defaultPrevented, true, `${JSON.stringify(key)} at the exit was not taken`);
+        assert.equal(overlayOf(page), null, `${JSON.stringify(key)} at the exit left the surface up`);
+      } finally {
+        page.handle.destroy();
+        page.dom.window.close();
+      }
+    }
+  });
+
   it('says a failed scan failed, rather than saying the backlog is empty', async () => {
     const page = await firstPassPage();
     try {

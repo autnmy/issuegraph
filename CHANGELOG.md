@@ -4,6 +4,10 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/editor` `0.47.2`: the first-pass overlay's exit answers Enter and Space (#161).** **No API change.**
+  - `onKeydown` returned while the queue was open, so the `Enter`/`Space` arm that activates a focused `data-ig-command` control (#158) never reached `first-pass-close`, the one command control the overlay draws; only the browser's native button activation closed it. The arm is now one function, `activateFocused`, run for the overlay's command controls as well as everywhere else. The queue's answers (`data-ig-answer`) keep their `y`/`n`/`s` map and are not activated by it.
+  - **Pinned** in `workspace/mount.firstpass.test.ts`, for both keys.
+
 - **`@issuegraph/viewer` `0.29.0`: the NOW row keeps its clock, and the tier sentence names no queries a host does not have (#219).** **Additive: `RankProvenance`'s `declared-tier` arm gains an optional `queried`.** Markup changes on the NOW row's meta line.
   - **The key gives way, the clock does not.** The NOW row printed the key and ` · phase · elapsed` in one span that shrank from the end, so a long key cut the phase and the elapsed time first. The meta line is now `.ig-now-meta`, the identity (`.ig-id`, which ellipsizes) and `.ig-now-clock` (kept whole, in the identity's muted type).
   - **Two tier sentences, one per case (the redesign lead's call).** The board's "No query matched, so it goes by its priority, P0." stays where the board drew it, ordering queries that matched nothing. A host with no ordering queries configured passes `queried: false` and its reader sees "Ranked by its priority, P0.", which claims no queries. Left out, `queried` keeps the board's sentence.

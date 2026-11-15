@@ -2853,6 +2853,95 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     return true;
   };
 
+  /**
+   * `Enter` or `Space` on the focused control, activated through the reducer
+   * rather than left to the browser (#158). Shared by every surface and, while
+   * the first-pass overlay is up, by its own command controls (#161). Why it
+   * runs last in `onKeydown` is stated at the call there.
+   */
+  const activateFocused = (event: KeyboardEvent): void => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    // TWO OF THE REFUSALS `create/keys.ts` ARGUES FOR ITS OWN BINDINGS, and for
+    // the same reasons — a chord is the platform's shortcut, and `Enter` while
+    // an input method is composing confirms its candidate. Read off the event
+    // rather than imported: those predicates are that module's private
+    // business, and this is the shell's half. Its third, `repeat`, is answered
+    // below rather than here, and the difference is not cosmetic — see there.
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.isComposing) return;
+    // THE FOCUSED ELEMENT. `onClick` reads `event.target` because a click's
+    // target IS where the pointer landed; a keydown's target is the focused
+    // element only under the browser's own dispatch, so a press delegated from a
+    // container would name the container instead. `interaction()` and
+    // `navigateFocus` both read `activeElement` for that reason, and an arm in
+    // the same handler answering a different question would be the outlier.
+    const active = doc.activeElement;
+    if (!isElement(active)) return;
+    const answer = controlAnswer(active);
+    if (answer === null) return;
+    if (answer.kind === 'refused' && answer.reason === 'input') return;
+    // A REPEAT IS SWALLOWED, NOT HANDED BACK, and it has to be resolved first to
+    // know that it is ours to swallow. Handing it back looked like the modest
+    // choice and is the one that breaks: `Space` activates a `<button>` on
+    // KEYUP, so a held `Space` whose first keydown this arm cancels and whose
+    // second it releases lets the platform mark the button active — and the
+    // keyup then synthesizes a click that dispatches the act a SECOND time. One
+    // held key, two edits; on a toggle the two cancel and the control reads
+    // dead. So the reader holding a key is one decision, which is what
+    // `create/keys.ts` says a repeat is, and cancelling is how it stays one.
+    // (`Enter` repeats natively either way; only `Space` carries the asymmetry,
+    // and a rule that split them would be a rule about keyboards rather than
+    // about acts.)
+    // A REFUSAL IS THIS PACKAGE'S OWN ANSWER, so it keeps the press: `Space`
+    // would otherwise scroll the page under a reader who has just pressed
+    // something, and there is nothing else waiting for this key.
+    //
+    // EXCEPT A NAVIGATION REFUSAL, WHICH MEANS THE OPPOSITE. `input` and `inert`
+    // say "this press does nothing, and nothing else wants it"; `navigation`
+    // says the BROWSER performs this control's activation, so there is something
+    // else waiting for the key and cancelling is how it never arrives. An
+    // anchor's `Enter` activation is a DEFAULT ACTION — cancel the keydown and
+    // no click is synthesized and the link never opens, which would leave §17d's
+    // outward link working for a pointer and dead for a keyboard. The click path
+    // still refuses to DISPATCH it; the two answers differ because the acts do.
+    if (answer.kind === 'refused') {
+      if (answer.reason !== 'navigation') event.preventDefault();
+      return;
+    }
+    // DISPATCH FIRST, THEN DECIDE WHETHER THE PRESS WAS OURS TO KEEP — and that
+    // order is the whole of this arm's remaining subtlety.
+    //
+    // `data-ig-command` IS A SHARED NAMESPACE. `reduceHost`'s `default` arm says
+    // so in terms: a host's own chrome publishes on the same attribute, and
+    // layer 1 already does — the freshness `refresh`, `retry:index`,
+    // `review-pick-order`, `dismiss:adoption` are all drawn inside this surface
+    // and all answered by the host's own `click` listener, never by this
+    // reducer. Cancelling their keydown would suppress the native click that
+    // listener is waiting for, and every one of those controls would stop
+    // answering the keyboard — a regression this arm introduced and could not
+    // see, because from out here a command the reducer ignored and one it
+    // handled without changing anything look identical. So the reducer is asked.
+    //
+    // Unclaimed means HANDS OFF, ALL THE WAY OFF — and "all the way" is the
+    // part that needed a second try. Not cancelling is not enough: dispatching
+    // an unclaimed command still ends in `schedule()`, and the redraw replaces
+    // `surface.innerHTML` — including the button the reader is holding. Since
+    // `Space` activates a `<button>` on KEYUP, destroying it before then loses
+    // the activation just as completely as cancelling the press would. So the
+    // reduction is computed, read, and only THEN applied. No `preventDefault`,
+    // no redraw, no `activating`: the platform's own activation is that
+    // control's route, repeats and all, exactly as before this arm existed.
+    if (destroyed) return;
+    const result = reduceHost(state, answer.command, landed());
+    if (!result.claimed) return;
+    applyResult(result);
+    event.preventDefault();
+    // THE PRESS IS NOW RECORDED AS OURS, so its repeats are swallowed at the top
+    // of this handler wherever the dispatch has since sent focus. Added beside
+    // any other key already held rather than replacing it.
+    activating.add(event.key);
+  };
+
   const onKeydown = (event: KeyboardEvent): void => {
     // A HELD KEY BELONGS TO THE CONTROL IT ACTIVATED, wherever focus went next.
     //
@@ -2889,7 +2978,16 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // target the create map and the viewer's navigation could reach is behind
     // the overlay and inert, so consulting them would act on something the
     // reader cannot see.
-    if (state.firstPass.phase.kind !== 'closed') return;
+    if (state.firstPass.phase.kind !== 'closed') {
+      // THE OVERLAY'S OWN COMMAND CONTROLS ARE THE ONE EXCEPTION (#161). Its
+      // exit, `first-pass-close`, is a `data-ig-command` control like any
+      // other, and with the queue up it is the only one a reader can reach, so
+      // `Enter` and `Space` activate it here as everywhere else. Only the
+      // command channel: the queue's answers keep their `y`/`n`/`s` map.
+      const active = doc.activeElement;
+      if (isElement(active) && active.closest(`[${COMMAND_ATTRIBUTE}]`) !== null) activateFocused(event);
+      return;
+    }
     const document_ = landed();
     const match = targetMatches(document_.issues, state.targetQuery, state.draft.source)[0]?.ref ?? null;
     const context: KeyboardContext = {
@@ -3059,86 +3157,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // other key reader that binds it and spells it the same way. (`create/keys.ts`
     // is NOT a precedent either way: it binds no space key, and lowercases the
     // names it does bind.)
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    // TWO OF THE REFUSALS `create/keys.ts` ARGUES FOR ITS OWN BINDINGS, and for
-    // the same reasons — a chord is the platform's shortcut, and `Enter` while
-    // an input method is composing confirms its candidate. Read off the event
-    // rather than imported: those predicates are that module's private
-    // business, and this is the shell's half. Its third, `repeat`, is answered
-    // below rather than here, and the difference is not cosmetic — see there.
-    if (event.ctrlKey || event.metaKey || event.altKey) return;
-    if (event.isComposing) return;
-    // THE FOCUSED ELEMENT. `onClick` reads `event.target` because a click's
-    // target IS where the pointer landed; a keydown's target is the focused
-    // element only under the browser's own dispatch, so a press delegated from a
-    // container would name the container instead. `interaction()` and
-    // `navigateFocus` both read `activeElement` for that reason, and an arm in
-    // the same handler answering a different question would be the outlier.
-    const active = doc.activeElement;
-    if (!isElement(active)) return;
-    const answer = controlAnswer(active);
-    if (answer === null) return;
-    if (answer.kind === 'refused' && answer.reason === 'input') return;
-    // A REPEAT IS SWALLOWED, NOT HANDED BACK, and it has to be resolved first to
-    // know that it is ours to swallow. Handing it back looked like the modest
-    // choice and is the one that breaks: `Space` activates a `<button>` on
-    // KEYUP, so a held `Space` whose first keydown this arm cancels and whose
-    // second it releases lets the platform mark the button active — and the
-    // keyup then synthesizes a click that dispatches the act a SECOND time. One
-    // held key, two edits; on a toggle the two cancel and the control reads
-    // dead. So the reader holding a key is one decision, which is what
-    // `create/keys.ts` says a repeat is, and cancelling is how it stays one.
-    // (`Enter` repeats natively either way; only `Space` carries the asymmetry,
-    // and a rule that split them would be a rule about keyboards rather than
-    // about acts.)
-    // A REFUSAL IS THIS PACKAGE'S OWN ANSWER, so it keeps the press: `Space`
-    // would otherwise scroll the page under a reader who has just pressed
-    // something, and there is nothing else waiting for this key.
-    //
-    // EXCEPT A NAVIGATION REFUSAL, WHICH MEANS THE OPPOSITE. `input` and `inert`
-    // say "this press does nothing, and nothing else wants it"; `navigation`
-    // says the BROWSER performs this control's activation, so there is something
-    // else waiting for the key and cancelling is how it never arrives. An
-    // anchor's `Enter` activation is a DEFAULT ACTION — cancel the keydown and
-    // no click is synthesized and the link never opens, which would leave §17d's
-    // outward link working for a pointer and dead for a keyboard. The click path
-    // still refuses to DISPATCH it; the two answers differ because the acts do.
-    if (answer.kind === 'refused') {
-      if (answer.reason !== 'navigation') event.preventDefault();
-      return;
-    }
-    // DISPATCH FIRST, THEN DECIDE WHETHER THE PRESS WAS OURS TO KEEP — and that
-    // order is the whole of this arm's remaining subtlety.
-    //
-    // `data-ig-command` IS A SHARED NAMESPACE. `reduceHost`'s `default` arm says
-    // so in terms: a host's own chrome publishes on the same attribute, and
-    // layer 1 already does — the freshness `refresh`, `retry:index`,
-    // `review-pick-order`, `dismiss:adoption` are all drawn inside this surface
-    // and all answered by the host's own `click` listener, never by this
-    // reducer. Cancelling their keydown would suppress the native click that
-    // listener is waiting for, and every one of those controls would stop
-    // answering the keyboard — a regression this arm introduced and could not
-    // see, because from out here a command the reducer ignored and one it
-    // handled without changing anything look identical. So the reducer is asked.
-    //
-    // Unclaimed means HANDS OFF, ALL THE WAY OFF — and "all the way" is the
-    // part that needed a second try. Not cancelling is not enough: dispatching
-    // an unclaimed command still ends in `schedule()`, and the redraw replaces
-    // `surface.innerHTML` — including the button the reader is holding. Since
-    // `Space` activates a `<button>` on KEYUP, destroying it before then loses
-    // the activation just as completely as cancelling the press would. So the
-    // reduction is computed, read, and only THEN applied. No `preventDefault`,
-    // no redraw, no `activating`: the platform's own activation is that
-    // control's route, repeats and all, exactly as before this arm existed.
-    if (destroyed) return;
-    const result = reduceHost(state, answer.command, landed());
-    if (!result.claimed) return;
-    applyResult(result);
-    event.preventDefault();
-    // THE PRESS IS NOW RECORDED AS OURS, so its repeats are swallowed at the top
-    // of this handler wherever the dispatch has since sent focus. Added beside
-    // any other key already held rather than replacing it.
-    activating.add(event.key);
+    activateFocused(event);
   };
 
   // THE HELD KEY IS LET GO. Registered beside the keydown listener rather than on
