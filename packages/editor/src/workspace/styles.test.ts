@@ -109,9 +109,11 @@ function containerBlock(css: string, condition: string): string {
  * layout.
  */
 function layoutBands(css: string): { condition: string; tracks: string[] }[] {
-  return ['width >= 1360px', 'width < 1360px', 'width < 1120px'].map((condition) => {
+  return ['width >= 1138px', 'width < 1138px', 'width < 800px'].map((condition) => {
     const block = containerBlock(css, condition);
-    const template = block.match(/(?:^|\n)\s*\.ig-workspace\s*\{[^}]*grid-template-columns:([^;]*);/);
+    // The base rule, alone or grouped with the selection's variant that a
+    // narrower band has to answer on the same declaration (#313).
+    const template = block.match(/(?:^|\n)\s*\.ig-workspace(?:,\s*\.ig-workspace\[[^\]]*\])?\s*\{[^}]*grid-template-columns:([^;]*);/);
     assert.ok(template !== null, `(${condition}) sets no column template`);
     return {
       condition,
@@ -980,46 +982,30 @@ describe('the workspace stylesheet carries structure, never a value', () => {
    * built clean, looked right, and was found only by comparing the tracks
    * either side of a breakpoint. So the comparison is the test.
    */
-  it('never lets the rail yield, at any of §17k’s three widths', () => {
+  it('folds the order to a 40 strip only where the zones do not fit and something is selected (#313)', () => {
     const bands = layoutBands(css);
-    assert.equal(bands.length, 3, 'the sheet no longer declares three §17k layouts');
-    // AND THE BANDS MEET, WITH NOTHING BETWEEN THEM. A container's inline size
-    // is not an integer: written as (min-width: 1360px) and (max-width: 1359px)
-    // a box measured at 1359.5 matches NEITHER, the base fallback comes back,
-    // and the rail drops to its 40-character measure at exactly the widths a
-    // resize drags through. Asserted as the SYNTAX rather than by measuring a
-    // fractional box, because the syntax is what makes the gap impossible.
+    assert.equal(bands.length, 3, 'the sheet no longer declares three layouts');
+    // THE BANDS MEET, WITH NOTHING BETWEEN THEM: single-sided conditions only,
+    // so a fractional container width cannot fall through to the fallback.
     for (const band of bands) {
-      assert.match(
-        band.condition,
-        /^width\s*(?:<|>=)\s*\d+px$/,
-        `"${band.condition}" leaves a gap a fractional width can fall through`,
-      );
+      assert.match(band.condition, /^width\s*(?:<|>=)\s*\d+px$/, `"${band.condition}" leaves a gap a fractional width can fall through`);
     }
-    const rails = bands.map((band) => band.tracks[0]);
-    assert.deepEqual(
-      [...new Set(rails)],
-      [rails[0]],
-      `the rail is not one measure across the three layouts: ${rails.join(' | ')}`,
-    );
-    // AND THE OTHER TWO DO MOVE, which is the positive control on the line
-    // above: three identical templates would satisfy it and would mean the
-    // narrow layouts do not exist.
-    assert.equal(
-      new Set(bands.map((band) => band.tracks.join(' '))).size,
-      3,
-      'two of the three layouts are the same template',
-    );
-    // THE ORDER OF YIELDING, read off the tracks. The middle layout drops the
-    // inspector's track entirely — it is lifted into the canvas's area — and
-    // the narrow one brings it back with the CANVAS reduced to a handle.
     const [wide, middle, narrow] = bands;
-    assert.equal(middle?.tracks.length, 2, 'the middle layout still draws three tracks');
-    assert.equal(narrow?.tracks.length, 3, 'the narrow layout lost the inspector’s track');
-    assert.equal(wide?.tracks.length, 3);
-    // The strip is the smallest track in the sheet, and smaller than the
-    // measure the wide layout gives the inspector.
-    assert.match(narrow?.tracks[1] ?? '', /\*\s*4\b/, 'the collapsed canvas is not a strip');
+    // THE BOARD'S ZONES: the order 336 (43 characters), the Inspector 320 (41).
+    assert.deepEqual(wide?.tracks, ['calc(var(--ig-char-width) * 43)', '1fr', 'calc(var(--ig-char-width) * 41)']);
+    // Below 1138 with nothing selected: the order at 336, the graph the rest, no Inspector.
+    assert.deepEqual(middle?.tracks, ['calc(var(--ig-char-width) * 43)', '1fr']);
+    // With a selection the order folds: 40 | minmax(0, 1fr) | 320.
+    const folded = containerBlock(css, 'width < 1138px').match(
+      /\.ig-workspace\[data-inspector='lifted'\]\s*\{[^}]*grid-template-columns:([^;]*);/,
+    )?.[1];
+    assert.ok(folded !== undefined, 'nothing folds the order around a selection');
+    assert.deepEqual(
+      folded.split('\n').map((line) => line.trim()).filter((line) => line !== ''),
+      ['calc(var(--ig-space-wide) * 2)', 'minmax(0, 1fr)', 'calc(var(--ig-char-width) * 41)'],
+    );
+    // Below 800 the graph is the zone that folds, into its own 40 strip, and the order is 336 again.
+    assert.deepEqual(narrow?.tracks, ['calc(var(--ig-char-width) * 43)', 'calc(var(--ig-space-wide) * 2)', '1fr']);
   });
 
   /**
@@ -1072,7 +1058,7 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     // anchors the remainder leftwards across the rail, and the zone's
     // `overflow: auto` clips whatever is left. Three ways to lose the same
     // surface, none of which either change could have seen on its own.
-    const narrow = containerBlock(css, 'width < 1120px');
+    const narrow = containerBlock(css, 'width < 800px');
 
     // IT IS NOT HIDDEN WITH THE GRAPH. The strip takes every sibling down with
     // it, and the overlay is anchored to the HEADER COUNT, which is drawn at
@@ -1107,26 +1093,16 @@ describe('the workspace stylesheet carries structure, never a value', () => {
     assert.match(overlay, /box-shadow:\s*none/);
   });
 
-  it('undoes every overlay declaration when the inspector comes back inline', () => {
-    // THE PRICE OF SINGLE-SIDED CONDITIONS, PINNED. The sheet's own guard
-    // admits only `(min-width: Npx)` or `(max-width: Npx)`, so the middle
-    // layout cannot be scoped to a band: its rules also match below 1120 and
-    // the narrow block has to answer each one. A declaration added to the
-    // overlay with no answer here would leak into the inline inspector, where
-    // it would read as a panel that is somehow raised and 42 characters wide
-    // inside its own column — and nothing else in this file would notice.
-    const properties = (block: string): string[] => {
-      const rule = block.match(/\.ig-workspace \.ig-zone\[data-zone='inspector'\]\s*\{([^}]*)\}/);
-      return [...(rule?.[1] ?? '').matchAll(/([a-z-]+)\s*:/g)].map((match) => match[1] ?? '');
-    };
-    const middle = properties(containerBlock(css, 'width < 1360px'));
-    const narrow = properties(containerBlock(css, 'width < 1120px'));
-    assert.ok(middle.length > 0, 'the middle layout no longer lifts the inspector');
-    assert.deepEqual(
-      middle.filter((name) => !narrow.includes(name)),
-      [],
-      'the narrow layout leaves an overlay declaration standing',
-    );
+  it('undoes every folded-panel declaration where the order unfolds again (#313)', () => {
+    // THE PRICE OF SINGLE-SIDED CONDITIONS, PINNED. The fold's rules also match
+    // below 800, so the narrow block answers each one on the same selector.
+    const selector = /\.ig-workspace\[data-inspector='lifted'\]\[data-order-panel='open'\] \.ig-zone\[data-zone='rail'\]\s*\{([^}]*)\}/;
+    const properties = (block: string): string[] =>
+      [...(block.match(selector)?.[1] ?? '').matchAll(/([a-z-]+)\s*:/g)].map((match) => match[1] ?? '');
+    const folded = properties(containerBlock(css, 'width < 1138px'));
+    const narrow = properties(containerBlock(css, 'width < 800px'));
+    assert.ok(folded.length > 0, 'the folded order no longer opens as a panel');
+    assert.deepEqual(folded.filter((name) => !narrow.includes(name)), [], 'the narrow layout leaves a panel declaration standing');
   });
 
   it('draws the audit bar from the mark, and only inside the rail', () => {
@@ -1609,15 +1585,15 @@ describe('the layout under 640', () => {
   const zone = (page: Document, name: string): Element =>
     page.querySelector(`[data-zone="${name}"]`) ?? assert.fail(`no ${name} zone`);
 
-  it('R4 places one under-640 container block after the width < 1120px block', () => {
+  it('R4 places one under-640 container block after the width < 800px block', () => {
     const css = withoutComments(workspaceStylesheet);
-    const narrowest = css.indexOf('@container ig-workspace (width < 1120px)');
+    const narrowest = css.indexOf('@container ig-workspace (width < 800px)');
     const phone = css.indexOf('@container ig-workspace (width < 640px)');
     // The issue: "Add `@container ig-workspace (width < 640px)` after the `width < 1120px` block in packages/editor/src/workspace/styles.ts."
     assert.notEqual(phone, -1, 'no under-640 block');
     assert.ok(
-      phone > narrowest + containerBlock(css, 'width < 1120px').length,
-      'the under-640 block does not follow the width < 1120px block, so the wider rules would win',
+      phone > narrowest + containerBlock(css, 'width < 800px').length,
+      'the under-640 block does not follow the width < 800px block, so the wider rules would win',
     );
     assert.equal(css.split('@container ig-workspace (width < 640px)').length, 2, 'the under-640 block is declared twice');
     assert.notEqual(containerBlock(css, 'width < 640px').trim(), '', 'the under-640 block is empty');
@@ -1823,7 +1799,7 @@ describe('the layout under 640', () => {
     assert.equal(tracks.length, 1, `the under-640 layout draws ${String(tracks.length)} columns: ${tracks.join(' ')}`);
     assert.deepEqual(
       layoutBands(css).map((band) => band.condition),
-      ['width >= 1360px', 'width < 1360px', 'width < 1120px'],
+      ['width >= 1138px', 'width < 1138px', 'width < 800px'],
     );
   });
 
@@ -2270,43 +2246,38 @@ describe('one recovery card per failed write: the log stands down where the Insp
     // A TOP-LEVEL RULE, before the narrower blocks that answer it.
     const at = css.search(rule(".ig-workspace .ig-log-recovery[data-ig-inspected]", 'none'));
     assert.ok(at >= 0, 'no rule hides the log copy');
-    assert.ok(at < css.indexOf('@container ig-workspace (width < 1360px)'), 'the rule sits inside a narrower block');
+    assert.ok(at < css.indexOf('@container ig-workspace (width < 1138px)'), 'the rule sits inside a narrower block');
   });
 
   it('brings it back where no Inspector is on screen, and hides it again where the Inspector returns', () => {
-    // The middle layout's dismissed overlay hides the Inspector, so the log keeps the card.
-    assert.match(blockOf('width < 1360px'), rule(".ig-workspace[data-inspector='dismissed'] .ig-log-recovery[data-ig-inspected]", 'flex'));
-    // The narrow layout draws the Inspector inline again, dismissed or not.
-    assert.match(blockOf('width < 1120px'), rule(".ig-workspace[data-inspector='dismissed'] .ig-log-recovery[data-ig-inspected]", 'none'));
+    // Below 1138 a dismissed Inspector is not drawn, so the log keeps the card.
+    assert.match(blockOf('width < 1138px'), rule(".ig-workspace[data-inspector='dismissed'] .ig-log-recovery[data-ig-inspected]", 'flex'));
+    // Below 800 the Inspector is a column again, dismissed or not.
+    assert.match(blockOf('width < 800px'), rule(".ig-workspace[data-inspector='dismissed'] .ig-log-recovery[data-ig-inspected]", 'none'));
     // Under 640 there is no Inspector zone, so the log keeps every card.
     assert.match(blockOf('width < 640px'), rule(".ig-workspace[data-inspector] .ig-log-recovery[data-ig-inspected]", 'flex'));
   });
 });
 
-describe('the canvas zone clears the lifted Inspector (#303)', () => {
+describe('the Inspector never lies over the graph (#313)', () => {
   const css = workspaceStylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
-  const blockOf = (condition: string): string => {
-    const at = css.indexOf(`@container ig-workspace (${condition})`);
-    assert.ok(at >= 0, `no ${condition} block`);
-    const next = css.indexOf('@container ig-workspace', at + 1);
-    return css.slice(at, next < 0 ? undefined : next);
-  };
-  const zone = ".ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='canvas']";
-  const escaped = (text: string): string => text.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&');
-  const margin = (value: string): RegExp =>
-    new RegExp(`${escaped(zone)} \\{\\s*padding-inline-end: ${escaped(value)};`);
 
-  it('stops the canvas content where the overlay starts, at the overlay’s own width', () => {
-    // THE SAME WIDTH BOTH WAYS: the clearance is read off the panel's own rule, so
-    // the head's count, the switch's figure and the list's counts cannot slide under a panel that changed size.
-    const middle = blockOf('width < 1360px');
-    const panel = middle.match(/\.ig-workspace \.ig-zone\[data-zone='inspector'\] \{[^}]*inline-size: ([^;]+);/)?.[1];
-    assert.ok(panel !== undefined, 'the lifted panel has no inline-size');
-    assert.match(middle, margin(panel));
+  it('gives the Inspector its own column wherever it is drawn beside the graph, so nothing pads the canvas to clear it', () => {
+    const folded = containerBlock(css, 'width < 1138px');
+    assert.match(folded, /\.ig-workspace\[data-inspector='lifted'\] \.ig-zone\[data-zone='inspector'\]\s*\{[^}]*grid-area: inspector;/);
+    assert.equal(/padding-inline-end:\s*calc/.test(folded), false, 'the canvas still pads itself to clear an overlay');
+    assert.equal(/box-shadow:[^;]*\n[^}]*inspector/.test(folded), false);
   });
 
-  it('drops the clearance where the Inspector is a column again', () => {
-    assert.match(blockOf('width < 1120px'), margin('0'));
+  it('opens the folded order over the graph from the strip\u2019s edge, raised, 336 wide', () => {
+    const panel = containerBlock(css, 'width < 1138px').match(
+      /\.ig-workspace\[data-inspector='lifted'\]\[data-order-panel='open'\] \.ig-zone\[data-zone='rail'\]\s*\{([^}]*)\}/,
+    )?.[1];
+    assert.ok(panel !== undefined, 'the folded order has no panel');
+    assert.match(panel, /grid-area: canvas;/);
+    assert.match(panel, /justify-self: start;/);
+    assert.match(panel, /inline-size: calc\(var\(--ig-char-width\) \* 43\);/);
+    assert.match(panel, /box-shadow: var\(--ig-elevation-overlay\);/);
   });
 });
 

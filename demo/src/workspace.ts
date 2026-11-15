@@ -282,6 +282,9 @@ export const WORKSPACE_WORDS: MountWords = {
   // they are for every other heading in this zone, so the word reads as a word.
   loading: 'Loading your issues',
   inspector: 'Inspector',
+  workOrder: 'Work order',
+  showWorkOrder: 'Show the work order',
+  closeWorkOrder: 'Close the work order',
   nothingSelected: 'Select an issue or a relationship to see its details.',
   issuesSelected: (count) => `${String(count)} issues selected`,
   clearSelection: 'Clear selection',

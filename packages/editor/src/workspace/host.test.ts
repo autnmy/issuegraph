@@ -1326,6 +1326,22 @@ describe('the narrow tabs and the Related groups list', () => {
     assert.deepEqual(drive([{ kind: 'group', id: blockedBy.id }], switched).state.switchedKinds, []);
   });
 
+  it('#313 opens and closes the folded order\u2019s panel; Escape and a pick close it first, before the Inspector', () => {
+    const selected = drive([{ kind: 'point', key: '1' }]).state;
+    const open = drive([{ kind: 'control', name: 'order-open' }], selected).state;
+    assert.equal(open.orderPanel, true);
+    assert.equal(drive([{ kind: 'control', name: 'order-close' }], open).state.orderPanel, false);
+    // Escape closes the panel and leaves the Inspector open; a second Escape dismisses the Inspector.
+    const escaped = drive([{ kind: 'control', name: 'narrow-dismiss' }], open).state;
+    assert.equal(escaped.orderPanel, false);
+    assert.equal(escaped.inspectorDismissed, false);
+    assert.equal(drive([{ kind: 'control', name: 'narrow-dismiss' }], escaped).state.inspectorDismissed, true);
+    // A pick in the panel moves the selection and closes it.
+    assert.equal(drive([{ kind: 'point', key: '2' }], open).state.orderPanel, false);
+    // Closing what is closed claims nothing.
+    assert.equal(reduceHost(selected, { kind: 'control', name: 'order-close' }, document).claimed, false);
+  });
+
   it('#303 reconcileHost: a selection dropped or moved to its carrier starts the kinds over, and a live one keeps the same state', () => {
     const nothingHidden: ReadonlySet<string> = new Set();
     const switched: HostCommand[] = [{ kind: 'control', name: 'legend-kind', value: 'serialize-with' }];

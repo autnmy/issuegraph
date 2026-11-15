@@ -139,12 +139,12 @@ export const workspaceStylesheet = `
    327.6 — the rail exact, the inspector 2.4px under 17k's figure. Stated
    rather than rounded away; the type-relative property is worth more than the
    2.4px, and it is the same BYO argument layer 1's row query rests on. */
-@container ig-workspace (width >= 1360px) {
+@container ig-workspace (width >= 1138px) {
   .ig-workspace {
     grid-template-columns:
-      calc(var(--ig-char-width) * 50)
+      calc(var(--ig-char-width) * 43)
       1fr
-      calc(var(--ig-char-width) * 42);
+      calc(var(--ig-char-width) * 41);
   }
 }
 
@@ -1968,63 +1968,136 @@ ${heldRailDeclarations}
   display: none;
 }
 
-/* THE MIDDLE LAYOUT: the inspector lifts, and the rail does not move.
+/* THE ORDER'S STRIP AND THE PANEL'S HEAD exist only while the order is folded
+   (#313); every layout but the folded one leaves them out. The strip's head is
+   48 tall like a zone head, with one centred 32 ghost icon button. */
+.ig-order-strip {
+  display: none;
+  flex-direction: column;
+  border-right: var(--ig-hairline-width) solid var(--ig-hairline);
+}
 
-   IT IS PLACED IN THE CANVAS'S GRID AREA, NOT POSITIONED OVER IT. An absolute
-   overlay would need an offset chosen so it clears the rail, and an offset is
-   a number that is right until someone changes a track. A grid area is not:
-   the rail is a DIFFERENT area, so an item placed in the canvas's cannot reach
-   it however wide it gets. Section 17d's audit overlay is positioned on the
-   same argument one surface over, and this is that argument without the
-   position.
+/* The strip's 48 head, ruled where the panel's head and the graph's toolbar
+   are ruled, so the hairlines meet across the fold. */
+.ig-order-strip-head {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-block-size: calc(var(--ig-space-loose) * 3);
+  border-bottom: var(--ig-hairline-width) solid var(--ig-hairline);
+}
 
-   42 CHARACTERS, THE SAME MEASURE THE WIDE LAYOUT GIVES THE INSPECTOR — 17k
-   lifts the panel, it does not resize it. At the shipped --ig-char-width that
-   is 327.6 against 17k's 330, the 2.4 the wide block already accounts for.
+.ig-order-toggle,
+.ig-order-close {
+  display: inline-grid;
+  place-items: center;
+  inline-size: calc(var(--ig-space-loose) * 2);
+  block-size: calc(var(--ig-space-loose) * 2);
+  padding: 0;
+  border: 0;
+  border-radius: var(--ig-radius);
+  background: none;
+  color: var(--ig-text-muted);
+  cursor: pointer;
+}
 
-   OPAQUE AND RAISED, because it now has the canvas underneath it rather than a
-   border between them. --ig-elevation-overlay is the token for exactly this
-   and --ig-surface is the raised ground; the zone keeps its own border-left
-   from the base rule, which reads as the panel's leading edge. */
-@container ig-workspace (width < 1360px) {
+.ig-order-toggle:hover,
+.ig-order-close:hover,
+.ig-order-toggle[aria-expanded='true'] {
+  background: var(--ig-surface-2);
+  color: var(--ig-text);
+}
+
+.ig-order-toggle:focus-visible,
+.ig-order-close:focus-visible {
+  outline: var(--ig-focus-ring) solid var(--ig-focus);
+  outline-offset: var(--ig-space-micro);
+}
+
+.ig-order-head {
+  display: none;
+  align-items: center;
+  gap: var(--ig-space-snug);
+  min-block-size: calc(var(--ig-space-loose) * 3);
+  padding: 0 var(--ig-space-loose);
+  border-bottom: var(--ig-hairline-width) solid var(--ig-hairline);
+}
+
+.ig-order-title {
+  margin: 0;
+  font-size: inherit;
+  font-weight: var(--ig-weight-medium);
+}
+
+.ig-order-count {
+  color: var(--ig-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ig-order-head .ig-order-close {
+  margin-inline-start: auto;
+}
+
+/* THE ORDER FOLDS (#313, Claude Design 7b8fcbc, RULES "The workspace").
+
+   THE BOARD'S ZONES: the order 336, the graph at least 480, the Inspector 320
+   (43 and 41 characters at the shipped --ig-char-width, sized in type so a
+   host that scales its type scales the zones). Narrower than the three with
+   their hairlines (1138), and with something selected, the order folds into
+   a 40 strip so the graph keeps its room and nothing runs under the
+   Inspector: 40 | minmax(0, 1fr) | 320. The strip holds one button, "Show the
+   work order", which opens the order over the graph as a panel 336 wide; a
+   pick, Escape or the panel's close button closes it. With nothing selected
+   (or the Inspector dismissed) nothing folds: the order at 336, the graph
+   takes the rest, and no Inspector is drawn.
+
+   THE PANEL IS PLACED IN THE CANVAS'S GRID AREA, at its start, not positioned
+   by an offset: the strip is a different area, so the panel begins at the
+   strip's edge however the tracks change. */
+@container ig-workspace (width < 1138px) {
   .ig-workspace {
     grid-template-areas:
       'header header'
       'rail canvas';
     grid-template-columns:
-      calc(var(--ig-char-width) * 50)
+      calc(var(--ig-char-width) * 43)
       1fr;
   }
-
   .ig-workspace .ig-zone[data-zone='inspector'] {
+    display: none;
+  }
+  .ig-workspace[data-inspector='lifted'] {
+    grid-template-areas:
+      'header header header'
+      'rail canvas inspector';
+    grid-template-columns:
+      calc(var(--ig-space-wide) * 2)
+      minmax(0, 1fr)
+      calc(var(--ig-char-width) * 41);
+  }
+  .ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='inspector'] {
+    display: block;
+    grid-area: inspector;
+  }
+  .ig-workspace[data-inspector='lifted'] .ig-order-strip {
+    display: flex;
+    grid-area: rail;
+  }
+  .ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='rail'] {
+    display: none;
+  }
+  .ig-workspace[data-inspector='lifted'][data-order-panel='open'] .ig-zone[data-zone='rail'] {
+    display: block;
     grid-area: canvas;
-    justify-self: end;
-    inline-size: calc(var(--ig-char-width) * 42);
-    z-index: 1;
+    justify-self: start;
+    inline-size: calc(var(--ig-char-width) * 43);
+    z-index: 2;
     background: var(--ig-surface);
     box-shadow: var(--ig-elevation-overlay);
   }
-
-  /* THE CANVAS ZONE'S CONTENT ENDS WHERE THE LIFTED INSPECTOR BEGINS (#303).
-     The board's Inspector is a column, so nothing covers the canvas's far
-     edge there; here the panel lies over the canvas, and everything set at
-     that edge went under it: the head's count ("Selected: #3104 · 74 related"),
-     the switch's "14 of 19 drawn", the Related list's counts. Padding the zone,
-     not each part, keeps every part clear at once; the panel itself is a
-     sibling in the same grid area, so the padding does not move it. The
-     clearance is the panel's own inline-size, the rule above. */
-  .ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='canvas'] {
-    padding-inline-end: calc(var(--ig-char-width) * 42);
+  .ig-workspace[data-inspector='lifted'][data-order-panel='open'] .ig-order-head {
+    display: flex;
   }
-
-  /* OPENED BY SELECTION, DISMISSED ON ESCAPE — 17k's own words, and both
-     halves arrive as this one attribute. render.ts writes 'lifted' only when
-     something is SELECTED and the reader has not dismissed it since, so an
-     empty "nothing selected" card never floats over the canvas. */
-  .ig-workspace[data-inspector='dismissed'] .ig-zone[data-zone='inspector'] {
-    display: none;
-  }
-
   /* NO INSPECTOR ON SCREEN, SO THE LOG KEEPS THE CARD. */
   .ig-workspace[data-inspector='dismissed'] .ig-log-recovery[data-ig-inspected] {
     display: flex;
@@ -2045,7 +2118,7 @@ ${heldRailDeclarations}
    inspector takes 1fr, which at 1000 is 550 and at 860 is 418 — both above the
    330 the wide layout gives it, so the zone that yields in between is not
    yielding here at all. That is the order the rule names. */
-@container ig-workspace (width < 1120px) {
+@container ig-workspace (width < 800px) {
   /* THE RAIL TAKES THE KEY BACK, BECAUSE THERE IS NO CANVAS TO CARRY IT. Below
      this width §17k collapses the canvas to a four-character strip, so the zone
      the rule above defers to is not on screen — and the station fills the rail
@@ -2056,14 +2129,32 @@ ${heldRailDeclarations}
     display: flex;
   }
 
-  .ig-workspace {
+  .ig-workspace,
+  .ig-workspace[data-inspector='lifted'] {
     grid-template-areas:
       'header header header'
       'rail canvas inspector';
     grid-template-columns:
-      calc(var(--ig-char-width) * 50)
-      calc(var(--ig-char-width) * 4)
+      calc(var(--ig-char-width) * 43)
+      calc(var(--ig-space-wide) * 2)
       1fr;
+  }
+  /* THE ORDER UNFOLDS HERE: the graph is the zone that folds below 800 (#313). */
+  .ig-workspace[data-inspector='lifted'] .ig-order-strip {
+    display: none;
+  }
+  .ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='rail'],
+  .ig-workspace[data-inspector='lifted'][data-order-panel='open'] .ig-zone[data-zone='rail'] {
+    display: block;
+    grid-area: rail;
+    justify-self: stretch;
+    inline-size: auto;
+    z-index: auto;
+    background: none;
+    box-shadow: none;
+  }
+  .ig-workspace[data-inspector='lifted'][data-order-panel='open'] .ig-order-head {
+    display: none;
   }
 
   .ig-workspace .ig-zone[data-zone='inspector'] {
@@ -2167,7 +2258,7 @@ ${heldRailDeclarations}
       'header header'
       'rail canvas';
     grid-template-columns:
-      calc(var(--ig-char-width) * 50)
+      calc(var(--ig-char-width) * 43)
       1fr;
   }
 
@@ -2215,6 +2306,20 @@ ${heldRailDeclarations}
     grid-area: view;
   }
 
+  /* ONE VIEW AT A TIME, whatever the wider layouts did with a selection: the
+     order is a tab here, never a strip or a panel (#313). */
+  .ig-workspace[data-inspector='lifted'],
+  .ig-workspace[data-inspector='lifted'][data-canvas='open'] {
+    grid-template-areas:
+      'header'
+      'view';
+    grid-template-columns: 1fr;
+  }
+  .ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='rail'],
+  .ig-workspace[data-inspector='lifted'][data-order-panel='open'] .ig-zone[data-zone='rail'] {
+    grid-area: view;
+  }
+
   .ig-workspace .ig-zone[data-zone='rail'] {
     border-right: 0;
   }
@@ -2241,7 +2346,9 @@ ${heldRailDeclarations}
   }
 
   .ig-workspace[data-tab='related'] .ig-zone[data-zone='rail'],
-  .ig-workspace[data-tab='sub-issues'] .ig-zone[data-zone='rail'] {
+  .ig-workspace[data-tab='sub-issues'] .ig-zone[data-zone='rail'],
+  .ig-workspace[data-tab='related'][data-order-panel='open'] .ig-zone[data-zone='rail'],
+  .ig-workspace[data-tab='sub-issues'][data-order-panel='open'] .ig-zone[data-zone='rail'] {
     display: none;
   }
 

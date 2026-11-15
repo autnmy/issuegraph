@@ -600,6 +600,9 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   // Whether the last render drew the target search, so focus moves into it on
   // the render that OPENS it and not on every render while it stays open.
   let searchWasOpen = false;
+  // Whether the last render drew #313's order panel open, so its open and its
+  // close each move focus once.
+  let orderPanelWas = false;
   // The phase the last render drew, so the overlay is entered once rather than
   // on every redraw, and left exactly once.
   let firstPassWas: FirstPassPhase['kind'] = 'closed';
@@ -1610,6 +1613,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       // that reopened itself on every landed write would be unusable.
       canvasOpen: state.canvasOpen,
       inspectorDismissed: state.inspectorDismissed,
+      orderPanel: state.orderPanel,
       // The layout under 640's tab, the groups opened past five and the
       // legend's switched kinds, for the same reason: the renderer keeps
       // nothing across a redraw.
@@ -2103,6 +2107,23 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         back_?.focus({ preventScroll: true });
       }
     }
+    // #313: THE PANEL'S OPEN AND CLOSE (review-219, PR 328). Opening brings the
+    // selected row into view; closing, by Close, Escape or a pick, gives focus
+    // back to "Show the work order", the control that opened it, when focus was
+    // in the panel or lost; a reader working elsewhere keeps their place.
+    const panel = zone('rail');
+    if (state.orderPanel && !orderPanelWas) {
+      const current = panel?.querySelector<HTMLElement>(`[${KEY_ATTRIBUTE}][aria-current="true"]`);
+      if (current !== null && current !== undefined && typeof current.scrollIntoView === 'function') {
+        current.scrollIntoView({ block: 'nearest' });
+      }
+    } else if (!state.orderPanel && orderPanelWas) {
+      const active = doc.activeElement;
+      if (active === null || !surface.contains(active) || panel?.contains(active) === true) {
+        surface.querySelector<HTMLElement>('.ig-order-toggle')?.focus({ preventScroll: true });
+      }
+    }
+    orderPanelWas = state.orderPanel;
     firstPassWas = state.firstPass.phase.kind;
     searchWasOpen = search !== null;
     announceSelection();
@@ -2882,7 +2903,9 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // the wide layout" as a cost. It is not a cost worth taking: a key consumed
     // for a surface nobody can see is indistinguishable from a broken key. See
     // `inspectorIsLifted`, which reads the sheet's own answer off the DOM
-    // rather than re-deriving it from a width.
+    // rather than re-deriving it from a width. #313's order panel is opened by
+    // a press and is on screen whenever it is open, so it needs no measure:
+    // the state says it is there (review-41, PR 328).
     //
     // TWO TRANSIENTS SHARE THIS KEY NOW, AND §17d'S GOES FIRST. The audit
     // overlay is the one the reader pressed a control to open, and it is drawn
@@ -2897,7 +2920,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         dispatch({ kind: 'control', name: 'audit-close' });
         return;
       }
-      if (narrowOverlayOpen(state) && (state.canvasOpen || inspectorIsLifted())) {
+      if (narrowOverlayOpen(state) && (state.canvasOpen || state.orderPanel || inspectorIsLifted())) {
         event.preventDefault();
         dispatch({ kind: 'control', name: 'narrow-dismiss' });
         return;

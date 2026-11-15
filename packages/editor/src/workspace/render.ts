@@ -223,6 +223,12 @@ export interface WorkspaceWords {
    * the word supplied here reads as a word.
    */
   readonly inspector: string;
+  /** The order's panel title where it folds, RULES' "Work order" (#313). */
+  readonly workOrder: string;
+  /** The folded order's strip button, "Show the work order": its name and title. */
+  readonly showWorkOrder: string;
+  /** The order panel's close button, "Close the work order": its name and title. */
+  readonly closeWorkOrder: string;
   /** Shown in the inspector when nothing is selected. */
   readonly nothingSelected: string;
   /**
@@ -1049,6 +1055,11 @@ export interface WorkspaceOptions {
    */
   readonly inspectorDismissed?: boolean | undefined;
   /**
+   * Whether the folded order's panel is open over the graph (#313):
+   * `HostState.orderPanel`. Read only where the order folds.
+   */
+  readonly orderPanel?: boolean | undefined;
+  /**
    * Take over §17j's rail density, instead of letting the rail's own box decide.
    *
    * FORWARDED, NOT INVENTED. `@issuegraph/viewer` owns the rule and the
@@ -1235,8 +1246,54 @@ const ZONE_CLOSE = '</section>';
  * `surfaceId` and only that function escapes an attribute in this package. It
  * renders the frame empty and the inner markup goes where its closing tag was.
  */
-function zone(name: Zone, id: string, inner: string): string {
-  const frame = renderMarkup(element('section', { class: 'ig-zone', 'data-zone': name, id }, []));
+/**
+ * The folded order's strip: its 48 head with one 32 ghost icon button, "Show
+ * the work order", pressed while the panel is open (#313, Design 7b8fcbc).
+ */
+function orderStripSpec(words: WorkspaceWords, open: boolean, railId: string): ElementSpec {
+  // THE STRIP HAS A HEAD, as tall as the panel's and the graph's toolbar and
+  // ruled like them, so the three hairlines meet (review-219, PR 328).
+  return element('div', { class: 'ig-order-strip' }, [
+    element('div', { class: 'ig-order-strip-head' }, [element(
+      'button',
+      {
+        type: 'button',
+        class: 'ig-order-toggle',
+        'data-ig-command': 'order-open',
+        'aria-label': words.showWorkOrder,
+        title: words.showWorkOrder,
+        'aria-expanded': open ? 'true' : 'false',
+        'aria-controls': railId,
+      },
+      [hiddenGlyph('\u2630')],
+    )]),
+  ]);
+}
+
+/**
+ * The order panel's head where the order folds: "Work order", its count, and
+ * a ghost close button, "Close the work order" (#313).
+ */
+function orderHeadSpec(words: WorkspaceWords, ranked: number): ElementSpec {
+  return element('div', { class: 'ig-order-head' }, [
+    element('h2', { class: 'ig-order-title' }, [words.workOrder]),
+    element('span', { class: 'ig-order-count' }, [String(ranked)]),
+    element(
+      'button',
+      {
+        type: 'button',
+        class: 'ig-order-close',
+        'data-ig-command': 'order-close',
+        'aria-label': words.closeWorkOrder,
+        title: words.closeWorkOrder,
+      },
+      [hiddenGlyph('\u2715')],
+    ),
+  ]);
+}
+
+function zone(name: Zone, id: string, inner: string, attributes: Readonly<Record<string, string>> = {}): string {
+  const frame = renderMarkup(element('section', { class: 'ig-zone', 'data-zone': name, id, ...attributes }, []));
   return `${frame.slice(0, -ZONE_CLOSE.length)}${inner}${ZONE_CLOSE}`;
 }
 
@@ -4055,6 +4112,7 @@ export function renderWorkspace(
     ` data-canvas="${canvasOpen ? 'open' : 'strip'}"` +
     ` data-canvas-legend="${canvasLegend}"` +
     ` data-inspector="${lifted ? 'lifted' : 'dismissed'}"` +
+    ` data-order-panel="${options.orderPanel === true ? 'open' : 'shut'}"` +
     ` data-tab="${tab}"`;
   const ids = zoneIds(options.surfaceId);
 
@@ -4235,10 +4293,14 @@ export function renderWorkspace(
         renderMarkup(narrowTabsSpec(tab, options.words.narrow, ids)),
       ].join(''),
     ),
+    // THE FOLDED ORDER'S STRIP (#313): one button that opens the order over the
+    // graph. Drawn always and shown by the sheet only where the order folds.
+    renderMarkup(orderStripSpec(options.words, options.orderPanel === true, ids.rail)),
     zone(
       'rail',
       ids.rail,
       [
+        renderMarkup(orderHeadSpec(options.words, document.order.slots.filter((slot) => slot.rank !== null).length)),
         railSpacer(rail.before, 'before'),
         renderMarkup(markRailRows(railRender.scene.root)),
         railSpacer(rail.after, 'after'),
@@ -4250,6 +4312,9 @@ export function renderWorkspace(
         railRender.scene.footer === null ? '' : renderMarkup(markRailRows(railRender.scene.footer)),
         railFooterSpec === null ? '' : renderMarkup(railFooterSpec),
       ].join(''),
+      // OPEN, THE ORDER IS A DIALOG over the graph, named by its head (#313;
+      // review-219, PR 328). Shut, it is the zone it always was.
+      options.orderPanel === true ? { role: 'dialog', 'aria-label': options.words.workOrder } : {},
     ),
     zone(
       'canvas',

@@ -92,6 +92,12 @@ export interface HostState {
    */
   readonly inspectorDismissed: boolean;
   /**
+   * Whether the folded order's panel is open over the graph (#313). Only the
+   * folded layout draws it; a pick, Escape, its close button or any selection
+   * move closes it.
+   */
+  readonly orderPanel: boolean;
+  /**
    * Whether §17d's audit overlay is on screen.
    *
    * A SECOND FIELD RATHER THAN A REUSE OF `auditFiltered`, because the header
@@ -178,6 +184,7 @@ export const INITIAL_HOST_STATE: HostState = Object.freeze({
   auditFiltered: false,
   canvasOpen: false,
   inspectorDismissed: false,
+  orderPanel: false,
   auditOpen: false,
   expanded: [],
   railStart: 0,
@@ -737,7 +744,7 @@ function pickerProposal(
  * reader last pressed.
  */
 export function narrowOverlayOpen(state: HostState): boolean {
-  if (state.canvasOpen) return true;
+  if (state.canvasOpen || state.orderPanel) return true;
   return state.selection.kind !== 'none' && !state.inspectorDismissed;
 }
 
@@ -918,9 +925,19 @@ function controlled(
     // opinions — and an Escape it declines is still cancelled further down by
     // the create map's always-available `cancel`.
     case 'narrow-dismiss':
+      // THE ORDER'S PANEL IS THE TOPMOST, so Escape closes it first and leaves
+      // the Inspector open beside the graph (#313).
+      if (state.orderPanel) return settled({ ...state, orderPanel: false });
       return narrowOverlayOpen(state)
         ? settled({ ...state, canvasOpen: false, inspectorDismissed: true })
         : unclaimed(state);
+    // #313: "Show the work order" opens the folded order over the graph, and
+    // the panel's own close button closes it. Opening is not a toggle: the
+    // strip's button reads pressed while the panel is open, and Close closes.
+    case 'order-open':
+      return settled({ ...state, orderPanel: true });
+    case 'order-close':
+      return state.orderPanel ? settled({ ...state, orderPanel: false }) : unclaimed(state);
     // §17d's HEADER COUNT, which now opens the overlay instead of filtering.
     // *"A persistent, quiet count in the workspace header. It never moves,
     // never animates, and is always the same click."*
@@ -1085,6 +1102,8 @@ function afterSelectionMoved(state: HostState, keepsSubject: boolean): HostState
   return {
     ...forgetRelationships(state),
     ...(keepsSubject ? { shownGroups: state.shownGroups } : {}),
+    // A PICK IN THE ORDER'S PANEL MOVES THE SELECTION AND CLOSES IT (#313).
+    orderPanel: false,
     inspectorDismissed: state.selection.kind === 'none' ? state.inspectorDismissed : false,
   };
 }
