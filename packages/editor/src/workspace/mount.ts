@@ -533,17 +533,27 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     typeof element.getBoundingClientRect === 'function' && isNarrowBox(element.getBoundingClientRect());
   let narrow = measuresNarrow();
   /**
-   * The state with #313's order panel shut once the order no longer folds
-   * (review-41, PR 328): widened past the fold, the panel is the plain order
-   * zone again, and left open it would still be drawn and announced as a
-   * dialog. Whether the order folds is the sheet's answer, read off the
-   * strip's computed display, as `inspectorIsLifted` reads its own.
+   * Whether the sheet draws the strip `selector` names at the current width,
+   * read off its computed display, as `inspectorIsLifted` reads its own.
+   */
+  const stripDrawn = (selector: string): boolean => {
+    const strip = surface.querySelector(selector);
+    return strip !== null && doc.defaultView?.getComputedStyle(strip).display !== 'none';
+  };
+  /**
+   * The state with each panel a strip opened shut once its strip is no longer
+   * drawn. #313's order panel (review-41, PR 328): widened past the fold, the
+   * panel is the plain order zone again, and left open it would still be drawn
+   * and announced as a dialog. §17k's canvas (#256): the strip is drawn only
+   * between the phone layout and the graph's fold, so a canvas left open from
+   * there is invisible on either side of it and would still take Escape.
    */
   const unfolded = (next: HostState): HostState => {
-    if (!next.orderPanel) return next;
-    const strip = surface.querySelector('.ig-order-strip');
-    const folds = strip !== null && doc.defaultView?.getComputedStyle(strip).display !== 'none';
-    return folds ? next : { ...next, orderPanel: false };
+    const orderPanel = next.orderPanel && stripDrawn('.ig-order-strip');
+    const canvasOpen = next.canvasOpen && stripDrawn('.ig-canvas-strip');
+    return orderPanel === next.orderPanel && canvasOpen === next.canvasOpen
+      ? next
+      : { ...next, orderPanel, canvasOpen };
   };
   /**
    * The state with its selection cut to the most recently added issue while
@@ -2941,7 +2951,9 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // `inspectorIsLifted`, which reads the sheet's own answer off the DOM
     // rather than re-deriving it from a width. #313's order panel is opened by
     // a press and is on screen whenever it is open, so it needs no measure:
-    // the state says it is there (review-41, PR 328).
+    // the state says it is there (review-41, PR 328). So is §17k's open
+    // canvas, because `unfolded` shuts it when its strip stops being drawn
+    // (#256).
     //
     // TWO TRANSIENTS SHARE THIS KEY NOW, AND §17d'S GOES FIRST. The audit
     // overlay is the one the reader pressed a control to open, and it is drawn
