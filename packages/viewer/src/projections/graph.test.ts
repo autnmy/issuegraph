@@ -6,7 +6,7 @@ import { edgeIdentity } from '@issuegraph/core';
 import { paperTheme } from '../acceptance.test.ts';
 import { type ViewerDocument, normalizeDocument } from '../document.ts';
 import { edgeGeometry, layoutGraph, measureLabel } from '../layout.ts';
-import { cardBlocks } from '../parts.ts';
+import { type LegendSwitch, cardBlocks } from '../parts.ts';
 import { type ElementSpec, renderMarkup } from '../element.ts';
 import {
   crowdedDocument,
@@ -1750,15 +1750,16 @@ describe('a selected set on the canvas', () => {
 describe('the legend as a switch for each kind (#303, RULES, Graphs, Dense neighbourhoods)', () => {
   // 105 holds one relationship of each of three kinds: it is blocked by
   // other/repo#7, serializes with 103, and 106 is a duplicate of it.
-  const legendSwitch = {
+  const legendSwitch: LegendSwitch = {
+    kind: 'switch',
     label: 'kinds to draw',
     command: 'legend-kind',
-    drawn: '1 drawn out of 4',
+    drawn: '2 drawn out of 4',
     kinds: [
-      { field: 'blocked-by' as const, count: 1, on: true, switchable: true },
-      { field: 'serialize-with' as const, count: 1, on: false, switchable: true },
-      { field: 'duplicate-of' as const, count: 1, on: false, switchable: true },
-      { field: 'decomposed-from' as const, count: 1, on: false, switchable: false },
+      { field: 'blocked-by', count: 1, on: true, switchable: true },
+      { field: 'serialize-with', count: 1, on: false, switchable: true },
+      { field: 'together-with', count: 1, on: true, switchable: false },
+      { field: 'duplicate-of', count: 1, on: false, switchable: true },
     ],
   };
 
@@ -1779,13 +1780,38 @@ describe('the legend as a switch for each kind (#303, RULES, Graphs, Dense neigh
       legend,
       /<button type="button" class="ig-legend-switch" data-drawn="false" aria-pressed="false" data-ig-command="legend-kind" data-ig-value="serialize-with">/,
     );
-    assert.match(legend, /<span class="ig-legend-drawn">1 drawn out of 4<\/span><\/div>/);
+    assert.match(legend, /<span class="ig-legend-drawn">2 drawn out of 4<\/span><\/div>/);
   });
 
-  it('shows a kind it never draws with its count, but as no control', () => {
+  it('shows a kind that always draws plain beside the switches, in full ink with its count, as no control (Design q351)', () => {
+    // The board's .ig-lgpl: as tall and as inset as a switch, words in text like a kind switched on, count muted.
     const legend = legendOf(render(fixtureDocument, { selected: '105', legendSwitch }));
-    assert.match(legend, /<span class="ig-legend-switch" data-drawn="false"><svg[^>]*>.*?<\/svg><span>was decomposed from<\/span> <span class="ig-legend-count">1<\/span><\/span>/);
-    assert.equal(legend.includes('data-ig-value="decomposed-from"'), false);
+    assert.match(legend, /<span class="ig-legend-switch" data-drawn="true"><svg[^>]*>.*?<\/svg><span>goes together with<\/span> <span class="ig-legend-count">1<\/span><\/span>/);
+    assert.equal(legend.includes('data-ig-value="together-with"'), false);
+  });
+
+  it('stays plain past 8 when nothing switches: each kind with its count, no switch, no figure, no readiness key (Design q351)', () => {
+    const plain: LegendSwitch = {
+      kind: 'plain',
+      kinds: [
+        { field: 'together-with', count: 3 },
+        { field: 'duplicate-of', count: 7 },
+      ],
+    };
+    const markup = render(fixtureDocument, { selected: '105', legendSwitch: plain });
+    const start = markup.indexOf('<fieldset class="ig-legend" aria-label="Relationships">');
+    assert.notEqual(start, -1, 'no plain legend');
+    const legend = markup.slice(start, markup.indexOf('</fieldset>', start));
+    assert.equal(legend.match(/class="ig-legend-item"/g)?.length, 2);
+    assert.match(legend, /goes together with<\/span> <span class="ig-legend-count">3<\/span><\/span>/);
+    assert.match(legend, /is a duplicate of<\/span> <span class="ig-legend-count">7<\/span><\/span>/);
+    for (const absent of ['data-switch', 'role="group"', 'ig-legend-drawn', 'ig-legend-keys', '<button']) {
+      assert.equal(legend.includes(absent), false, absent);
+    }
+    // Every kind draws: a plain legend switches nothing off.
+    const canvas = canvasOf(markup);
+    assert.match(canvas, /data-edge="serialize-with"/);
+    assert.match(canvas, /data-edge="duplicate-of"/);
   });
 
   it('draws no line of a kind switched off, and every line of a kind switched on', () => {
@@ -2107,6 +2133,7 @@ describe('lines into and out of the selection share a trunk per kind and directi
 
   it('gives a kind switched off no trunk, so the next kind takes its place', () => {
     const legendSwitch = {
+      kind: 'switch' as const,
       label: 'kinds to draw',
       command: 'legend-kind',
       drawn: 'drawn',

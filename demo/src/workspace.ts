@@ -207,6 +207,7 @@ export const WORKSPACE_WORDS: MountWords = {
   canvas: {
     focus: 'centered on',
     selected: 'Selected',
+    selectedIssues: (count: number): string => `${String(count)} issues`,
     of: 'of',
     shown: 'shown',
     related: 'related',
@@ -323,6 +324,8 @@ export const WORKSPACE_WORDS: MountWords = {
   relationshipsDrawn: (drawn: number, total: number): string => `${String(drawn)} of ${String(total)} drawn`,
   listedByRelationship: (count: number, issue: string): string =>
     `${String(count)} issues relate to ${issue}, more than the graph draws at once, so they’re listed by relationship.`,
+  listedAroundSelected: (count: number, selected: number): string =>
+    `${String(count)} issues relate to the ${String(selected)} selected, more than the graph draws at once, so they’re listed by relationship.`,
   addRelationship: '+ add',
   addRelationshipHeading: 'Add relationship',
   cancel: 'Cancel',

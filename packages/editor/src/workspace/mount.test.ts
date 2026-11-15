@@ -915,6 +915,7 @@ describe('mountWorkspace', () => {
       const { editMode: _editMode, ...captionOnly } = WORKSPACE_WORDS.canvas ?? {
         focus: '',
         selected: '',
+        selectedIssues: () => '',
         of: '',
         shown: '',
         related: '',

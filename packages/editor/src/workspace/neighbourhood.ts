@@ -5,10 +5,10 @@
  * "Only the selection's own relationships draw." With an issue selected the
  * canvas keeps that issue and its neighbours through the kinds switched on;
  * with a relationship selected, its two ends. Past 8 relationships on the
- * issue the graph draws one kind at first, blocked-by, the kind that sets the
- * order, or when the issue has none the first kind it has in the legend's
- * order, so it never opens on "0 of 17 drawn"; the legend becomes a switch for
- * each kind with its count.
+ * issue, with two kinds or more that switch, the graph draws one kind at
+ * first, the first that switches in the legend's order, and the legend
+ * becomes a switch for each kind with its count; with fewer there is nothing
+ * to choose, every kind draws and the legend stays plain with the counts.
  *
  * A PURE VIEW OF THE INSPECTOR'S OWN LIST, as the Related groups list is: the
  * relationships counted here are `inspectorView(...).relationships`, so the
@@ -26,27 +26,24 @@ import {
 } from '@issuegraph/viewer';
 
 import type { ScaleAround } from '../scale/ladder.ts';
-import { type InspectorRelationship, inspectorView } from './inspector.ts';
+import { type InspectorRelationship, inspectorView, issueRelationships } from './inspector.ts';
 import type { WorkspaceSelection } from './selection.ts';
-
-/**
- * The kinds this canvas draws, in the legend's order. Decomposed-from lives in
- * Sub-issues, so it is never drawn here and never a switch.
- */
-export const CANVAS_KINDS: readonly EdgeField[] = Object.freeze(
-  LEGEND_ORDER.filter((field) => field !== 'decomposed-from'),
-);
 
 /**
  * The kinds that draw whatever is switched: together-with, since the unit's
  * region always draws. Its entry stays plain, with its count, and counts as
- * drawn ("14 of 17 drawn" includes it).
+ * drawn ("10 of 11 drawn" includes it).
  */
 const ALWAYS_DRAWN: readonly EdgeField[] = Object.freeze(['together-with']);
 
-/** The kinds the legend's switch turns on and off, in the legend's order. */
+/**
+ * The kinds the legend's switch turns on and off, in the legend's order:
+ * blocked-by, serializes-with, is a duplicate of and was decomposed from.
+ * Every kind the legend has draws around a selection; a sub-issue never
+ * reaches it, since the Relationships list leaves sub-issues to Sub-issues.
+ */
 export const SWITCHABLE_KINDS: readonly EdgeField[] = Object.freeze(
-  CANVAS_KINDS.filter((field) => !ALWAYS_DRAWN.includes(field)),
+  LEGEND_ORDER.filter((field) => !ALWAYS_DRAWN.includes(field)),
 );
 
 /** One kind the selected issue holds, as the legend's switch draws it. */
@@ -57,8 +54,13 @@ export interface CanvasKind {
   readonly switchable: boolean;
 }
 
-/** The switch's facts: each kind, and how many of the selection's relationships draw. */
+/** The legend's facts past 8: each kind, and how many of the selection's relationships draw. */
 export interface CanvasKinds {
+  /**
+   * Whether the legend is a switch: two kinds or more that switch. With fewer
+   * there is nothing to choose, every kind draws and the legend stays plain.
+   */
+  readonly switches: boolean;
   readonly kinds: readonly CanvasKind[];
   readonly drawn: number;
   readonly total: number;
@@ -67,20 +69,24 @@ export interface CanvasKinds {
 export interface CanvasNeighbourhood {
   /** What the ladder keeps, or `null` with nothing selected. */
   readonly around: ScaleAround | null;
-  /** The legend's switch, past {@link DENSE_RELATIONSHIPS}; `null` keeps the static key. */
+  /** The legend past {@link DENSE_RELATIONSHIPS}; `null` keeps the static key. */
   readonly kinds: CanvasKinds | null;
 }
 
 const NOTHING: CanvasNeighbourhood = Object.freeze({ around: null, kinds: null });
 
+/** The kinds that switch among those held, in the legend's order. */
+function switchableHeld(held: readonly EdgeField[]): readonly EdgeField[] {
+  return SWITCHABLE_KINDS.filter((field) => held.includes(field));
+}
+
 /**
- * The kind a dense selection opens on: the first switchable kind it holds, in
- * the legend's order. Blocked-by leads the legend, so it is that whenever the
- * selection has one; with none it is the next kind the selection has, never
- * one it lacks.
+ * Whether a selection's legend is a switch: past 8 relationships, with two
+ * kinds or more that switch. Together-with alone, together-with with one
+ * other kind, or any single kind leaves nothing to choose.
  */
-function firstKinds(held: readonly EdgeField[]): readonly EdgeField[] {
-  return SWITCHABLE_KINDS.filter((field) => held.includes(field)).slice(0, 1);
+function switches(held: readonly EdgeField[]): boolean {
+  return held.length > DENSE_RELATIONSHIPS && switchableHeld(held).length > 1;
 }
 
 /**
@@ -88,17 +94,20 @@ function firstKinds(held: readonly EdgeField[]): readonly EdgeField[] {
  * relationships and the kinds the reader switched away from their start.
  *
  * THE READER'S PRESSES ARE STORED AS FLIPS, NOT AS THE SET, so the start has to
- * be read off the selection itself: the first kind it holds past eight, every
- * kind at eight or fewer. That start is a fact of the selection, and the flips
- * are cleared whenever the selection moves (`HostState.switchedKinds`), so the
- * two always describe the same issue. At eight or fewer no switch is drawn, so
- * there is nothing a press could have flipped. Together-with draws either way.
+ * be read off the selection itself: where the legend switches, the first kind
+ * that switches in the legend's order (blocked-by, the kind that sets the
+ * order, whenever the selection has one), so the graph never opens on "0 of
+ * 17 drawn"; elsewhere every kind. That start is a fact of the selection, and
+ * the flips are cleared whenever the selection moves
+ * (`HostState.switchedKinds`), so the two always describe the same issue.
+ * Where no switch is drawn there is nothing a press could have flipped.
+ * Together-with draws either way.
  */
 export function drawnKinds(held: readonly EdgeField[], switched: readonly EdgeField[]): ReadonlySet<EdgeField> {
-  if (held.length <= DENSE_RELATIONSHIPS) return new Set(CANVAS_KINDS);
-  const first = firstKinds(held);
+  if (!switches(held)) return new Set(LEGEND_ORDER);
+  const first = switchableHeld(held).slice(0, 1);
   return new Set(
-    CANVAS_KINDS.filter((field) => ALWAYS_DRAWN.includes(field) || first.includes(field) !== switched.includes(field)),
+    LEGEND_ORDER.filter((field) => ALWAYS_DRAWN.includes(field) || first.includes(field) !== switched.includes(field)),
   );
 }
 
@@ -108,6 +117,7 @@ function edgeOf(relationship: InspectorRelationship): ViewerEdge {
 
 /** Each kind the relationships hold, in the legend's order, with its count. */
 function kindsOf(relationships: readonly InspectorRelationship[], on: ReadonlySet<EdgeField>): CanvasKinds {
+  const held = relationships.map((relationship) => relationship.field);
   const kinds = LEGEND_ORDER.map((field) => ({
     field,
     count: relationships.filter((relationship) => relationship.field === field).length,
@@ -115,6 +125,7 @@ function kindsOf(relationships: readonly InspectorRelationship[], on: ReadonlySe
     switchable: SWITCHABLE_KINDS.includes(field),
   })).filter((kind) => kind.count > 0);
   return {
+    switches: switches(held),
     kinds,
     drawn: kinds.filter((kind) => kind.on).reduce((sum, kind) => sum + kind.count, 0),
     total: relationships.length,
@@ -122,12 +133,23 @@ function kindsOf(relationships: readonly InspectorRelationship[], on: ReadonlySe
 }
 
 /**
- * What the canvas is drawn around for this selection, and the legend's switch
- * when the selection is dense.
+ * Every relationship a set's members hold, each once: the lines between two
+ * members too, since both ends are the selection, but no member's sub-issues.
+ */
+function setEdges(document: ViewerDocument, keys: readonly string[]): readonly ViewerEdge[] {
+  const byId = new Map(
+    keys.flatMap((key) => issueRelationships(document, key)).map((relationship) => [relationship.edgeId, relationship]),
+  );
+  return [...byId.values()].map(edgeOf);
+}
+
+/**
+ * What the canvas is drawn around for this selection, and the legend past 8
+ * relationships when the selection is one issue.
  *
- * SEVERAL ISSUES SELECTED draw each with its neighbours through every kind the
- * canvas draws. The Inspector lists no relationships for a set, so there is no
- * count to switch on and the key stays static.
+ * SEVERAL ISSUES SELECTED draw each with its neighbours through every kind.
+ * The Inspector lists no relationships for a set, so there is no count to
+ * switch on and the key stays static.
  */
 export function canvasNeighbourhood(
   document: ViewerDocument,
@@ -148,11 +170,9 @@ export function canvasNeighbourhood(
       };
     }
     case 'issues': {
-      const keys = new Set(subject.issues.map((issue) => issue.key));
-      const edges = normalizeDocument(document).document.edges.filter(
-        (edge) => CANVAS_KINDS.includes(edge.field) && (keys.has(edge.from) || keys.has(edge.to)),
-      );
-      return { around: { centre: [...keys], edges, reach: edges }, kinds: null };
+      const keys = subject.issues.map((issue) => issue.key);
+      const edges = setEdges(normalizeDocument(document).document, keys);
+      return { around: { centre: keys, edges, reach: edges }, kinds: null };
     }
     case 'issue': {
       const relationships = inspected.relationships;
@@ -164,10 +184,10 @@ export function canvasNeighbourhood(
         around: {
           centre: [subject.issue.key],
           edges: relationships.filter((relationship) => on.has(relationship.field)).map(edgeOf),
-          // WHAT DECIDES WHETHER THE GRAPH DRAWS AT ALL is every kind it could
-          // draw, never the kinds switched on: switching a kind on must not
-          // turn the graph into a list and take the switch away with it.
-          reach: relationships.filter((relationship) => CANVAS_KINDS.includes(relationship.field)).map(edgeOf),
+          // WHAT DECIDES WHETHER THE GRAPH DRAWS AT ALL is every relationship
+          // it could draw, never the kinds switched on: switching a kind on
+          // must not turn the graph into a list and take the switch away.
+          reach: relationships.map(edgeOf),
         },
         kinds: relationships.length > DENSE_RELATIONSHIPS ? kindsOf(relationships, on) : null,
       };

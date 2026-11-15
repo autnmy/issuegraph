@@ -3083,6 +3083,81 @@ describe('the narrow tabs and the Related groups list', () => {
     assert.equal(/limit|too many to draw/i.test(canvas), false, 'the package wrote its own refusal over the list');
   });
 
+  it('#303 q349 under 640 a selected relationship leaves the list around the issue it was picked from, its row selected under its kind', () => {
+    // 13 relationships on i0001: 7 blocked-by it declares and 6 serialize-with.
+    const hub = backlogOf(14, { edges: relatedHubEdges(13) });
+    // The sixth blocked-by i0001 declares, past the fold of five: "#2290 is blocked by #2283".
+    const picked = 'i0012';
+    const canvas = canvasOf(
+      renderWorkspace(hub, {
+        ...WORDS,
+        selection: { kind: 'edge', edgeId: `blocked-by|i0001|${picked}` },
+        narrowView: 'canvas',
+        canvas: 'neighbourhood',
+      }).markup,
+    );
+    const list = canvas.slice(canvas.indexOf('<div class="ig-related">'));
+    // "The list stays as it was ... 'Around #2290 · 17', every group with its count." Never "Around #from 1".
+    assert.match(
+      list,
+      /^<div class="ig-related"><div class="ig-relationship-group-head"><span>centred on <span class="ig-id">i0001<\/span><\/span><span class="ig-relationship-count">13<\/span><\/div>/,
+    );
+    const groups = list
+      .split('<div class="ig-relationship-group"')
+      .slice(1)
+      .map((group) => [
+        /data-ig-group-key="([^"]+)"/.exec(group)?.[1],
+        /<span class="ig-relationship-count">(\d+)<\/span>/.exec(group)?.[1],
+        [...group.matchAll(/<li class="ig-slot" data-ig-key="([^"]+)"[^>]*aria-current="true"/g)].map((match) => match[1]),
+      ]);
+    // "The relationship's row is the selected row (fill-strong), under the head that names its kind." Its
+    // group draws whole, so the row past the fold is drawn.
+    assert.deepEqual(groups, [
+      ['blocked-by:outgoing', '7', [picked]],
+      ['serialize-with:none', '6', []],
+    ]);
+    assert.equal(list.split('<div class="ig-relationship-group"')[1]?.match(/<li class="ig-slot"/g)?.length, 7);
+  });
+
+  it('#303 q350 several issues selected past 60: one block per issue in rank order, the set’s head and line counting each issue around it once', () => {
+    const keys = keysOf(75);
+    const at = (index: number): string => keys[index] ?? assert.fail(`no key ${String(index)}`);
+    const range = (from: number, count: number): number[] => Array.from({ length: count }, (_, offset) => from + offset);
+    const larger = backlogOf(75, {
+      edges: [
+        // i0001 is blocked by 58; i0002 by one of those and three more; i0003 only by i0001, inside the set.
+        ...range(4, 58).map((index) => ['blocked-by', at(0), at(index)] as const),
+        ...[4, 62, 63, 64].map((index) => ['blocked-by', at(1), at(index)] as const),
+        ['blocked-by', at(2), at(0)],
+      ],
+    });
+    // Added out of rank order.
+    const selection = { kind: 'issues', keys: [at(2), at(1), at(0)] } as const;
+    const canvas = canvasOf(renderWorkspace(larger, { ...WORDS, selection }).markup);
+    assert.match(canvas, /<section class="ig-ladder" data-tier="listed">/);
+    // "Line: '78 issues relate to the 3 selected, ...'": 58 + 3, the shared blocker once, no selected issue.
+    const line = WORKSPACE_WORDS.listedAroundSelected(61, 3);
+    assert.ok(canvas.includes(`<p class="ig-related-over">${line}</p><div class="ig-related" data-over="true">`), 'no line over the list');
+    // "Head: 'Selected: 3 issues · 78 related'."
+    const caption = /<p class="ig-canvas-caption">([\s\S]*?)<\/p>/.exec(canvas)?.[1] ?? assert.fail('no caption');
+    assert.equal(
+      caption.replace(/<[^>]+>/g, ''),
+      `${WORKSPACE_WORDS.canvas?.selected ?? ''}: ${WORKSPACE_WORDS.canvas?.selectedIssues(3) ?? ''} · 61 ${WORKSPACE_WORDS.canvas?.related ?? ''}`,
+    );
+    // "One block per selected issue, in rank order, each under 'Around #3401' with its own count ...
+    // An issue with nothing around it outside the set gets no block."
+    const heads = [...canvas.matchAll(/<div class="ig-relationship-group-head"><span>centred on <span class="ig-id">([^<]+)<\/span><\/span><span class="ig-relationship-count">(\d+)<\/span><\/div>/g)].map(
+      (match) => [match[1], match[2]],
+    );
+    assert.deepEqual(heads, [
+      [at(0), '58'],
+      [at(1), '4'],
+    ]);
+    // Each block folds at five, and opens alone: its "Show N more" names its own block's group.
+    const more = [...canvas.matchAll(/data-ig-command="show-group" data-ig-value="([^"]+)">([^<]*)<\/button>/g)].map((match) => [match[1], match[2]]);
+    assert.deepEqual(more, [[`${at(0)} blocked-by:outgoing`, 'Show 53 more']]);
+  });
+
   it('#303 within the budget the line is never drawn, and under 640 the list is the list as always', () => {
     const hub = backlogOf(14, { edges: relatedHubEdges(13) });
     const wide = canvasOf(renderWorkspace(hub, { ...WORDS, selection: { kind: 'issue', key: 'i0001' } }).markup);

@@ -232,6 +232,24 @@ function isSubIssue(relationship: InspectorRelationship): boolean {
   return relationship.field === 'decomposed-from' && relationship.direction === 'incoming';
 }
 
+/**
+ * Every relationship one issue holds, read from its end, as the Relationships
+ * list holds them: each edge touching it, but its sub-issues. Not canonicalized
+ * to a unit's lead, so a caller naming a member reads that member's own.
+ * `document` is normalized.
+ */
+export function issueRelationships(document: ViewerDocument, key: string): readonly InspectorRelationship[] {
+  // FILTERED ON MEMBERSHIP, NOT ON DIRECTION. Those were the same question
+  // only while every edge touching the subject had one — and the moment a
+  // symmetric field correctly reported `null`, a `together-with` or
+  // `serialize-with` on the selected issue disappeared from the panel
+  // entirely. "Does this edge touch my subject" and "which end is my
+  // subject on" are different questions, and only the first belongs here.
+  return relationshipsOf(document, key).filter(
+    (relationship) => (relationship.from === key || relationship.to === key) && !isSubIssue(relationship),
+  );
+}
+
 /** The slot carrying a key, if the order places it. */
 function slotFor(document: ViewerDocument, key: string): ViewerSlot | undefined {
   return document.order.slots.find((slot) => slot.members.includes(key));
@@ -334,16 +352,7 @@ export function inspectorView(
             ? null
             : { rank: slot.rank, ready: slot.ready, holds: slot.holds },
       },
-      // FILTERED ON MEMBERSHIP, NOT ON DIRECTION. Those were the same question
-      // only while every edge touching the subject had one — and the moment a
-      // symmetric field correctly reported `null`, a `together-with` or
-      // `serialize-with` on the selected issue disappeared from the panel
-      // entirely. "Does this edge touch my subject" and "which end is my
-      // subject on" are different questions, and only the first belongs here.
-      relationships: relationshipsOf(document, subject).filter(
-        (relationship) =>
-          (relationship.from === subject || relationship.to === subject) && !isSubIssue(relationship),
-      ),
+      relationships: issueRelationships(document, subject),
       filtered: false,
     };
   }

@@ -611,12 +611,13 @@ const COMPOSED: ReadonlySet<string> = new Set([
     renderViewer(DOCUMENT, {
       projection: 'graph',
       legendSwitch: {
+        kind: 'switch',
         label: 'kinds to draw',
         drawn: '1 of 2',
         command: 'legend-kind',
         kinds: [
           { field: 'blocked-by', count: 1, on: true, switchable: true },
-          { field: 'decomposed-from', count: 1, on: false, switchable: false },
+          { field: 'together-with', count: 1, on: true, switchable: false },
         ],
       },
     }).markup,

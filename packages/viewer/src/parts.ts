@@ -17,7 +17,7 @@ import type {
   ViewerIssue,
   ViewerSlot,
 } from './document.ts';
-import { type ElementSpec, element, svg } from './element.ts';
+import { type ElementSpec, type SpecChild, element, svg } from './element.ts';
 import { GROUP_ATTRIBUTE } from './scene.ts';
 import { EDGE_ORDER, type EdgeTerminal, dashArrayFor, labelFrom, treatmentFor } from './vocabulary.ts';
 
@@ -1327,6 +1327,9 @@ export function cardText(document: NormalizedDocument, block: CardBlock): readon
   }
 }
 
+/** The legend's accessible name, the word its caption carried (#288). */
+const LEGEND_NAME = 'Relationships';
+
 /**
  * The legend: a footer bar under the drawing it explains.
  *
@@ -1343,11 +1346,11 @@ export function cardText(document: NormalizedDocument, block: CardBlock): readon
  * cannot explain, so §16b keys it at the far end of the same bar.
  */
 export function legend(switcher?: LegendSwitch): ElementSpec {
-  if (switcher !== undefined) return legendSwitch(switcher);
+  if (switcher !== undefined) return denseLegend(switcher);
   // NAMED, NOT CAPTIONED (#288). The export carries the bar's name as an
   // aria-label and draws no caption: content.md rules out the small uppercase
   // label above a group. The accessible name is the word the caption carried.
-  return element('fieldset', { class: 'ig-legend', 'aria-label': 'Relationships' }, [
+  return element('fieldset', { class: 'ig-legend', 'aria-label': LEGEND_NAME }, [
     ...LEGEND_ORDER.map((field) => {
       const treatment = treatmentFor(field);
       return element('span', { class: 'ig-legend-item' }, [
@@ -1389,31 +1392,51 @@ export interface LegendSwitchKind {
   /** Whether the canvas draws this kind's lines now. */
   readonly on: boolean;
   /**
-   * Whether a press turns it on or off. A kind the canvas never draws
-   * (decomposed-from lives in Sub-issues) still shows its swatch and count, so
-   * the drawn figure adds up, but is no control.
+   * Whether a press turns it on or off. A kind that draws whatever is switched
+   * (together-with: the unit's region always draws) is a plain entry with its
+   * count, in the words' full ink, and no control.
    */
   readonly switchable: boolean;
 }
 
-/**
- * The legend as a switch for each kind, past 8 relationships on the selection
- * (RULES, Graphs, Dense neighbourhoods). The words are the host's: this
- * package writes only each kind's own phrase.
- */
-export interface LegendSwitch {
-  /** Names the switch for assistive technology: the board's "Relationships to draw". */
-  readonly label: string;
-  /** The kinds the selection holds, in {@link LEGEND_ORDER}. */
-  readonly kinds: readonly LegendSwitchKind[];
-  /** The figure that ends the bar: "12 of 17 drawn". */
-  readonly drawn: string;
-  /**
-   * The command a switch publishes on {@link COMMAND_ATTRIBUTE}, its kind on
-   * `data-ig-value`: the host wires it, as it wires every control here.
-   */
-  readonly command: string;
+/** One kind on a plain legend: its swatch, its words and how many it holds. */
+export interface LegendCount {
+  readonly field: EdgeField;
+  readonly count: number;
 }
+
+/**
+ * The legend past 8 relationships on the selection (RULES, Graphs, Dense
+ * neighbourhoods), in one of two shapes:
+ *
+ * - `switch`: two kinds or more switch, so each is a button with its count,
+ *   named for assistive technology ("Relationships to draw") and ending in
+ *   the drawn figure ("12 of 17 drawn"). The words are the host's: this
+ *   package writes only each kind's own phrase.
+ * - `plain`: fewer than two kinds switch, so there is nothing to choose and
+ *   every kind draws. The legend stays plain, each kind with its count, with
+ *   no switch, no drawn figure and no group to name.
+ */
+export type LegendSwitch =
+  | {
+      readonly kind: 'switch';
+      /** Names the switch for assistive technology: the board's "Relationships to draw". */
+      readonly label: string;
+      /** The kinds the selection holds, in {@link LEGEND_ORDER}. */
+      readonly kinds: readonly LegendSwitchKind[];
+      /** The figure that ends the bar: "12 of 17 drawn". */
+      readonly drawn: string;
+      /**
+       * The command a switch publishes on {@link COMMAND_ATTRIBUTE}, its kind on
+       * `data-ig-value`: the host wires it, as it wires every control here.
+       */
+      readonly command: string;
+    }
+  | {
+      readonly kind: 'plain';
+      /** The kinds the selection holds, in {@link LEGEND_ORDER}. */
+      readonly kinds: readonly LegendCount[];
+    };
 
 /**
  * The value attribute a switch carries beside its command: the spelling
@@ -1421,31 +1444,32 @@ export interface LegendSwitch {
  */
 const VALUE_ATTRIBUTE = 'data-ig-value';
 
-/** The kinds a switch leaves off, whose lines the graph does not draw. */
+/** The kinds a switch leaves off, whose lines the graph does not draw. A plain legend leaves none off. */
 export function switchedOff(switcher: LegendSwitch | undefined): ReadonlySet<EdgeField> {
-  return new Set((switcher?.kinds ?? []).filter((kind) => !kind.on).map((kind) => kind.field));
+  const off = switcher?.kind === 'switch' ? switcher.kinds.filter((kind) => !kind.on) : [];
+  return new Set(off.map((kind) => kind.field));
+}
+
+/** The legend past 8, in the shape its kinds call for. */
+function denseLegend(switcher: LegendSwitch): ElementSpec {
+  return switcher.kind === 'switch' ? legendSwitch(switcher) : legendCounts(switcher.kinds);
 }
 
 /**
  * The board's switch: one pressed-or-not button per kind with its swatch, its
  * phrase and its count, then the drawn figure. A kind switched off keeps its
  * swatch faded and its words muted, so the reader still sees what it would add.
+ * A kind that always draws is a plain entry beside them, the board's
+ * `.ig-lgpl`: as tall and as inset as a switch, its words in full ink like a
+ * kind switched on, its count muted.
  *
  * NO READINESS KEY, as the board draws it: the bar is a control for the lines
  * at that density, and the stations are the static key's to explain.
  */
-function legendSwitch(switcher: LegendSwitch): ElementSpec {
+function legendSwitch(switcher: Extract<LegendSwitch, { kind: 'switch' }>): ElementSpec {
   return element('div', { class: 'ig-legend', 'data-switch': 'true', role: 'group', 'aria-label': switcher.label }, [
     ...switcher.kinds.map((kind) => {
-      // A SPACE BETWEEN THE WORDS AND THE COUNT, so the button's name reads
-      // "is blocked by 12". A flex row draws no whitespace between its items,
-      // so the board's spacing stays the gap's.
-      const parts = [
-        legendSample(kind.field),
-        element('span', {}, [treatmentFor(kind.field).legendLabel]),
-        ' ',
-        element('span', { class: 'ig-legend-count' }, [String(kind.count)]),
-      ];
+      const parts = countedKind(kind);
       const drawn = kind.on ? 'true' : 'false';
       return kind.switchable
         ? element(
@@ -1464,6 +1488,36 @@ function legendSwitch(switcher: LegendSwitch): ElementSpec {
     }),
     element('span', { class: 'ig-legend-drawn' }, [switcher.drawn]),
   ]);
+}
+
+/**
+ * One kind past 8, as a switch and a plain entry both draw it: its swatch, its
+ * words and its count.
+ *
+ * A SPACE BETWEEN THE WORDS AND THE COUNT, so a button's name reads "is
+ * blocked by 12". A flex row draws no whitespace between its items, so the
+ * board's spacing stays the gap's.
+ */
+function countedKind(kind: LegendCount): readonly SpecChild[] {
+  return [
+    legendSample(kind.field),
+    element('span', {}, [treatmentFor(kind.field).legendLabel]),
+    ' ',
+    element('span', { class: 'ig-legend-count' }, [String(kind.count)]),
+  ];
+}
+
+/**
+ * The plain legend past 8 when there is nothing to choose: each kind the
+ * selection holds with its swatch, words and count, in the static key's muted
+ * entries, and no readiness key, as the board draws it.
+ */
+function legendCounts(kinds: readonly LegendCount[]): ElementSpec {
+  return element(
+    'fieldset',
+    { class: 'ig-legend', 'aria-label': LEGEND_NAME },
+    kinds.map((kind) => element('span', { class: 'ig-legend-item' }, countedKind(kind))),
+  );
 }
 
 /**

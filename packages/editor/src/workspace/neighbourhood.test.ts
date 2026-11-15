@@ -13,7 +13,7 @@ import { DENSE_RELATIONSHIPS, LEGEND_ORDER } from '@issuegraph/viewer';
 import { JSDOM } from 'jsdom';
 
 import { WORKSPACE_WORDS, backlogOf, keysOf } from '../testing/workspace.ts';
-import { CANVAS_KINDS, SWITCHABLE_KINDS, canvasNeighbourhood, drawnKinds } from './neighbourhood.ts';
+import { SWITCHABLE_KINDS, canvasNeighbourhood, drawnKinds } from './neighbourhood.ts';
 import { renderWorkspace } from './render.ts';
 
 const KEYS = keysOf(41);
@@ -84,11 +84,28 @@ function held(counts: Partial<Record<EdgeField, number>>): readonly EdgeField[] 
 }
 
 describe('which kinds draw', () => {
-  it('draws blocked-by first past 8 relationships, every kind the canvas draws at 8 or fewer, and never decomposed-from', () => {
+  it('draws blocked-by first past 8 relationships, and every kind, decomposed-from too, at 8 or fewer', () => {
     assert.equal(DENSE_RELATIONSHIPS, 8);
     assert.deepEqual([...drawnKinds(held({ 'blocked-by': 5, 'serialize-with': 4 }), [])], ['blocked-by', 'together-with']);
-    assert.deepEqual([...drawnKinds(held({ 'blocked-by': 4, 'serialize-with': 4 }), [])], [...CANVAS_KINDS]);
-    assert.equal(CANVAS_KINDS.includes('decomposed-from'), false);
+    assert.deepEqual([...drawnKinds(held({ 'blocked-by': 4, 'serialize-with': 4 }), [])], [...LEGEND_ORDER]);
+  });
+
+  it('switches was decomposed from, off at first, as the last kind in the legend’s order (Design q351)', () => {
+    // "The graph opens on the first kind that switches, in the legend's order: blocked-by,
+    // serializes-with, is a duplicate of, was decomposed from."
+    assert.deepEqual(SWITCHABLE_KINDS, ['blocked-by', 'serialize-with', 'duplicate-of', 'decomposed-from']);
+    const board = held({ 'together-with': 3, 'duplicate-of': 7, 'decomposed-from': 1 });
+    assert.deepEqual([...drawnKinds(board, [])], ['together-with', 'duplicate-of']);
+    assert.deepEqual([...drawnKinds(board, ['decomposed-from'])], ['together-with', 'duplicate-of', 'decomposed-from']);
+  });
+
+  it('draws every kind with fewer than two kinds that switch: there is nothing to choose (Design q351)', () => {
+    // "That covers together-with alone, together-with with duplicate-of only, or any single kind."
+    for (const counts of [{ 'together-with': 9 }, { 'together-with': 3, 'duplicate-of': 7 }, { 'duplicate-of': 9 }, { 'decomposed-from': 9 }]) {
+      assert.deepEqual([...drawnKinds(held(counts), [])], [...LEGEND_ORDER], JSON.stringify(counts));
+      // A press has nothing to flip where no switch is drawn.
+      assert.deepEqual([...drawnKinds(held(counts), ['duplicate-of'])], [...LEGEND_ORDER], JSON.stringify(counts));
+    }
   });
 
   it('opens on the first kind the selection has in the legend’s order when it has no blocked-by, never on none', () => {
@@ -97,7 +114,7 @@ describe('which kinds draw', () => {
     assert.deepEqual([...drawnKinds(held({ 'serialize-with': 3, 'duplicate-of': 6 }), [])], ['serialize-with', 'together-with']);
     assert.deepEqual([...drawnKinds(held({ 'duplicate-of': 6, 'decomposed-from': 3 }), [])], ['together-with', 'duplicate-of']);
     // A kind it lacks is never where it opens, even one before it in the legend.
-    assert.equal(drawnKinds(held({ 'duplicate-of': 9 }), []).has('serialize-with'), false);
+    assert.equal(drawnKinds(held({ 'duplicate-of': 6, 'decomposed-from': 3 }), []).has('serialize-with'), false);
   });
 
   it('flips a kind the reader switched, from where this selection started, and only past 8, where a switch is drawn', () => {
@@ -106,7 +123,7 @@ describe('which kinds draw', () => {
     assert.deepEqual([...drawnKinds(board, ['blocked-by'])], ['together-with']);
     const noBlocks = held({ 'serialize-with': 3, 'duplicate-of': 6 });
     assert.deepEqual([...drawnKinds(noBlocks, ['serialize-with', 'duplicate-of'])], ['together-with', 'duplicate-of']);
-    assert.deepEqual([...drawnKinds(held({ 'blocked-by': 8 }), ['serialize-with'])], [...CANVAS_KINDS]);
+    assert.deepEqual([...drawnKinds(held({ 'blocked-by': 8 }), ['serialize-with'])], [...LEGEND_ORDER]);
   });
 
   it('never switches together-with off: the unit’s region always draws', () => {
@@ -120,18 +137,19 @@ describe('the canvas around a selection', () => {
   it('counts each kind the selection holds, in the legend order, and what draws of them', () => {
     const { around, kinds } = canvasNeighbourhood(BOARD, ISSUE, []);
     assert.deepEqual(kinds, {
+      switches: true,
       kinds: [
         { field: 'blocked-by', count: 12, on: true, switchable: true },
         { field: 'serialize-with', count: 4, on: false, switchable: true },
-        { field: 'decomposed-from', count: 1, on: false, switchable: false },
+        { field: 'decomposed-from', count: 1, on: false, switchable: true },
       ],
       drawn: 12,
       total: 17,
     });
     assert.deepEqual(around?.centre, [SELECTED]);
     assert.equal(around?.edges.length, 12);
-    // WHAT DECIDES WHETHER THE GRAPH DRAWS is every kind it could draw: 16, not decomposed-from.
-    assert.equal(around?.reach.length, 16);
+    // WHAT DECIDES WHETHER THE GRAPH DRAWS is every relationship it could draw, decomposed-from too.
+    assert.equal(around?.reach.length, 17);
   });
 
   it('draws nothing around nothing selected, and a selected relationship whatever its kind', () => {
@@ -161,7 +179,7 @@ describe('the canvas around a selection', () => {
     assert.deepEqual(switches, [
       ['blocked-by', 'true', 'is blocked by 12'],
       ['serialize-with', 'false', 'serializes with 4'],
-      ['none', 'no control', 'was decomposed from 1'],
+      ['decomposed-from', 'false', 'was decomposed from 1'],
     ]);
     assert.match(legend, new RegExp(`<span class="ig-legend-drawn">${WORKSPACE_WORDS.relationshipsDrawn(12, 17)}</span></div>`));
   });
@@ -177,15 +195,24 @@ describe('the canvas around a selection', () => {
     assert.match(canvas, /aria-pressed="true" data-ig-command="legend-kind" data-ig-value="serialize-with"/);
   });
 
-  it('at 8 or fewer: every kind but decomposed-from draws, under the static key', () => {
+  it('at 8 or fewer: every kind draws, decomposed-from too, under the static key', () => {
     const canvas = canvasOf(renderWorkspace(SPARSE, { words: WORKSPACE_WORDS, selection: ISSUE }).markup);
-    assert.deepEqual(new Set(drawnLines(canvas)), new Set(['blocked-by', 'serialize-with', 'duplicate-of']));
-    // "Decomposed-from lives in Sub-issues."
-    assert.equal(drawnLines(canvas).includes('decomposed-from'), false, 'decomposed-from drew on the canvas');
-    assert.equal(canvas.includes('i0005"'), false, 'the decomposed-from end was drawn');
+    assert.deepEqual(new Set(drawnLines(canvas)), new Set(['blocked-by', 'serialize-with', 'duplicate-of', 'decomposed-from']));
     assert.match(canvas, /<fieldset class="ig-legend" aria-label="Relationships">/);
     assert.equal(canvas.includes('data-switch="true"'), false, 'a switch under 9 relationships');
-    assert.deepEqual(captionCounts(canvas), ['4', '8']);
+    assert.equal(canvas.includes('ig-legend-count'), false, 'the static key counted its kinds');
+    assert.deepEqual(captionCounts(canvas), ['5', '8']);
+  });
+
+  it('past 8 with was decomposed from switched on: its line and the parent join', () => {
+    const canvas = canvasOf(
+      renderWorkspace(BOARD, { words: WORKSPACE_WORDS, selection: ISSUE, switchedKinds: ['decomposed-from'] }).markup,
+    );
+    assert.deepEqual(captionCounts(canvas), ['14', '41']);
+    assert.equal(drawnLines(canvas).filter((field) => field === 'decomposed-from').length, 1);
+    assert.ok(canvas.includes(`data-ig-key="${key(17)}"`), 'the parent was not drawn');
+    assert.ok(canvas.includes(WORKSPACE_WORDS.relationshipsDrawn(13, 17)));
+    assert.match(canvas, /aria-pressed="true" data-ig-command="legend-kind" data-ig-value="decomposed-from"/);
   });
 });
 
@@ -208,6 +235,7 @@ describe('past 8 with no blocked-by', () => {
   it('opens on serialize-with, never "0 of 11 drawn", and counts together-with as drawn', () => {
     const { kinds } = canvasNeighbourhood(NO_BLOCKS, ISSUE, []);
     assert.deepEqual(kinds, {
+      switches: true,
       kinds: [
         { field: 'serialize-with', count: 6, on: true, switchable: true },
         { field: 'together-with', count: 2, on: true, switchable: false },
@@ -245,5 +273,72 @@ describe('past 8 with no blocked-by', () => {
       [['serialize-with', false], ['together-with', true], ['duplicate-of', true]],
     );
     assert.equal(kinds?.drawn, 5);
+  });
+});
+
+/**
+ * The board's two legend figures for Design q351: together-with 3, is a
+ * duplicate of 7 and was decomposed from 1 (two kinds switch, so a switch);
+ * and together-with 3 with is a duplicate of 7 alone (one kind switches, so
+ * plain).
+ */
+const BOARD_SWITCH = backlogOf(41, {
+  edges: [
+    ['together-with', SELECTED, key(1)],
+    ['together-with', key(2), SELECTED],
+    ['together-with', key(3), SELECTED],
+    ...edges(4, 7, (other) => ['duplicate-of', other, SELECTED]),
+    ['decomposed-from', SELECTED, key(11)],
+  ],
+  unitOf: { [key(1)]: SELECTED, [key(2)]: SELECTED, [key(3)]: SELECTED },
+});
+
+const BOARD_PLAIN = backlogOf(41, {
+  edges: [
+    ['together-with', SELECTED, key(1)],
+    ['together-with', key(2), SELECTED],
+    ['together-with', key(3), SELECTED],
+    ...edges(4, 7, (other) => ['duplicate-of', other, SELECTED]),
+  ],
+  unitOf: { [key(1)]: SELECTED, [key(2)]: SELECTED, [key(3)]: SELECTED },
+});
+
+describe('the legend past 8, by how many kinds switch (Design q351)', () => {
+  /** Each legend entry: its tag, its pressed state, and its words with the count. */
+  function entries(canvas: string, selector: string): readonly (readonly string[])[] {
+    const parsed = new JSDOM(`<!doctype html><body>${canvas}</body>`).window.document;
+    return [...parsed.querySelectorAll(selector)].map((item) => [
+      item.tagName.toLowerCase(),
+      item.getAttribute('aria-pressed') ?? 'no control',
+      item.textContent.trim(),
+    ]);
+  }
+
+  it('draws "goes together with 3" plain, "is a duplicate of 7" on and "was decomposed from 1" off, "10 of 11 drawn"', () => {
+    const canvas = canvasOf(renderWorkspace(BOARD_SWITCH, { words: WORKSPACE_WORDS, selection: ISSUE }).markup);
+    assert.deepEqual(entries(canvas, '.ig-legend[data-switch="true"] .ig-legend-switch'), [
+      ['span', 'no control', 'goes together with 3'],
+      ['button', 'true', 'is a duplicate of 7'],
+      ['button', 'false', 'was decomposed from 1'],
+    ]);
+    assert.ok(canvas.includes(WORKSPACE_WORDS.relationshipsDrawn(10, 11)));
+    assert.equal(drawnLines(canvas).includes('decomposed-from'), false, 'a kind off at first drew');
+  });
+
+  it('stays plain with fewer than two kinds that switch: each kind with its count, every kind drawn, no switch, figure or group', () => {
+    const { kinds } = canvasNeighbourhood(BOARD_PLAIN, ISSUE, []);
+    assert.equal(kinds?.switches, false);
+    const canvas = canvasOf(renderWorkspace(BOARD_PLAIN, { words: WORKSPACE_WORDS, selection: ISSUE }).markup);
+    assert.equal(canvas.includes('data-switch="true"'), false, 'a switch with nothing to choose');
+    assert.equal(canvas.includes(WORKSPACE_WORDS.relationshipsToDraw), false, 'the switch’s group was named');
+    assert.equal(canvas.includes('ig-legend-drawn'), false, 'a drawn figure with nothing to choose');
+    assert.equal(canvas.includes('ig-legend-keys'), false, 'the readiness key came back');
+    assert.match(canvas, /<fieldset class="ig-legend" aria-label="Relationships">/);
+    // The board's plain entry: swatch, words and count, as a switch draws them, with no glyph.
+    assert.deepEqual(entries(canvas, 'fieldset.ig-legend .ig-legend-item'), [
+      ['span', 'no control', 'goes together with 3'],
+      ['span', 'no control', 'is a duplicate of 7'],
+    ]);
+    assert.equal(drawnLines(canvas).filter((field) => field === 'duplicate-of').length, 7, 'a kind did not draw');
   });
 });

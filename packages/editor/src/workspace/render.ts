@@ -135,9 +135,9 @@ import {
   inspectorView,
 } from './inspector.ts';
 import { CANVAS_MODES, type CanvasMode, type NarrowTab, type NarrowView, NARROW_TABS, canvasTabOf, narrowTabOf } from './narrow.ts';
-import { canvasNeighbourhood } from './neighbourhood.ts';
+import { type CanvasKinds, canvasNeighbourhood } from './neighbourhood.ts';
 import { type RailWindow, type RailWindowOptions, railWindow } from './rail.ts';
-import { type RelatedGroup, type RelatedListView, relatedListView, shownNeighbours } from './related.ts';
+import { type RelatedBlock, type RelatedGroup, type RelatedListView, relatedListView, shownNeighbours } from './related.ts';
 import { type ConflictDiff, diffIsEmpty, diffWithin } from './recovery.ts';
 import {
   type WorkspaceSelection,
@@ -294,6 +294,13 @@ export interface WorkspaceWords {
    * these words: it is the package's, and it may move.
    */
   readonly listedByRelationship: (count: number, issue: string) => string;
+  /**
+   * The same line for several issues selected: *"78 issues relate to the 3
+   * selected, more than the graph draws at once, so they're listed by
+   * relationship."* `count` is the issues around the set, each once and never
+   * a selected one, and `selected` how many the set holds.
+   */
+  readonly listedAroundSelected: (count: number, selected: number) => string;
   /**
    * §17a's `WHY RANK n` heading, without the number.
    *
@@ -575,6 +582,12 @@ export interface CanvasWords {
    * the colon, as for {@link focus}.
    */
   readonly selected: string;
+  /**
+   * Names a selected set after {@link selected}: the board's `Selected: 3
+   * issues · 78 related`. A function because the count sits inside the words
+   * and its grammar moves with it.
+   */
+  readonly selectedIssues: (count: number) => string;
   /**
    * Sits between the two counts: the frame's `6 OF 312`.
    *
@@ -1358,19 +1371,10 @@ function canvasToolbar(
   document: ViewerDocument,
   words: CanvasWords | undefined,
   canvasSwitch: ElementSpec,
-  selectedIssue: string | null,
+  subject: InspectorView['subject'],
   related: number,
 ): ElementSpec {
-  // THE CLAUSE NAMES WHAT THE CANVAS IS DRAWN AROUND: a selected issue (the
-  // board's `Selected: #2290`), or else the picked group. The ladder resolves
-  // no focus while something is selected, so a selected relationship, which
-  // has no one issue to name, leaves the counts to stand alone.
-  const lead =
-    words === undefined
-      ? null
-      : selectedIssue === null
-        ? { word: words.focus, key: ladder.focus }
-        : { word: words.selected, key: selectedIssue };
+  const lead = words === undefined ? null : captionLead(subject, ladder.focus, words);
   // WHAT THE COUNT SAYS IS THE TIER'S: drawn, "13 of 41 shown"; listed past the
   // graph's budget, "74 related", the issues the list reaches (the board's
   // "Selected: #3104 · 74 related"). No other tier draws a caption.
@@ -1382,7 +1386,7 @@ function canvasToolbar(
           // NO CLAUSE AT ALL WHEN NOTHING IS FOCUSED, rather than the label with
           // an empty value after it. An unfocused canvas is drawing every
           // component, which is a true thing the counts already say.
-          lead === null || lead.key === null
+          lead === null
             ? null
             : element('span', { class: 'ig-canvas-focus' }, [
                 element('span', {}, [lead.word]),
@@ -1404,7 +1408,7 @@ function canvasToolbar(
                 // below it already draws this issue as a focusable node, and the
                 // rail already links it. So the key is drawn as text, which
                 // invents no URL and takes no focus.
-                element('span', { class: 'ig-id' }, [issueNumber(lead.key)]),
+                lead.value,
                 ' · ',
               ]),
           counts,
@@ -1421,6 +1425,30 @@ function canvasToolbar(
   // THE SWITCH LEADS, so the row is never empty at 640 and wider. Under 640 the
   // sheet hides the switch, and a row left with nothing else in it with it.
   return element('div', { class: 'ig-canvas-toolbar' }, [canvasSwitch, statement, pill]);
+}
+
+/**
+ * The clause that names what the canvas is drawn around: a selected issue (the
+ * board's `Selected: #2290`), a selected set by how many it holds (`Selected:
+ * 3 issues`), or else the picked group. The ladder resolves no focus while
+ * something is selected, so a selected relationship, which has no one issue to
+ * name, leaves the counts to stand alone, as nothing focused does.
+ */
+function captionLead(
+  subject: InspectorView['subject'],
+  focus: string | null,
+  words: CanvasWords,
+): { readonly word: string; readonly value: ElementSpec } | null {
+  const key = (value: string): ElementSpec => element('span', { class: 'ig-id' }, [issueNumber(value)]);
+  switch (subject.kind) {
+    case 'issue':
+      return { word: words.selected, value: key(subject.issue.key) };
+    case 'issues':
+      return { word: words.selected, value: element('span', {}, [words.selectedIssues(subject.issues.length)]) };
+    case 'edge':
+    case 'none':
+      return focus === null ? null : { word: words.focus, value: key(focus) };
+  }
 }
 
 /** The caption's counts on the tiers that draw one, and `null` on every other. */
@@ -2013,24 +2041,32 @@ function relatedListParts(
       return [element('p', { class: 'ig-related-empty' }, [words.narrow.noSelection])];
     case 'no-relationships':
       return [element('p', { class: 'ig-related-empty' }, [words.noRelationships])];
-    case 'listed':
+    case 'listed': {
       // NOTHING IS REFUSED HERE: a refusal is stated in the Inspector, beside
       // the controls that answer it, so the fold is the only rule.
-      // THE HEAD CARRIES THE TOTAL (the board's list opens "Around #2290 17"),
-      // as the Inspector's heading does at wider widths. Drawn in a group head's
-      // shape, words left and count right; a set has no one issue to name.
-      return [
-        view.around === null
-          ? null
-          : element('div', { class: 'ig-relationship-group-head' }, [
-              element('span', {}, [`${words.narrow.around} `, element('span', { class: 'ig-id' }, [issueNumber(view.around)])]),
-              element('span', { class: 'ig-relationship-count' }, [String(view.total)]),
-            ]),
-        // ONE TAB STOP FOR THE LIST, on its first row: the rows are the
-        // viewer's, each at `-1` but the one a list's scene names.
-        ...view.groups.map((group, index) => relatedGroupSpec(group, document, shownGroups, words, index === 0)),
-      ];
+      // ONE TAB STOP FOR THE LIST, on its first row: the rows are the
+      // viewer's, each at `-1` but the one a list's scene names.
+      const [first] = view.blocks.flatMap((block) => block.groups);
+      return view.blocks.flatMap((block) => [
+        relatedBlockHead(block, words),
+        ...block.groups.map((group) => relatedGroupSpec(group, document, shownGroups, words, group === first)),
+      ]);
+    }
   }
+}
+
+/**
+ * A block's head, "Around #2290" with its total (the board's list opens
+ * "Around #2290 17"), as the Inspector's heading does at wider widths. Drawn in
+ * a group head's shape, words left and count right. A sibling of the groups,
+ * so a later block's head takes the hairline between groups and the first
+ * takes none.
+ */
+function relatedBlockHead(block: RelatedBlock, words: WorkspaceWords): ElementSpec {
+  return element('div', { class: 'ig-relationship-group-head' }, [
+    element('span', {}, [`${words.narrow.around} `, element('span', { class: 'ig-id' }, [issueNumber(block.around)])]),
+    element('span', { class: 'ig-relationship-count' }, [String(block.total)]),
+  ]);
 }
 
 /**
@@ -2053,13 +2089,13 @@ function relatedGroupSpec(
   const heading = groupHeading(group);
   const rows = shownNeighbours(related, shownGroups);
   const hidden = related.neighbours.length - rows.length;
-  return element('div', { class: 'ig-relationship-group', 'data-ig-group-key': group.key }, [
+  return element('div', { class: 'ig-relationship-group', 'data-ig-group-key': related.key }, [
     element('div', { class: 'ig-relationship-group-head' }, [
       element('span', { class: 'ig-related-kind' }, glyphAndLabel(treatmentFor(group.field).glyph, heading)),
       element('span', { class: 'ig-relationship-count' }, [String(related.neighbours.length)]),
     ]),
-    listedRowsScene(document, rows, { label: heading, focused: first ? rows[0] : null }).root,
-    hidden === 0 ? null : showMoreSpec(group.key, hidden, words),
+    listedRowsScene(document, rows, { label: heading, focused: first ? rows[0] : null, selected: related.selected }).root,
+    hidden === 0 ? null : showMoreSpec(related.key, hidden, words),
   ]);
 }
 
@@ -3563,6 +3599,23 @@ function holdRow(
 }
 
 /**
+ * Why the Related list stands in for the graph, in the host's words, for the
+ * selection it is read around: one issue by its number, a set by how many it
+ * holds. A relationship never reaches the graph's budget, so it has no line.
+ */
+function listedWhy(subject: InspectorView['subject'], related: number, words: WorkspaceWords): string | null {
+  switch (subject.kind) {
+    case 'issue':
+      return words.listedByRelationship(related, issueNumber(subject.issue.key));
+    case 'issues':
+      return words.listedAroundSelected(related, subject.issues.length);
+    case 'edge':
+    case 'none':
+      return null;
+  }
+}
+
+/**
  * What the canvas is drawn around, and the legend's switch, for this selection
  * and these switched kinds (RULES, Graphs, Dense neighbourhoods).
  *
@@ -3577,18 +3630,20 @@ export function canvasDrawing(
   words: WorkspaceWords,
 ): { readonly around: ScaleAround | null; readonly legendSwitch: LegendSwitch | undefined } {
   const { around, kinds } = canvasNeighbourhood(document, selection, switched);
-  return {
-    around,
-    legendSwitch:
-      kinds === null
-        ? undefined
-        : {
-            label: words.relationshipsToDraw,
-            drawn: words.relationshipsDrawn(kinds.drawn, kinds.total),
-            command: 'legend-kind',
-            kinds: kinds.kinds,
-          },
-  };
+  return { around, legendSwitch: kinds === null ? undefined : denseLegend(kinds, words) };
+}
+
+/** The legend past 8: a switch for each kind, or plain with the counts when there is nothing to choose. */
+function denseLegend(kinds: CanvasKinds, words: WorkspaceWords): LegendSwitch {
+  return kinds.switches
+    ? {
+        kind: 'switch',
+        label: words.relationshipsToDraw,
+        drawn: words.relationshipsDrawn(kinds.drawn, kinds.total),
+        command: 'legend-kind',
+        kinds: kinds.kinds,
+      }
+    : { kind: 'plain', kinds: kinds.kinds.map(({ field, count }) => ({ field, count })) };
 }
 
 /** Render one document at one reader position, as the whole workspace. */
@@ -3847,7 +3902,7 @@ export function renderWorkspace(
     document,
     options.words.canvas,
     canvasSwitchSpec(options.canvas ?? 'neighbourhood', options.words.narrow),
-    inspector.subject.kind === 'issue' ? inspector.subject.issue.key : null,
+    inspector.subject,
     canvas.ladder.related ?? 0,
   );
 
@@ -3941,18 +3996,12 @@ export function renderWorkspace(
       : renderMarkup(relatedListSpec(relatedView, document, options.shownGroups ?? [], options.words, over));
   // THE ONE LINE OVER THE LIST THAT SAYS WHY IT IS A LIST, where it stands in
   // for the graph: "74 issues relate to #3104, more than the graph draws at
-  // once, so they're listed by relationship." The limit stays in code, never in
-  // the words. A sibling of the list rather than its child, so under 640, where
-  // the list is the view as always, the sheet hides it with the rest of the
-  // graph's zone. A set has no one issue for it to name.
-  const overLine =
-    !over || relatedView.kind !== 'listed' || relatedView.around === null
-      ? ''
-      : renderMarkup(
-          element('p', { class: 'ig-related-over' }, [
-            options.words.listedByRelationship(canvas.ladder.related ?? 0, issueNumber(relatedView.around)),
-          ]),
-        );
+  // once, so they're listed by relationship.", or for a set "78 issues relate
+  // to the 3 selected, …". The limit stays in code, never in the words. A
+  // sibling of the list rather than its child, so under 640, where the list is
+  // the view as always, the sheet hides it with the rest of the graph's zone.
+  const overWords = over && relatedView.kind === 'listed' ? listedWhy(inspector.subject, canvas.ladder.related ?? 0, options.words) : null;
+  const overLine = overWords === null ? '' : renderMarkup(element('p', { class: 'ig-related-over' }, [overWords]));
 
   // §17c'S LOOP, OVER THE RAIL THE READER IS ACTUALLY LOOKING AT.
   // `reevaluateView` is handed the WINDOWED scene, so a chip whose row is

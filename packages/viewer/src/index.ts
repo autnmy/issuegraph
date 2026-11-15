@@ -196,7 +196,7 @@ export {
 } from './parts.ts';
 // The legend's per-kind switch (#303): the editor builds one for a dense
 // selection and hands it to the graph through `SceneOptions.legendSwitch`.
-export type { LegendSwitch, LegendSwitchKind } from './parts.ts';
+export type { LegendCount, LegendSwitch, LegendSwitchKind } from './parts.ts';
 
 export type { Cluster, ClusterReach } from './clusters.ts';
 export { clusterReach, clusterReachLabel, clustersOf } from './clusters.ts';
