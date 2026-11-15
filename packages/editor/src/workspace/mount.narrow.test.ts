@@ -567,6 +567,38 @@ describe('the editor builds and reports a selection set', () => {
     }
   });
 
+  it('#313 Escape with the order panel open closes the panel and keeps the selection', async () => {
+    const { page, calls, row, press, click } = await recording();
+    // The fold's layout, measured: the Inspector a zone BESIDE the graph, not
+    // over it. jsdom lays nothing out, so every zone would otherwise read as
+    // zero-wide and the Inspector as lifted, which hides the bug (review-41,
+    // PR 328): the guard dismissed only a lifted Inspector or an open canvas.
+    const proto = page.win.Element.prototype;
+    const measure = Object.getOwnPropertyDescriptor(proto, 'getBoundingClientRect');
+    const zones: Readonly<Record<string, readonly [number, number]>> = { rail: [0, 40], canvas: [40, 704], inspector: [704, 1024] };
+    Object.defineProperty(proto, 'getBoundingClientRect', {
+      configurable: true,
+      value(this: Element) {
+        const [left, right] = zones[this.getAttribute('data-zone') ?? ''] ?? [0, 0];
+        return new page.win.DOMRect(left, 0, right - left, 800);
+      },
+    });
+    try {
+      await click(row('2'));
+      const toggle = page.element.querySelector('.ig-order-toggle') ?? assert.fail('no order strip button');
+      await click(toggle);
+      assert.equal(page.handle.state.orderPanel, true, 'the strip button did not open the panel');
+      const before = calls.length;
+      await press(row('2'), 'Escape');
+      assert.equal(page.handle.state.orderPanel, false, 'Escape did not close the order panel');
+      assert.deepEqual(page.handle.state.selection, { kind: 'issue', key: '2' }, 'Escape cleared the selection');
+      assert.deepEqual(calls.slice(before), [], 'closing the panel changed the selection');
+    } finally {
+      if (measure !== undefined) Object.defineProperty(proto, 'getBoundingClientRect', measure);
+      page.handle.destroy();
+    }
+  });
+
   it('keeps the set when Escape cancels a live draft', async () => {
     const { page, row, press, click } = await recording();
     try {

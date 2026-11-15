@@ -2883,7 +2883,9 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // the wide layout" as a cost. It is not a cost worth taking: a key consumed
     // for a surface nobody can see is indistinguishable from a broken key. See
     // `inspectorIsLifted`, which reads the sheet's own answer off the DOM
-    // rather than re-deriving it from a width.
+    // rather than re-deriving it from a width. #313's order panel is opened by
+    // a press and is on screen whenever it is open, so it needs no measure:
+    // the state says it is there (review-41, PR 328).
     //
     // TWO TRANSIENTS SHARE THIS KEY NOW, AND §17d'S GOES FIRST. The audit
     // overlay is the one the reader pressed a control to open, and it is drawn
@@ -2898,7 +2900,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         dispatch({ kind: 'control', name: 'audit-close' });
         return;
       }
-      if (narrowOverlayOpen(state) && (state.canvasOpen || inspectorIsLifted())) {
+      if (narrowOverlayOpen(state) && (state.canvasOpen || state.orderPanel || inspectorIsLifted())) {
         event.preventDefault();
         dispatch({ kind: 'control', name: 'narrow-dismiss' });
         return;
