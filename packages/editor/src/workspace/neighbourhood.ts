@@ -133,14 +133,16 @@ function kindsOf(relationships: readonly InspectorRelationship[], on: ReadonlySe
 }
 
 /**
- * Every relationship a set's members hold, each once: the lines between two
- * members too, since both ends are the selection, but no member's sub-issues.
+ * Every relationship these issues hold, each once: the lines between two of
+ * them too, since both ends are drawn, but no one's sub-issues. A selected set
+ * reads its members; a selected unit reads its members too (#308: "selecting a
+ * unit keeps its partner's lines").
  */
-function setEdges(document: ViewerDocument, keys: readonly string[]): readonly ViewerEdge[] {
+function relationshipsAround(document: ViewerDocument, keys: readonly string[]): readonly InspectorRelationship[] {
   const byId = new Map(
     keys.flatMap((key) => issueRelationships(document, key)).map((relationship) => [relationship.edgeId, relationship]),
   );
-  return [...byId.values()].map(edgeOf);
+  return [...byId.values()];
 }
 
 /**
@@ -171,11 +173,14 @@ export function canvasNeighbourhood(
     }
     case 'issues': {
       const keys = subject.issues.map((issue) => issue.key);
-      const edges = setEdges(normalizeDocument(document).document, keys);
+      const edges = relationshipsAround(normalizeDocument(document).document, keys).map(edgeOf);
       return { around: { centre: keys, edges, reach: edges }, kinds: null };
     }
     case 'issue': {
-      const relationships = inspected.relationships;
+      // A UNIT IS DRAWN WHOLE: its partners' lines with the selected member's.
+      const unit = [subject.issue.key, ...(subject.whyRank?.unitPartners ?? [])];
+      const relationships =
+        unit.length > 1 ? relationshipsAround(normalizeDocument(document).document, unit) : inspected.relationships;
       const on = drawnKinds(
         relationships.map((relationship) => relationship.field),
         switched,

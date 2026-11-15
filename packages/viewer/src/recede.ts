@@ -76,7 +76,13 @@ function withWholeCards(document: NormalizedDocument, keys: ReadonlySet<string>)
 }
 
 function kept(document: NormalizedDocument, selection: RecedeSelection): Kept | null {
-  const selected = selectedKeys(document, selection.key);
+  // A SELECTED UNIT IS ITS WHOLE CARD: selecting the unit (its lead, the card
+  // the order and the canvas draw) keeps every member's lines and neighbours
+  // (#308: "selecting a unit keeps its partner's lines"). Selecting one MEMBER
+  // still reads that member alone, as before.
+  const selected = selectedKeys(document, selection.key).flatMap(
+    (key) => document.slotByLead.get(key)?.members ?? [key],
+  );
   return selected.length > 0 ? keptByIssues(document, selected) : keptByEdge(document, selection.edge);
 }
 

@@ -83,6 +83,20 @@ function held(counts: Partial<Record<EdgeField, number>>): readonly EdgeField[] 
   return LEGEND_ORDER.flatMap((field) => Array.from({ length: counts[field] ?? 0 }, () => field));
 }
 
+describe('a unit draws whole (#308)', () => {
+  it('draws the partners\u2019 lines with the selected member\u2019s, from either member', () => {
+    // i0002 goes together with i0001 (one slot) and is blocked by i0004.
+    const document = backlogOf(5, { unitOf: { i0002: 'i0001' }, edges: [['blocked-by', 'i0002', 'i0004'], ['blocked-by', 'i0001', 'i0003']] });
+    for (const key of ['i0001', 'i0002']) {
+      const around = canvasNeighbourhood(document, { kind: 'issue', key }, []).around;
+      assert.ok(around !== null, key);
+      const drawn = around.edges.map((edge) => `${edge.field} ${edge.from} ${edge.to}`);
+      assert.ok(drawn.includes('blocked-by i0002 i0004'), `${key}: the partner's line went undrawn (${drawn.join(', ')})`);
+      assert.ok(drawn.includes('blocked-by i0001 i0003'), `${key}: the lead's line went undrawn`);
+    }
+  });
+});
+
 describe('which kinds draw', () => {
   it('draws blocked-by first past 8 relationships, and every kind, decomposed-from too, at 8 or fewer', () => {
     assert.equal(DENSE_RELATIONSHIPS, 8);

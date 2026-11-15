@@ -220,7 +220,7 @@ it("recedingOf for member '104' keeps its unit card and recedes its partner 103'
   assert.equal(result.edges.has(edgeIdentity('decomposed-from', '103', '107')), true, "the partner's line stayed");
 });
 
-it("recedingOf for key '103' keeps its unit partner and neighbours, and recedes the partner's decomposed-from 104 to 107", () => {
+it("recedingOf for key '103', the unit's lead, keeps the whole unit: its partner's decomposed-from 104 to 107 stays (#308)", () => {
   const { document } = normalizeDocument(fixtureDocument);
   const result = recedingOf(document, { key: '103' });
 
@@ -231,13 +231,12 @@ it("recedingOf for key '103' keeps its unit partner and neighbours, and recedes 
       edgeIdentity('blocked-by', '101', '102'),
       edgeIdentity('blocked-by', '105', 'other/repo#7'),
       edgeIdentity('duplicate-of', '106', '105'),
-      edgeIdentity('decomposed-from', '104', '107'),
       edgeIdentity('decomposed-from', '102', '101'),
     ]),
   );
 });
 
-it('recedingOf gives each member of a together unit its own result when only one member has an origin', () => {
+it('recedingOf reads the whole unit for its lead and the member alone for a member, when only one member has an origin', () => {
   const { document } = normalizeDocument({
     issues: [
       { key: '103', title: 'Split the invoice writer', open: true },
@@ -255,9 +254,10 @@ it('recedingOf gives each member of a together unit its own result when only one
     cycles: [],
   });
 
+  // THE LEAD IS THE UNIT (#308): selecting it keeps the partner's origin line.
   const byLead = recedingOf(document, { key: '103' });
-  assert.deepEqual(byLead.keys, new Set(['107']));
-  assert.deepEqual(byLead.edges, new Set([edgeIdentity('decomposed-from', '104', '107')]));
+  assert.deepEqual(byLead.keys, new Set());
+  assert.deepEqual(byLead.edges, new Set());
 
   const byMember = recedingOf(document, { key: '104' });
   assert.deepEqual(byMember.keys, new Set());
