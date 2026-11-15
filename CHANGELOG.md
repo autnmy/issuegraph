@@ -4,6 +4,11 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/viewer` `0.23.1` / `@issuegraph/editor` `0.35.2`: a theme's hairline follows its own line, and a placed issue keeps the holds its sentence does not state (#308; review-41's and review-219's notes on PR 321).** **No API change.**
+  - **The hairline follows the line.** `extendTheme` (and so `resolveTheme` for a stored theme) gives `--ig-hairline` the overriding `--ig-line` when a theme sets its line and not its hairline, so a host that themed its line before `--ig-hairline` existed gets separators in its own colour with no action. A theme that sets both keeps its own hairline.
+  - **Unstated holds.** A placed issue whose Position sentence names its open blockers drops only its graph holds (those blockers in the graph's words) and keeps a runner's or tracker's hold, such as claimed or parked. A slot the order places nowhere keeps every hold under "Why it is held", as before.
+  - **Pinned** in the viewer's theme tests and the editor's why-rank tests.
+
 - **`@issuegraph/viewer` `0.23.0` / `@issuegraph/editor` `0.35.1`: every separator is a 1px hairline in its own colour role, and a placed issue's Position shows no hold list (#308, part C; the lead's q352, review-219's ruling on PR 320).** Additive: the colour token `--ig-hairline` and the metric token `--ig-hairline-width` (1). A host theme that overrides colours should set `--ig-hairline`: the Descant theme maps it to `border-hairline`, and the demo's paper theme and the README's light example set it.
   - **The hairline role.** Zone seams, heads, the rail's row dividers, the footer and the legend's top draw `var(--ig-hairline-width) solid var(--ig-hairline)`; graph lines and boxed controls keep the 1.5 `--ig-stroke`. The held rail treats the hairline as a neutral, like `--ig-line`.
   - **No repeated blocker.** A placed issue's sentence already ends on what it waits on ("after #2240 closes") and the board draws no list under it, so the hold list draws only under "Why it is held", for an issue the order places nowhere. The blocker stays reachable from its "is blocked by #2240" row.
