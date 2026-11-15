@@ -1973,10 +1973,18 @@ ${heldRailDeclarations}
    48 tall like a zone head, with one centred 32 ghost icon button. */
 .ig-order-strip {
   display: none;
-  justify-content: center;
-  align-items: flex-start;
-  padding-block: calc(var(--ig-space-tight) + var(--ig-space-micro));
+  flex-direction: column;
   border-right: var(--ig-hairline-width) solid var(--ig-hairline);
+}
+
+/* The strip's 48 head, ruled where the panel's head and the graph's toolbar
+   are ruled, so the hairlines meet across the fold. */
+.ig-order-strip-head {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-block-size: calc(var(--ig-space-loose) * 3);
+  border-bottom: var(--ig-hairline-width) solid var(--ig-hairline);
 }
 
 .ig-order-toggle,
@@ -2016,6 +2024,8 @@ ${heldRailDeclarations}
 }
 
 .ig-order-title {
+  margin: 0;
+  font-size: inherit;
   font-weight: var(--ig-weight-medium);
 }
 

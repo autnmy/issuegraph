@@ -3655,7 +3655,7 @@ describe('the folded order\u2019s strip and panel head (#313, Design 7b8fcbc)', 
 
   it('draws the strip\u2019s one button, named and titled by the host, pressed while the panel is open', () => {
     const shut = markupOf(false);
-    assert.match(shut, /<div class="ig-order-strip"><button type="button" class="ig-order-toggle" data-ig-command="order-open" aria-label="show the order" title="show the order" aria-expanded="false"/);
+    assert.match(shut, /<div class="ig-order-strip"><div class="ig-order-strip-head"><button type="button" class="ig-order-toggle" data-ig-command="order-open" aria-label="show the order" title="show the order" aria-expanded="false"/);
     assert.match(markupOf(true), /class="ig-order-toggle"[^>]*aria-expanded="true"/);
     assert.match(shut, / data-order-panel="shut"/);
     assert.match(markupOf(true), / data-order-panel="open"/);
@@ -3664,8 +3664,13 @@ describe('the folded order\u2019s strip and panel head (#313, Design 7b8fcbc)', 
   it('heads the panel with its title, the order\u2019s count and a close button', () => {
     assert.match(
       markupOf(true),
-      /<div class="ig-order-head"><span class="ig-order-title">the order<\/span><span class="ig-order-count">3<\/span><button type="button" class="ig-order-close" data-ig-command="order-close" aria-label="close the order" title="close the order">/,
+      /<div class="ig-order-head"><h2 class="ig-order-title">the order<\/h2><span class="ig-order-count">3<\/span><button type="button" class="ig-order-close" data-ig-command="order-close" aria-label="close the order" title="close the order">/,
     );
+  });
+
+  it('makes the open panel a dialog named by its title, and leaves the shut order a plain zone (review-219, PR 328)', () => {
+    assert.match(markupOf(true), /<section class="ig-zone" data-zone="rail" id="[^"]+" role="dialog" aria-label="the order">/);
+    assert.match(markupOf(false), /<section class="ig-zone" data-zone="rail" id="[^"]+">/);
   });
 });
 

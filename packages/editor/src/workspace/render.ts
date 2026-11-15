@@ -1251,8 +1251,10 @@ const ZONE_CLOSE = '</section>';
  * the work order", pressed while the panel is open (#313, Design 7b8fcbc).
  */
 function orderStripSpec(words: WorkspaceWords, open: boolean, railId: string): ElementSpec {
+  // THE STRIP HAS A HEAD, as tall as the panel's and the graph's toolbar and
+  // ruled like them, so the three hairlines meet (review-219, PR 328).
   return element('div', { class: 'ig-order-strip' }, [
-    element(
+    element('div', { class: 'ig-order-strip-head' }, [element(
       'button',
       {
         type: 'button',
@@ -1264,7 +1266,7 @@ function orderStripSpec(words: WorkspaceWords, open: boolean, railId: string): E
         'aria-controls': railId,
       },
       [hiddenGlyph('\u2630')],
-    ),
+    )]),
   ]);
 }
 
@@ -1274,7 +1276,7 @@ function orderStripSpec(words: WorkspaceWords, open: boolean, railId: string): E
  */
 function orderHeadSpec(words: WorkspaceWords, ranked: number): ElementSpec {
   return element('div', { class: 'ig-order-head' }, [
-    element('span', { class: 'ig-order-title' }, [words.workOrder]),
+    element('h2', { class: 'ig-order-title' }, [words.workOrder]),
     element('span', { class: 'ig-order-count' }, [String(ranked)]),
     element(
       'button',
@@ -1290,8 +1292,8 @@ function orderHeadSpec(words: WorkspaceWords, ranked: number): ElementSpec {
   ]);
 }
 
-function zone(name: Zone, id: string, inner: string): string {
-  const frame = renderMarkup(element('section', { class: 'ig-zone', 'data-zone': name, id }, []));
+function zone(name: Zone, id: string, inner: string, attributes: Readonly<Record<string, string>> = {}): string {
+  const frame = renderMarkup(element('section', { class: 'ig-zone', 'data-zone': name, id, ...attributes }, []));
   return `${frame.slice(0, -ZONE_CLOSE.length)}${inner}${ZONE_CLOSE}`;
 }
 
@@ -4310,6 +4312,9 @@ export function renderWorkspace(
         railRender.scene.footer === null ? '' : renderMarkup(markRailRows(railRender.scene.footer)),
         railFooterSpec === null ? '' : renderMarkup(railFooterSpec),
       ].join(''),
+      // OPEN, THE ORDER IS A DIALOG over the graph, named by its head (#313;
+      // review-219, PR 328). Shut, it is the zone it always was.
+      options.orderPanel === true ? { role: 'dialog', 'aria-label': options.words.workOrder } : {},
     ),
     zone(
       'canvas',

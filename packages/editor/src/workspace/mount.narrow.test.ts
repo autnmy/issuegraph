@@ -593,6 +593,8 @@ describe('the editor builds and reports a selection set', () => {
       assert.equal(page.handle.state.orderPanel, false, 'Escape did not close the order panel');
       assert.deepEqual(page.handle.state.selection, { kind: 'issue', key: '2' }, 'Escape cleared the selection');
       assert.deepEqual(calls.slice(before), [], 'closing the panel changed the selection');
+      // Focus goes back to the control that opened the panel (review-219).
+      assert.equal(page.win.document.activeElement?.classList.contains('ig-order-toggle'), true, 'focus did not return to Show the work order');
     } finally {
       if (measure !== undefined) Object.defineProperty(proto, 'getBoundingClientRect', measure);
       page.handle.destroy();
