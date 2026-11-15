@@ -584,8 +584,14 @@ export interface ThemeOverride {
  * would make the cheap case impossible to express.
  */
 export function extendTheme(base: Theme, override: ThemeOverride): Theme {
+  // A THEME THAT SETS ITS LINE AND NOT ITS HAIRLINE gets separators in its own
+  // line colour, never the base's (#308): `--ig-hairline` arrived after hosts
+  // had themed `--ig-line`, and a dark hairline on a light host's page is the
+  // cause to fix, not a note to every host.
+  const line = override.colors?.['--ig-line'];
+  const hairline = line !== undefined && override.colors?.['--ig-hairline'] === undefined ? { '--ig-hairline': line } : {};
   return Object.freeze({
-    colors: Object.freeze({ ...base.colors, ...override.colors }),
+    colors: Object.freeze({ ...base.colors, ...hairline, ...override.colors }),
     type: Object.freeze({ ...base.type, ...override.type }),
     metrics: Object.freeze({ ...base.metrics, ...override.metrics }),
     effects: Object.freeze({ ...base.effects, ...override.effects }),

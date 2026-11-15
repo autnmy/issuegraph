@@ -127,6 +127,23 @@ describe('the inspector states why the issue sits where it does', () => {
     // A placed issue's sentence names what it waits on, and the board draws no
     // hold list under it (review-219, PR 320): the list is "Why it is held" only.
     assert.equal(/class="ig-inspector-holds"/.test(markup), false, 'a placed issue repeated its blocker in a hold list');
+
+    // A hold the sentence does not state still draws (review-219 and review-41
+    // on PR 321): a tracker hold on the same placed slot.
+    const claimed: ViewerDocument = {
+      ...placed,
+      order: {
+        ...placed.order,
+        slots: placed.order.slots.map((slot) =>
+          slot.lead === 'i0002' ? { ...slot, holds: [...slot.holds, { family: 'tracker' as const, reason: 'claimed by a run' }] } : slot,
+        ),
+      },
+    };
+    const kept = inspectorMarkupFor(claimed, 'i0002');
+    assert.match(kept, /class="ig-inspector-holds"/, 'a placed slot lost a hold its sentence does not state');
+    assert.ok(kept.includes('claimed by a run'));
+    const list = /<ul class="ig-inspector-holds">([\s\S]*?)<\/ul>/.exec(kept)?.[1] ?? '';
+    assert.equal(list.includes('a blocker is open'), false, 'the graph hold the sentence states was repeated');
   });
 
   /**

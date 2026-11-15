@@ -130,6 +130,18 @@ describe('the default theme meets WCAG AA', () => {
   });
 });
 
+describe('the hairline follows a theme\u2019s own line (#308)', () => {
+  it('takes the overriding line when a theme sets its line and not its hairline', () => {
+    assert.equal(extendTheme(defaultTheme, { colors: { '--ig-line': '#D9D4C7' } }).colors['--ig-hairline'], '#D9D4C7');
+    assert.equal(
+      extendTheme(defaultTheme, { colors: { '--ig-line': '#D9D4C7', '--ig-hairline': '#EEEEEE' } }).colors['--ig-hairline'],
+      '#EEEEEE',
+      'a theme\u2019s own hairline was overwritten',
+    );
+    assert.equal(extendTheme(defaultTheme, {}).colors['--ig-hairline'], defaultTheme.colors['--ig-hairline']);
+  });
+});
+
 describe('the second documented theme keeps up with the first', () => {
   it('overrides EVERY colour token, so a new one cannot be forgotten', () => {
     // THE CLASS, not the instance. Three state tokens were added to the dark

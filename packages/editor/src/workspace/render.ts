@@ -2255,6 +2255,18 @@ function kindListSpec(words: WorkspaceWords, source: string | null): ElementSpec
 }
 
 /**
+ * The holds the Position sentence does not already state. A slot the order
+ * places nowhere keeps every hold ("Why it is held"). A placed slot whose
+ * sentence names its open blockers drops its graph holds, which are those
+ * blockers in the graph's words, and keeps a runner's or tracker's hold
+ * (claimed, parked), which the sentence never states.
+ */
+function unstatedHolds(why: InspectorWhyRank): readonly ViewerHold[] {
+  const blockersStated = why.rank !== null && why.openBlockers.length > 0;
+  return why.holds.filter((hold) => !(blockersStated && hold.family === 'graph'));
+}
+
+/**
  * §17a's "why rank" block: the heading, and one sentence explaining the
  * position.
  *
@@ -2317,13 +2329,13 @@ function whyRankSpec(
     clauses.length === 0
       ? null
       : element('p', { class: 'ig-why-rank-sentence' }, clauses.flatMap((clause, index) => (index === 0 ? [clause] : [' ', clause]))),
-    // THE HOLDS ARE "WHY IT IS HELD" ONLY, for a slot the order places
-    // nowhere (RULES: "Under Why it is held, a held issue says what it waits
-    // on"). A placed issue's sentence already ends on what it waits on ("after
-    // #2240 closes"), and the board draws no list under it; the control that
-    // reaches the blocker is its "is blocked by #2240" Relationships row
-    // (review-219's ruling on #308, PR 320).
-    why.rank !== null || holds.length === 0 ? null : element('ul', { class: 'ig-inspector-holds' }, holds),
+    // THE HOLDS THE SENTENCE DOES NOT STATE ({@link unstatedHolds}). Under
+    // "Why it is held" a held issue says what it waits on (RULES); a placed
+    // issue's sentence already ends on its blockers ("after #2240 closes"), so
+    // only another kind of hold draws under it, and the control that reaches a
+    // blocker is its "is blocked by #2240" Relationships row (review-219, PRs
+    // 320 and 321).
+    holds.length === 0 ? null : element('ul', { class: 'ig-inspector-holds' }, holds),
   ]);
 }
 
@@ -3261,7 +3273,10 @@ function inspectorSpec(view: InspectorView, context: InspectorContext): ElementS
             : whyRankSpec(
                 subject.whyRank,
                 words,
-                subject.whyRank.holds.map((hold) =>
+                // A PLACED ISSUE'S SENTENCE NAMES THE BLOCKERS IT WAITS ON, so
+                // only the holds it does not state draw below it (review-219 on
+                // PR 321): a claim or a parked hold still shows.
+                unstatedHolds(subject.whyRank).map((hold) =>
                   holdRow(hold, context.known, (subjectKey) =>
                     context.leadOf.get(subjectKey) === context.leadOf.get(subject.issue.key),
                   ),
