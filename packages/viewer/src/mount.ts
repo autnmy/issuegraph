@@ -228,6 +228,9 @@ export function mountViewer(
   const doc = container.ownerDocument;
   let currentOptions: MountOptions = options;
   let projection: Projection = options.projection ?? 'linear';
+  // The projection the reader sees: the list while `listOnly` is set, whatever
+  // `projection` holds, so the list's selection rules apply to what is drawn.
+  const drawnProjection = (): Projection => (currentOptions.listOnly === true ? 'linear' : projection);
   let normalized: NormalizedDocument = normalizeDocument(input).document;
   // SEEDED FROM THE OPTIONS, not from nothing. `MountOptions` carries
   // `selected` and `focused` because it extends the render options, so a caller
@@ -529,7 +532,7 @@ export function mountViewer(
       // are the projections that recede. Each still marks the unit's lead,
       // since it moves a member to its lead before it marks anything. The tree
       // does not recede and keeps the lead the handle reports.
-      selected: projection === 'tree' ? state.selected : selectedAsGiven,
+      selected: drawnProjection() === 'tree' ? state.selected : selectedAsGiven,
       // DERIVED FROM THE SELECTION, never taken from the host's options, so a
       // relationship recedes only while it is the selection and a clear
       // always restores everything.
@@ -798,7 +801,7 @@ export function mountViewer(
     // one and missed, which is not a request to throw it away.
     const key = keyAt(event.target, container);
     const modified = event.shiftKey === true || event.metaKey === true || event.ctrlKey === true;
-    const clearsSelection = projection === 'graph' && state.selected !== null && !modified;
+    const clearsSelection = drawnProjection() === 'graph' && state.selected !== null && !modified;
     if (key === null) {
       if (clearsSelection) emitSelect(null);
       return;

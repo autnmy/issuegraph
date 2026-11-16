@@ -246,6 +246,20 @@ export interface SceneOptions {
    */
   readonly switchable?: boolean | undefined;
   /**
+   * Draw only the list, whatever `projection` is, with no List/Graph toggle
+   * and no expand/collapse. Defaults to `false`.
+   *
+   * FOR A HOST ON A NARROW PAGE. The design draws the order preview as its
+   * list alone under 640px: a phone has no room for a graph, and a reader left
+   * on one with the toggle hidden would have no way back to the list. So the
+   * option fixes the projection rather than only hiding the toggle.
+   *
+   * THE HOST DECIDES, as it does for `compact`. A container query on the
+   * viewer's own box is wrong (at desktop the preview is already a panel
+   * under 640 wide beside a form), and this package never reads the window.
+   */
+  readonly listOnly?: boolean | undefined;
+  /**
    * The keys whose provenance line is open, per §16f's `→ expand provenance`.
    *
    * THE HOST HOLDS THIS, NOT THE VIEWER, for the reason every other piece of
@@ -882,7 +896,7 @@ export function linearScene(
     [
       options.chrome === false
         ? null
-        : hostHeader(document, { projection: 'linear', switchable: options.switchable === true }),
+        : hostHeader(document, { projection: 'linear', switchable: options.switchable === true && options.listOnly !== true }),
       nowRows(document),
       // BELOW THE NOW ROW, ABOVE THE ORDER. §16a puts what the runner is doing
       // directly under the header as the first thing a reader meets, and under

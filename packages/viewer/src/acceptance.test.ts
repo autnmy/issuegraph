@@ -11,7 +11,7 @@ import {
   TEXT_TOKENS,
   contrastRatio,
 } from './testing/contrast.ts';
-import { fixtureDocument } from './testing/fixtures.ts';
+import { fixtureDocument, hostedFixtureDocument } from './testing/fixtures.ts';
 
 const { COLOR_TOKENS, defaultTheme, extendTheme, renderViewer } = surface;
 
@@ -334,5 +334,42 @@ describe('the public surface', () => {
           .filter((identity) => !keptLines.has(identity)),
       ),
     );
+  });
+});
+
+describe('done when (#243): with listOnly the order preview draws only its list', () => {
+  const projections = ['linear', 'graph', 'tree'] as const;
+
+  it('draws the list whatever projection is set, with no Graph option and no Expand, keeping the label, counts, freshness and Reload', () => {
+    for (const projection of projections) {
+      // `compact` and `switchable` are the options that would draw the toggle and the size control.
+      const result = renderViewer(hostedFixtureDocument, { projection, switchable: true, compact: true, listOnly: true });
+      assert.equal(result.scene.projection, 'linear', `${projection} with listOnly drew ${result.scene.projection}`);
+      assert.ok(result.markup.includes('data-projection="linear"'));
+      assert.ok(!result.markup.includes('ig-toggle'), `${projection} with listOnly drew the List/Graph toggle`);
+      assert.ok(!result.markup.includes('ig-size'), `${projection} with listOnly drew Expand`);
+      for (const kept of ['ig-header-label', 'ig-counts', 'ig-freshness', 'ig-refresh']) {
+        assert.ok(result.markup.includes(kept), `${projection} with listOnly lost ${kept}`);
+      }
+    }
+  });
+
+  it('with listOnly absent, every projection renders as before', () => {
+    for (const projection of projections) {
+      const before = renderViewer(hostedFixtureDocument, { projection, switchable: true, compact: true });
+      const absent = renderViewer(hostedFixtureDocument, { projection, switchable: true, compact: true, listOnly: false });
+      assert.equal(before.scene.projection, projection);
+      assert.equal(absent.markup, before.markup);
+    }
+    // CONTROL: the same options without listOnly do draw the toggle and, on the graph, Expand,
+    // so their absence above is listOnly's doing.
+    const graph = renderViewer(hostedFixtureDocument, { projection: 'graph', switchable: true, compact: true }).markup;
+    assert.ok(graph.includes('ig-toggle') && graph.includes('ig-size'));
+  });
+
+  it('the viewer README tells a host to set listOnly while its page is under 640px', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
+    assert.match(readme, /`listOnly`[^\n]*640/);
   });
 });
