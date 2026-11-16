@@ -125,7 +125,10 @@ describe('the batch Inspector, mounted (#249)', () => {
         [...page.element.querySelectorAll('[data-ig-command="batch-target"]')].map((pick) => pick.getAttribute('data-ig-target')),
         ['1'],
       );
-      query.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      // The redraw that drew the matches replaced the box; the focus moved to the new one.
+      const typed = page.element.querySelector<HTMLInputElement>('input[data-ig-command="batch-query"]') ?? assert.fail('no search');
+      assert.equal(page.win.document.activeElement, typed, 'typing moved the focus out of the search');
+      typed.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
       await flush();
       assert.equal(page.handle.state.batch.step, 'idle', 'Escape did not close the ask');
       assert.deepEqual(page.handle.state.selection, { kind: 'issues', keys: ['2', '3', '4'] }, 'Escape cleared the set');
