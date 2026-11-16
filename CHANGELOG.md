@@ -4,6 +4,12 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/editor` `0.48.0`: under 640 the Inspector is a sheet from the bottom (#245).** **Additive markup: the Inspector zone gains an `aria-label` (`WorkspaceWords.inspector`) and a close control, `data-ig-command="narrow-dismiss"`, named by `NarrowWords.closeSheet`.**
+  - Under 640 there was no column for the Inspector, so a selection showed it nowhere. A selection now lifts it as a sheet over the visible tab, on the view's bottom edge and never taller than the view; the tabs stay above it. The close control is always in the markup and shown only on the sheet.
+  - **Escape closes the sheet on every tab.** The shell asked only whether the Inspector overlapped the canvas zone, which on the Order tab is not what the sheet covers; it now asks about the rail too. The audit panel still closes first.
+  - **The focus does not go down with the sheet.** Closing it from inside (the close control, or Escape from within it) puts the focus on the selected row, or on the active tab when that row is not drawn.
+  - **Pinned** in `workspace/mount.sheet.test.ts` with stubbed non-zero boxes, so it cannot pass only because every box is empty in the test window, and in the editor acceptance test. The accessibility baseline is regenerated for the new control. That baseline is built with no stylesheet, so it cannot show that the close control and the tab strip are out of keyboard reach at the wide layout.
+
 - **`@issuegraph/viewer` `0.30.0`: `listOnly` draws the order as its list alone, for a host on a narrow page (#243).** **Additive: `SceneOptions` gains an optional `listOnly`.** With it unset every projection renders as before.
   - Under 640px the design draws the order preview as its list, full width under the host's form, with no Graph option and no Expand. `listOnly: true` makes `sceneFor` draw the linear projection whatever `projection` is, so `renderViewer` and `mountViewer` (including `update` and `setProjection`) never draw the graph or the tree while it is set, and the header draws no `.ig-toggle` and no `.ig-size`. The label, counts, freshness, Reload and the readiness key stay. The mount applies the list's selection rules to what it draws, so a click on blank space keeps the selection as the list always has.
   - The host sets it, as it sets `compact`: the viewer never reads the window, and a container query on its own box would be wrong, since at desktop the preview is a panel already under 640 wide.

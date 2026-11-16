@@ -970,6 +970,38 @@ describe('done when: the three zones render at their fixed positions, dark-only'
   });
 });
 
+describe('done when: under 640 a selection lifts the Inspector as a sheet from the bottom (#245)', () => {
+  /** The body of the stylesheet's under-640 container block. */
+  function phoneBlock(css: string): string {
+    const at = css.indexOf('@container ig-workspace (width < 640px)');
+    assert.notEqual(at, -1, 'no under-640 block');
+    const open = css.indexOf('{', at);
+    let depth = 0;
+    for (let cursor = open; cursor < css.length; cursor += 1) {
+      if (css[cursor] === '{') depth += 1;
+      else if (css[cursor] === '}') {
+        depth -= 1;
+        if (depth === 0) return css.slice(open + 1, cursor);
+      }
+    }
+    throw new Error('unterminated under-640 block');
+  }
+
+  it('lifts the Inspector over the view from its bottom edge, named and with a close control only the sheet shows', () => {
+    const result = renderWorkspace(ranked(8), { words: WORKSPACE_WORDS, selection: { kind: 'issue', key: 'i0003' } });
+    assert.match(result.markup, /data-inspector="lifted"/);
+    assert.match(result.markup, /<section[^>]*data-zone="inspector"[^>]*aria-label="[^"]+"/);
+    const close = /<button[^>]*data-ig-command="narrow-dismiss"[^>]*>/.exec(result.markup)?.[0] ?? assert.fail('no close control');
+    assert.match(close, new RegExp(`aria-label="${WORKSPACE_WORDS.narrow.closeSheet}"`));
+    const phone = phoneBlock(surface.workspaceStylesheet);
+    assert.match(phone, /\[data-inspector='lifted'\] \.ig-zone\[data-zone='inspector'\]\s*\{[^}]*grid-area:\s*view;[^}]*align-self:\s*end;/);
+    assert.match(phone, /\[data-inspector='lifted'\] \.ig-sheet-close\s*\{\s*display:\s*inline-grid;/);
+    // The close control sits in the Inspector's head row, beside the title (the board).
+    assert.match(result.markup, /<div class="ig-inspector-head">(?:(?!<\/div>).)*data-ig-command="narrow-dismiss"/s);
+    assert.match(surface.workspaceStylesheet, /\n\.ig-sheet-close\s*\{\s*display:\s*none;/);
+  });
+});
+
 describe('done when: the rail is virtualised and complete — 312 rows, every rank addressable', () => {
   const document = ranked(312);
 
