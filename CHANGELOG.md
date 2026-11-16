@@ -4,6 +4,11 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/viewer` `0.30.0`: `listOnly` draws the order as its list alone, for a host on a narrow page (#243).** **Additive: `SceneOptions` gains an optional `listOnly`.** With it unset every projection renders as before.
+  - Under 640px the design draws the order preview as its list, full width under the host's form, with no Graph option and no Expand. `listOnly: true` makes `sceneFor` draw the linear projection whatever `projection` is, so `renderViewer` and `mountViewer` (including `update` and `setProjection`) never draw the graph or the tree while it is set, and the header draws no `.ig-toggle` and no `.ig-size`. The label, counts, freshness, Reload and the readiness key stay. The mount applies the list's selection rules to what it draws, so a click on blank space keeps the selection as the list always has.
+  - The host sets it, as it sets `compact`: the viewer never reads the window, and a container query on its own box would be wrong, since at desktop the preview is a panel already under 640 wide.
+  - **Pinned** in `acceptance.test.ts` (each projection with `listOnly`, the absent case unchanged, the README line) and `mount.test.ts` (mount, `setProjection` and `update`, and the blank-space click).
+
 - **`@issuegraph/viewer` `0.29.2`: a doubled arc parts across its line, so `serialize-with` stays two strokes on a vertical arc (#166).** **No API change; the doubled arc's two `transform`s change.**
   - Arcs parted their two strokes on the global y-axis. On a vertical chord, the ordinary same-column (spine-to-spine) arc, the y-axis runs along the line, so the strokes slid over each other and `serialize-with` drew as one line, losing its structural shape channel. An arc now parts on its chord's normal (`normalAt`, the function #164 already uses for the companion strokes), one stroke either side across the line at any angle. A trunk route keeps its diagonal split.
   - **Pinned** in `projections/graph.test.ts` with a two-issue vertical arc.

@@ -2675,3 +2675,45 @@ describe('under 640 the mounted viewer holds one issue', () => {
     });
   });
 });
+
+describe('mountViewer with listOnly (#243)', () => {
+  const drawn = (container: TestElement): string | null =>
+    container.descendants().find((element) => element.getAttribute('data-projection') !== null)?.getAttribute('data-projection') ?? null;
+
+  it('draws the list through mount, setProjection and update while listOnly is set, and the asked projection once it is dropped', () => {
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const handle = mountViewer(container, fixtureDocument, { projection: 'graph', switchable: true, listOnly: true });
+    assert.equal(drawn(container), 'linear');
+    assert.ok(!reserialize(container).includes('ig-toggle'));
+
+    handle.setProjection('tree');
+    assert.equal(drawn(container), 'linear');
+    handle.setProjection('graph');
+    assert.equal(drawn(container), 'linear');
+
+    handle.update(fixtureDocument, { projection: 'graph', switchable: true, listOnly: true });
+    assert.equal(drawn(container), 'linear');
+
+    // CONTROL: the same update without listOnly draws the graph, so the list above was listOnly's doing.
+    handle.update(fixtureDocument, { projection: 'graph', switchable: true });
+    assert.equal(drawn(container), 'graph');
+  });
+
+  it('keeps the selection on a click on blank space, as the list does, while the asked projection is the graph', () => {
+    // MUTATION OBLIGATION: key the blank-space clear on `projection` rather than the drawn one, and this click clears.
+    const doc = new TestDocument();
+    const container = doc.createContainer();
+    const handle = mountViewer(container, fixtureDocument, { projection: 'graph', listOnly: true });
+    handle.select('102');
+    assert.equal(handle.state.selected, '102');
+    container.dispatch('click', { target: container });
+    assert.equal(handle.state.selected, '102');
+
+    // CONTROL: the graph itself clears on the same click.
+    handle.update(fixtureDocument, { projection: 'graph' });
+    handle.select('102');
+    container.dispatch('click', { target: container });
+    assert.equal(handle.state.selected, null);
+  });
+});
