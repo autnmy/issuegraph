@@ -1934,6 +1934,24 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       }
       focusIn(within, key);
     };
+    // WHERE A CLOSED SHEET HANDS THE FOCUS (#245), read once the new markup is
+    // drawn: the selected row when the rail is drawn, else the active tab when
+    // the tabs are. §17k's lifted Inspector between `1120` and `1359` closes
+    // the same way with neither on screen, so `null` falls through to the
+    // restore that ran before the sheet existed.
+    const sheetTarget = ((): HTMLElement | null => {
+      if (!sheetFocus) return null;
+      sheetFocus = false;
+      const key = selectedKey(state.selection);
+      const railZone = zone('rail');
+      const row =
+        key === null || railZone === null || folded(railZone)
+          ? undefined
+          : withKey(railZone, key).find((node) => node.hasAttribute('tabindex'));
+      if (row !== undefined) return row;
+      const tab = surface.querySelector<HTMLElement>(`[${COMMAND_ATTRIBUTE}="narrow-tab"][aria-selected="true"]`);
+      return tab !== null && !folded(tab.closest('.ig-narrow-tabs')) ? tab : null;
+    })();
     if (overlay !== null) {
       // FOCUS IS TAKEN BACK ON EVERY RENDER WHILE THE OVERLAY IS UP, not only on
       // the one that opens it. Every answer dispatches, every dispatch redraws,
@@ -1964,19 +1982,16 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       // normally would scroll the column to bring the element into view and
       // undo it.
       surface.querySelector<HTMLElement>(auditStop)?.focus({ preventScroll: true });
-    } else if (sheetFocus) {
+    } else if (sheetTarget !== null) {
       // THE SHEET CLOSED (#245). Ahead of the command control's own restore,
       // which would put the focus back on the close control the sheet just
-      // took off screen. The selected row when it is drawn, else the active
-      // tab, which is always drawn in the band where the sheet exists.
-      sheetFocus = false;
-      const key = selectedKey(state.selection);
-      if (key !== null && !folded(zone('rail'))) {
+      // took off screen. A row goes through `focusIn`, which moves the rail's
+      // roving tab stop with it.
+      const key = sheetTarget.getAttribute(KEY_ATTRIBUTE);
+      if (key === null) sheetTarget.focus({ preventScroll: true });
+      else {
         handedToGraph = false;
         focusIn('rail', key);
-      }
-      if (key === null || doc.activeElement?.getAttribute(KEY_ATTRIBUTE) !== key) {
-        surface.querySelector<HTMLElement>(`[${COMMAND_ATTRIBUTE}="narrow-tab"][aria-selected="true"]`)?.focus({ preventScroll: true });
       }
     } else if (activeCommand !== null) {
       const again = surface.querySelector<HTMLInputElement>(`input[${COMMAND_ATTRIBUTE}="${activeCommand}"]`);

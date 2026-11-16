@@ -107,11 +107,14 @@ describe('the Inspector is a sheet from the bottom under 640 (#245)', () => {
     const undo = phoneBoxes(page);
     try {
       await selectRow(page, '2');
-      // The rail not drawn, as on the Related groups and Sub-issues tabs; a
-      // stylesheet stands in for the container query the test window does not evaluate.
-      const hidden = page.win.document.createElement('style');
-      hidden.textContent = ".ig-zone[data-zone='rail'] { display: none; }";
-      page.win.document.head.append(hidden);
+      // The rail not drawn, as on the Related groups and Sub-issues tabs, and
+      // the tabs drawn: a stylesheet stands in for the under-640 container
+      // query the test window does not evaluate. `.ig-mount` outranks the
+      // mount's own sheet, which comes later in the document.
+      const phone = page.win.document.createElement('style');
+      phone.textContent =
+        ".ig-mount .ig-workspace .ig-zone[data-zone='rail'] { display: none; } .ig-mount .ig-workspace .ig-narrow-tabs { display: flex; }";
+      page.win.document.head.append(phone);
       const close = page.element.querySelector<HTMLElement>('.ig-sheet-close') ?? assert.fail('no close control');
       close.focus();
       close.dispatchEvent(new page.win.MouseEvent('click', { bubbles: true }));
@@ -119,6 +122,32 @@ describe('the Inspector is a sheet from the bottom under 640 (#245)', () => {
       const active = page.win.document.activeElement;
       assert.equal(active?.getAttribute('data-ig-command'), 'narrow-tab', 'the focus did not land on a tab');
       assert.equal(active?.getAttribute('aria-selected'), 'true', 'the focus landed on a tab that is not the active one');
+    } finally {
+      undo();
+      page.handle.destroy();
+      page.dom.window.close();
+    }
+  });
+
+  it('falls back to the restore it had before when neither the row nor a tab is drawn (the lifted Inspector at 1120-1359)', async () => {
+    const page = await mounted();
+    const undo = phoneBoxes(page);
+    try {
+      await selectRow(page, '2');
+      // The rail folded and the tabs not drawn, as in §17k's band; the
+      // mount's own sheet already hides the tabs outside the 640 query.
+      const band = page.win.document.createElement('style');
+      band.textContent = ".ig-mount .ig-workspace .ig-zone[data-zone='rail'] { display: none; }";
+      page.win.document.head.append(band);
+      const inspector = page.zone('inspector') ?? assert.fail('no inspector zone');
+      inspector.focus();
+      inspector.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      await flush();
+      assert.equal(page.handle.state.inspectorDismissed, true, 'Escape did not close the lifted Inspector');
+      const active = page.win.document.activeElement;
+      assert.ok(active !== null && page.element.contains(active), 'the focus dropped out of the workspace');
+      // The test window would let a hidden tab take the focus; a browser would not, and the focus would fall to the page.
+      assert.notEqual(active.getAttribute('data-ig-command'), 'narrow-tab', 'the focus went to a tab that is not drawn');
     } finally {
       undo();
       page.handle.destroy();
