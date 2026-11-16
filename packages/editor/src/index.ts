@@ -421,6 +421,10 @@ export {
   // AND AGAIN — the layout under 640. `WorkspaceWords.narrow` is required, so a
   // host that cannot name this type cannot build its words at all.
   type NarrowWords,
+  // THE BATCH INSPECTOR'S WORDS AND NOTE (#249). `WorkspaceWords.batch` is
+  // optional, and a host that supplies it has to be able to name the type.
+  type BatchWords,
+  type BatchNote,
   // AND AGAIN — the log under the head. `WorkspaceWords.log` is required too.
   type LogWords,
   ZONES,

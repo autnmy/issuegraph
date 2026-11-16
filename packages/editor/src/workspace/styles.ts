@@ -825,6 +825,127 @@ export const workspaceStylesheet = `
   color: var(--ig-text-muted);
 }
 
+/* THE BATCH INSPECTOR (#249, the design's "Several issues at once"): "Add to
+   all 3" over three secondary offers, the reason a refused offer is disabled
+   under them in muted text, the one-issue search for "All 3 are blocked by…",
+   and the confirm that states the number of writes, its write the one primary
+   control in the panel. */
+.ig-batch,
+.ig-batch-pick {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+}
+
+.ig-batch-offers,
+.ig-batch-dialog-foot,
+.ig-batch-note-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ig-space-tight);
+}
+
+.ig-batch-offer:disabled {
+  color: var(--ig-text-muted);
+  cursor: not-allowed;
+}
+
+/* The one paragraph in the block is the reason a refused offer is disabled. */
+.ig-batch > p,
+.ig-batch-pick-head {
+  margin: 0;
+  color: var(--ig-text-muted);
+  font-size: var(--ig-font-size-small);
+}
+
+.ig-batch-query {
+  background: var(--ig-bg);
+  color: var(--ig-text-body);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius);
+  padding: var(--ig-space-tight) var(--ig-space);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+}
+
+.ig-batch-pick-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ig-batch-pick-item {
+  display: flex;
+  gap: var(--ig-space-tight);
+  width: 100%;
+  background: none;
+  color: var(--ig-text-body);
+  border: none;
+  border-radius: var(--ig-radius);
+  padding: var(--ig-space-tight);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+  text-align: start;
+  cursor: pointer;
+}
+
+.ig-batch-pick-item:hover {
+  background: var(--ig-surface-2);
+}
+
+.ig-batch-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-tight);
+  padding: var(--ig-space);
+  background: var(--ig-surface);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius-large);
+  box-shadow: var(--ig-elevation-overlay);
+}
+
+.ig-batch-dialog-title {
+  margin: 0;
+  font-size: inherit;
+  font-weight: var(--ig-weight-medium);
+}
+
+.ig-batch-dialog-body {
+  margin: 0;
+  color: var(--ig-text-body);
+  font-size: var(--ig-font-size-small);
+}
+
+.ig-batch-dialog-foot {
+  justify-content: flex-end;
+}
+
+.ig-batch-confirm {
+  background: var(--ig-accent);
+  color: var(--ig-bg);
+  border: none;
+  border-radius: var(--ig-radius);
+  padding: var(--ig-space-tight) var(--ig-space);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+  cursor: pointer;
+}
+
+/* A PARTIAL BATCH'S NOTE, in the log under the head: how many saved, and the
+   two ways to finish it. A write nobody discarded stays owed. */
+.ig-batch-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ig-space-tight);
+  padding: var(--ig-space-tight) 0;
+}
+
+.ig-batch-note-title {
+  color: var(--ig-text-body);
+  font-size: var(--ig-font-size-small);
+}
+
 .ig-inspector-title {
   margin: 0;
   font-size: var(--ig-font-size);
@@ -938,7 +1059,11 @@ export const workspaceStylesheet = `
    baseline that rule's own comment says it is there to get. Declared where each
    is true instead. */
 .ig-inspector-clear,
-.ig-inspector-cancel {
+.ig-inspector-cancel,
+.ig-batch-offer,
+.ig-batch-cancel,
+.ig-batch-retry,
+.ig-batch-discard {
   background: var(--ig-surface-2);
   color: var(--ig-text-body);
   border: var(--ig-stroke) solid var(--ig-line);
@@ -952,7 +1077,14 @@ export const workspaceStylesheet = `
 .ig-inspector-clear:focus-visible,
 .ig-inspector-addbutton:focus-visible,
 .ig-inspector-cancel:focus-visible,
-.ig-relationship-more:focus-visible {
+.ig-relationship-more:focus-visible,
+.ig-batch-offer:focus-visible,
+.ig-batch-cancel:focus-visible,
+.ig-batch-confirm:focus-visible,
+.ig-batch-retry:focus-visible,
+.ig-batch-discard:focus-visible,
+.ig-batch-pick-item:focus-visible,
+.ig-batch-query:focus-visible {
   /* '+ add' keeps the shared focus ring though it left the shared fill: a
      focus indicator is an accessibility guarantee, not a visual register. */
   outline: var(--ig-focus-ring) solid var(--ig-focus);

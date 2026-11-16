@@ -68,6 +68,7 @@ import type { AuditInput } from '../audit/findings.ts';
 import { isChoosingKind, isDraftLive } from '../create/draft.ts';
 import { type CreateInteraction, type KeyboardContext, KIND_KEYS, keyIntent } from '../create/keys.ts';
 import { pickerPlacement } from '../create/placement.ts';
+import { type BatchPlan, type BatchSettlement, resumeBatch } from '../firstpass/batch.ts';
 import type { CandidateSource } from '../firstpass/candidates.ts';
 import { type FirstPassContext, firstPassIntent } from '../firstpass/keys.ts';
 import { ANSWER_ATTRIBUTE, renderFirstPass } from '../firstpass/render.ts';
@@ -694,6 +695,50 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
    * a write settling with no queue in sight would never be forgotten at all.
    */
   const writeCarriers = new Map<MutationId, string | null>();
+  /**
+   * THE LAST CONFIRMED BATCH (#249), with each proposal's mutation id in the
+   * plan's order. Only this shell sees mutation ids, so only it can say how
+   * many of a batch saved and which are owed. Forgotten once every write has
+   * saved, or when the reader discards what is owed.
+   */
+  let liveBatch: { readonly plan: BatchPlan; readonly ids: readonly MutationId[] } | null = null;
+  /** The batch ask's step at the last draw, so a step's first draw moves the focus once. */
+  let batchStepDrawn: string = 'idle';
+
+  /** Send a plan's proposals and remember them as the live batch. */
+  const sendBatch = (plan: BatchPlan, carriers: readonly (string | null)[]): void => {
+    const ids = plan.proposals.map((proposal, index) => {
+      const id = store.propose(proposal).mutationId;
+      writeCarriers.set(id, carriers[index] ?? null);
+      return id;
+    });
+    liveBatch = { plan, ids };
+  };
+
+  /**
+   * The live batch's settlement: `null` while any write is in flight, else the
+   * ids of the writes that did not save. A saved create leaves no record in the
+   * ledger, so a write with no record is one that saved.
+   */
+  const batchUnsaved = (): readonly MutationId[] | null => {
+    if (liveBatch === null) return null;
+    const writes = store.getSnapshot().writes;
+    const records = liveBatch.ids.map((id) => writes.find((write) => write.mutationId === id));
+    if (records.some((record) => record?.state === 'pending')) return null;
+    return liveBatch.ids.filter((_, index) => records[index] !== undefined);
+  };
+
+  /** What the log's batch note says, or `null` when there is nothing to say (#249). */
+  const batchNote = (): { readonly saved: number; readonly total: number; readonly unsaved: number } | null => {
+    const unsaved = batchUnsaved();
+    if (liveBatch === null || unsaved === null) return null;
+    if (unsaved.length === 0) {
+      liveBatch = null;
+      return null;
+    }
+    const total = liveBatch.ids.length;
+    return { saved: total - unsaved.length, total, unsaved: unsaved.length };
+  };
 
   /**
    * The conflict whose `retry on latest` is the last one the reader pressed.
@@ -752,6 +797,35 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
 
   const perform = (effect: HostEffect): void => {
     switch (effect.kind) {
+      case 'batch-propose':
+        sendBatch(effect.plan, effect.carriers);
+        return;
+      case 'batch-retry': {
+        // "Retry the 2": `resumeBatch` over what saved, sent as a new batch. The
+        // unsaved records are discarded first, so the log lists each write once.
+        const unsaved = batchUnsaved();
+        if (liveBatch === null || unsaved === null || unsaved.length === 0) return;
+        const { plan, ids } = liveBatch;
+        const settlements = plan.proposals.map(
+          (proposal, index): BatchSettlement => ({
+            proposal,
+            settled: unsaved.some((id) => id === ids[index]) ? 'failed' : 'landed',
+          }),
+        );
+        const owed = resumeBatch(plan, settlements);
+        const carriers = unsaved.map((id) => writeCarriers.get(id) ?? null);
+        for (const id of unsaved) store.discardMine(id);
+        liveBatch = null;
+        if (owed !== null) sendBatch(owed, carriers);
+        return;
+      }
+      case 'batch-discard': {
+        // "Discard them": a write nobody discarded stays owed, so this is the only
+        // way the note goes away with writes unsaved.
+        for (const id of batchUnsaved() ?? []) store.discardMine(id);
+        liveBatch = null;
+        return;
+      }
       case 'propose':
         // THE CARRIER IS RECORDED, NOT RE-DERIVED. See `writeCarriers`: the
         // reducer decided it from the document the reader acted on, and the
@@ -1636,6 +1710,10 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       canvas: state.canvas,
       shownGroups: state.shownGroups,
       switchedKinds: state.switchedKinds,
+      // THE BATCH ASK AND ITS NOTE (#249). The note is read off the ledger at
+      // each draw, so a write settling redraws it.
+      batch: state.batch,
+      batchNote: batchNote(),
       // §17d's overlay. Host state, for the same reason the filter beside it
       // is: the renderer keeps nothing across a redraw.
       auditOpen: state.auditOpen,
@@ -2159,6 +2237,17 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         }
       }
     }
+    // A BATCH STEP'S FIRST DRAW TAKES THE FOCUS (#249): the target search's
+    // box, or the confirm's Cancel, never its write. Only on the draw that
+    // opens the step, so typing in the search keeps the caret where it is.
+    if (state.batch.step !== batchStepDrawn) {
+      const stop =
+        state.batch.step === 'target' ? `input[${COMMAND_ATTRIBUTE}="batch-query"]`
+        : state.batch.step === 'confirm' ? `[${COMMAND_ATTRIBUTE}="batch-cancel"]`
+        : null;
+      if (stop !== null) surface.querySelector<HTMLElement>(stop)?.focus({ preventScroll: true });
+      batchStepDrawn = state.batch.step;
+    }
     // THE KEYBOARD IS GIVEN BACK. The overlay is removed with focus inside it,
     // so without this `activeElement` is the body — and the keydown listener is
     // on the mount's element, so no press reaches it and the whole workspace is
@@ -2472,7 +2561,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const target = isElement(event.target) && isInput(event.target) ? event.target : null;
     if (target === null || !surface.contains(target)) return;
     const name = target.getAttribute(COMMAND_ATTRIBUTE);
-    if (name === 'search' || name === 'target-query') {
+    if (name === 'search' || name === 'target-query' || name === 'batch-query') {
       dispatch({ kind: 'control', name, value: target.value });
     }
   };
@@ -3136,6 +3225,13 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       if (state.auditOpen) {
         event.preventDefault();
         dispatch({ kind: 'control', name: 'audit-close' });
+        return;
+      }
+      // A BATCH ASK IS THE INNERMOST OPEN THING (#249): the confirm or the
+      // target search closes before the sheet or the selection.
+      if (state.batch.step !== 'idle') {
+        event.preventDefault();
+        dispatch({ kind: 'control', name: 'batch-cancel' });
         return;
       }
       if (narrowOverlayOpen(state) && (state.canvasOpen || state.orderPanel || inspectorIsLifted())) {

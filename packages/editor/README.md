@@ -330,7 +330,7 @@ handle.destroy();                  // every listener off, the nodes it built rem
 
 ## Status
 
-The first-pass review queue is composed from `0.6.0`: §17a's `First pass →` entry opens it, and a host supplies the one thing this package refuses to — a `CandidateSource`. §17e's multi-select bulk path is not composed yet ([#140](https://github.com/autnmy/issuegraph/issues/140)); `planBatch` and `resumeBatch` ship and are tested, and what they still need is a workspace that can hold a selection SET. The mount is this package's from `0.3.0`; what a host still supplies is what the specification puts there — the data source, the order, the executor holds, the words, the theme — and every listener is the mount's.
+The first-pass review queue is composed from `0.6.0`: §17a's `First pass →` entry opens it, and a host supplies the one thing this package refuses to — a `CandidateSource`. §17e's multi-select bulk path is composed from `0.49.0` (#249): with two or more issues selected and the optional `WorkspaceWords.batch` supplied, the Inspector offers "Serialize all 3", "Make all 3 one unit" and "All 3 are blocked by…" (the one issue picked from a search), each through `planBatch`, an offer the plan refuses disabled with its reason. The change asks first in a dialog that states the plan's count, the store holds the order until every write settles, and a batch that half-fails says how many saved in the log, with Retry (`resumeBatch`) and Discard. Removing and changing the kind stay one relationship at a time. The mount is this package's from `0.3.0`; what a host still supplies is what the specification puts there — the data source, the order, the executor holds, the words, the theme — and every listener is the mount's.
 
 ## Licence
 
