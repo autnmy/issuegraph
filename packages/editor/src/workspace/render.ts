@@ -1309,9 +1309,10 @@ function orderHeadSpec(words: WorkspaceWords, ranked: number, runCap: number | n
 
 /**
  * The Inspector sheet's close control under `640` (#245): a ghost button named
- * by `NarrowWords.closeSheet`. It sends `narrow-dismiss`, the command Escape
- * sends, so the button and the key close the sheet one way. Always in the
- * markup; the sheet shows it only while the Inspector is lifted in that band.
+ * by `NarrowWords.closeSheet`, at the end of the panel's head row. It sends
+ * `narrow-dismiss`, the command Escape sends, so the button and the key close
+ * the sheet one way. Always in the markup; the sheet shows it only while the
+ * Inspector is lifted in that band.
  */
 function sheetCloseSpec(words: NarrowWords): ElementSpec {
   return element(
@@ -3542,6 +3543,10 @@ function inspectorSpec(view: InspectorView, context: InspectorContext): ElementS
             { type: 'button', class: 'ig-inspector-clear', 'data-ig-command': 'clear' },
             [words.clearSelection],
           ),
+      // THE SHEET'S CLOSE CONTROL, AT THE HEAD ROW'S END (#245, the board's
+      // "Under 640: the Inspector is a Sheet from the bottom"): beside the
+      // title rather than on a row of its own. Shown only on the sheet.
+      sheetCloseSpec(words.narrow),
     ]),
     subject.kind === 'none'
       ? element('p', { class: 'ig-inspector-empty' }, [words.nothingSelected])
@@ -4583,7 +4588,6 @@ export function renderWorkspace(
       // its half between them, which is also what the artboard draws — §17d
       // puts the findings list and the refusal side by side as one section.
       // `workspace/styles.ts` carries the share; neither leaf declares a size.
-      renderMarkup(sheetCloseSpec(options.words.narrow)) +
       renderMarkup(
         inspectorSpec(inspector, {
           words: options.words,
@@ -4611,9 +4615,9 @@ export function renderWorkspace(
           diffOpen: options.diffOpen ?? null,
         }),
       ),
-      // UNDER 640 THE ZONE IS A SHEET OVER THE VIEW (#245), so it is named and
-      // can be closed: the Inspector word names the region, and the close
-      // control leads it so it is the sheet's first stop.
+      // UNDER 640 THE ZONE IS A SHEET OVER THE VIEW (#245), so it is named:
+      // the Inspector word names the region. Its close control sits in the
+      // panel's head row (`inspectorSpec`).
       { 'aria-label': options.words.inspector },
     ),
     `</div>`,

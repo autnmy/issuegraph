@@ -995,7 +995,9 @@ describe('done when: under 640 a selection lifts the Inspector as a sheet from t
     assert.match(close, new RegExp(`aria-label="${WORKSPACE_WORDS.narrow.closeSheet}"`));
     const phone = phoneBlock(surface.workspaceStylesheet);
     assert.match(phone, /\[data-inspector='lifted'\] \.ig-zone\[data-zone='inspector'\]\s*\{[^}]*grid-area:\s*view;[^}]*align-self:\s*end;/);
-    assert.match(phone, /\[data-inspector='lifted'\] \.ig-sheet-close\s*\{\s*display:\s*grid;/);
+    assert.match(phone, /\[data-inspector='lifted'\] \.ig-sheet-close\s*\{\s*display:\s*inline-grid;/);
+    // The close control sits in the Inspector's head row, beside the title (the board).
+    assert.match(result.markup, /<div class="ig-inspector-head">(?:(?!<\/div>).)*data-ig-command="narrow-dismiss"/s);
     assert.match(surface.workspaceStylesheet, /\n\.ig-sheet-close\s*\{\s*display:\s*none;/);
   });
 });

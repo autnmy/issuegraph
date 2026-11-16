@@ -2448,11 +2448,13 @@ ${heldRailDeclarations}
   /* A SELECTION LIFTS THE INSPECTOR AS A SHEET FROM THE BOTTOM (#245, the
      design rule "the Inspector is a Sheet from the bottom"). There is no
      column for it here, so it rises over the tab the reader is on: it takes
-     the view's area, sits on that area's bottom edge, is drawn above the tab
-     panel on the ground with the overlay's elevation, and is never taller
-     than the view. The tabs stay above it, so the reader can still change
-     tab. Escape and the close control both send narrow-dismiss, which makes
-     data-inspector 'dismissed' and this rule stop matching. */
+     the view's area, sits on that area's bottom edge and is never taller than
+     the view. It is the Sheet part (RULES, Sheet: card fill, overlay shadow,
+     from the bottom): the card's fill and its large radius on the two top
+     corners, so it reads as lifted over the panel rather than as more of it.
+     The tabs stay above it, so the reader can still change tab. Escape and
+     the close control both send narrow-dismiss, which makes data-inspector
+     'dismissed' and this rule stop matching. */
   .ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='inspector'] {
     display: block;
     grid-area: view;
@@ -2461,14 +2463,21 @@ ${heldRailDeclarations}
     inline-size: auto;
     max-block-size: 100%;
     z-index: 2;
-    background: var(--ig-bg);
+    background: var(--ig-surface);
     border-left: 0;
-    border-top: var(--ig-hairline-width) solid var(--ig-hairline);
+    border-start-start-radius: var(--ig-radius-large);
+    border-start-end-radius: var(--ig-radius-large);
     box-shadow: var(--ig-elevation-overlay);
   }
 
+  /* CLOSE AT THE HEAD ROW'S END, beside the title (the board). The row is
+     space-between, so the auto margin on the control before it takes the free
+     space and the two sit together at the end. */
   .ig-workspace[data-inspector='lifted'] .ig-sheet-close {
-    display: grid;
+    display: inline-grid;
+  }
+
+  .ig-workspace[data-inspector='lifted'] .ig-inspector-head > .ig-inspector-clear {
     margin-inline-start: auto;
   }
 
