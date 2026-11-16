@@ -2068,7 +2068,8 @@ ${heldRailDeclarations}
 }
 
 .ig-order-toggle,
-.ig-order-close {
+.ig-order-close,
+.ig-sheet-close {
   display: inline-grid;
   place-items: center;
   inline-size: calc(var(--ig-space-loose) * 2);
@@ -2083,13 +2084,15 @@ ${heldRailDeclarations}
 
 .ig-order-toggle:hover,
 .ig-order-close:hover,
+.ig-sheet-close:hover,
 .ig-order-toggle[aria-expanded='true'] {
   background: var(--ig-surface-2);
   color: var(--ig-text);
 }
 
 .ig-order-toggle:focus-visible,
-.ig-order-close:focus-visible {
+.ig-order-close:focus-visible,
+.ig-sheet-close:focus-visible {
   outline: var(--ig-focus-ring) solid var(--ig-focus);
   outline-offset: var(--ig-space-micro);
 }
@@ -2121,6 +2124,13 @@ ${heldRailDeclarations}
 .ig-order-head .ig-order-close {
   display: none;
   margin-inline-start: auto;
+}
+
+/* THE INSPECTOR SHEET'S CLOSE CONTROL (#245). Every render draws it in the
+   Inspector's zone; it shows only under 640 while the Inspector is a sheet
+   (the phone block below), and nowhere else is there a sheet to close. */
+.ig-sheet-close {
+  display: none;
 }
 
 /* THE ORDER FOLDS (#313, Claude Design 7b8fcbc, RULES "The workspace").
@@ -2433,6 +2443,33 @@ ${heldRailDeclarations}
      and the middle block's lifted panel are both answered. */
   .ig-workspace[data-inspector] .ig-zone[data-zone='inspector'] {
     display: none;
+  }
+
+  /* A SELECTION LIFTS THE INSPECTOR AS A SHEET FROM THE BOTTOM (#245, the
+     design rule "the Inspector is a Sheet from the bottom"). There is no
+     column for it here, so it rises over the tab the reader is on: it takes
+     the view's area, sits on that area's bottom edge, is drawn above the tab
+     panel on the ground with the overlay's elevation, and is never taller
+     than the view. The tabs stay above it, so the reader can still change
+     tab. Escape and the close control both send narrow-dismiss, which makes
+     data-inspector 'dismissed' and this rule stop matching. */
+  .ig-workspace[data-inspector='lifted'] .ig-zone[data-zone='inspector'] {
+    display: block;
+    grid-area: view;
+    align-self: end;
+    justify-self: stretch;
+    inline-size: auto;
+    max-block-size: 100%;
+    z-index: 2;
+    background: var(--ig-bg);
+    border-left: 0;
+    border-top: var(--ig-hairline-width) solid var(--ig-hairline);
+    box-shadow: var(--ig-elevation-overlay);
+  }
+
+  .ig-workspace[data-inspector='lifted'] .ig-sheet-close {
+    display: grid;
+    margin-inline-start: auto;
   }
 
   /* NO INSPECTOR HERE AT ALL, SO THE LOG KEEPS EVERY CARD. Every value of

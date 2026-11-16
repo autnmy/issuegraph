@@ -687,8 +687,9 @@ export interface NarrowWords {
    */
   readonly around: string;
   /**
-   * Names the control that closes the Inspector's sheet under `640`. Nothing
-   * in this version draws that sheet, so nothing reads this yet.
+   * Names the control that closes the Inspector's sheet under `640` (#245):
+   * its accessible name and title. The control is always in the markup and the
+   * stylesheet shows it only while the sheet is up.
    */
   readonly closeSheet: string;
   /**
@@ -1304,6 +1305,26 @@ function orderHeadSpec(words: WorkspaceWords, ranked: number, runCap: number | n
       [hiddenGlyph('\u2715')],
     ),
   ]);
+}
+
+/**
+ * The Inspector sheet's close control under `640` (#245): a ghost button named
+ * by `NarrowWords.closeSheet`. It sends `narrow-dismiss`, the command Escape
+ * sends, so the button and the key close the sheet one way. Always in the
+ * markup; the sheet shows it only while the Inspector is lifted in that band.
+ */
+function sheetCloseSpec(words: NarrowWords): ElementSpec {
+  return element(
+    'button',
+    {
+      type: 'button',
+      class: 'ig-sheet-close',
+      'data-ig-command': 'narrow-dismiss',
+      'aria-label': words.closeSheet,
+      title: words.closeSheet,
+    },
+    [hiddenGlyph('\u2715')],
+  );
 }
 
 /**
@@ -4562,6 +4583,7 @@ export function renderWorkspace(
       // its half between them, which is also what the artboard draws — §17d
       // puts the findings list and the refusal side by side as one section.
       // `workspace/styles.ts` carries the share; neither leaf declares a size.
+      renderMarkup(sheetCloseSpec(options.words.narrow)) +
       renderMarkup(
         inspectorSpec(inspector, {
           words: options.words,
@@ -4589,6 +4611,10 @@ export function renderWorkspace(
           diffOpen: options.diffOpen ?? null,
         }),
       ),
+      // UNDER 640 THE ZONE IS A SHEET OVER THE VIEW (#245), so it is named and
+      // can be closed: the Inspector word names the region, and the close
+      // control leads it so it is the sheet's first stop.
+      { 'aria-label': options.words.inspector },
     ),
     `</div>`,
   ].join('');

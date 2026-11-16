@@ -596,6 +596,11 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   // The issue whose node takes the focus on the redraw after a refusal's
   // Discard (#285), cleared by that redraw.
   let refusalFocus: string | null = null;
+  // SET WHEN THE INSPECTOR'S SHEET CLOSES UNDER THE FOCUS (#245), by its close
+  // control or by Escape from inside it, and cleared by the redraw that closes
+  // it: the focus goes to the selected row, or to the active tab when that row
+  // is not drawn, never down with the sheet.
+  let sheetFocus = false;
   /**
    * Set when a command opened the isolated list, cleared by the redraw that
    * reveals it.
@@ -1959,6 +1964,20 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       // normally would scroll the column to bring the element into view and
       // undo it.
       surface.querySelector<HTMLElement>(auditStop)?.focus({ preventScroll: true });
+    } else if (sheetFocus) {
+      // THE SHEET CLOSED (#245). Ahead of the command control's own restore,
+      // which would put the focus back on the close control the sheet just
+      // took off screen. The selected row when it is drawn, else the active
+      // tab, which is always drawn in the band where the sheet exists.
+      sheetFocus = false;
+      const key = selectedKey(state.selection);
+      if (key !== null && !folded(zone('rail'))) {
+        handedToGraph = false;
+        focusIn('rail', key);
+      }
+      if (key === null || doc.activeElement?.getAttribute(KEY_ATTRIBUTE) !== key) {
+        surface.querySelector<HTMLElement>(`[${COMMAND_ATTRIBUTE}="narrow-tab"][aria-selected="true"]`)?.focus({ preventScroll: true });
+      }
     } else if (activeCommand !== null) {
       const again = surface.querySelector<HTMLInputElement>(`input[${COMMAND_ATTRIBUTE}="${activeCommand}"]`);
       if (again !== null) {
@@ -2105,10 +2124,14 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         const stepOpened = isChoosingKind(state.draft)
           ? surface.querySelector<HTMLElement>(`[${COMMAND_ATTRIBUTE}="kind"]`)
           : null;
+        // NEVER THE SHEET'S CLOSE CONTROL (#245). It leads the Inspector zone,
+        // so it is that zone's first control, and it is drawn only while the
+        // sheet is up: at every other width the press would land on nothing.
+        const actionable = `[${COMMAND_ATTRIBUTE}]:not([${COMMAND_ATTRIBUTE}="narrow-dismiss"])`;
         const opened =
           stepOpened ??
-          near?.querySelector<HTMLElement>(`[${COMMAND_ATTRIBUTE}]`) ??
-          surface.querySelector<HTMLElement>(`[${COMMAND_ATTRIBUTE}]`);
+          near?.querySelector<HTMLElement>(actionable) ??
+          surface.querySelector<HTMLElement>(actionable);
         if (opened !== null) {
           opened.focus({ preventScroll: true });
         } else {
@@ -2405,7 +2428,11 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       // A REFUSAL STILL STOPS THE CLICK, which is what the three `return`s this
       // branch replaced did. See {@link controlAnswer} for why falling through
       // would select something underneath the control instead.
-      if (answer.kind === 'dispatch') dispatch(answer.command);
+      if (answer.kind === 'dispatch') {
+        // The sheet's own close control (#245): the focus must not go down with it.
+        if (answer.command.kind === 'control' && answer.command.name === 'narrow-dismiss') sheetFocus = true;
+        dispatch(answer.command);
+      }
       return;
     }
     // THE NEARER IDENTITY WINS. A relationship badge inside a row carries
@@ -2629,15 +2656,23 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
    * state. Every box is zero-sized before layout, and under `node --test` there
    * is no layout at all; a strict reading would disable the key there and take
    * a tested behaviour away from every consumer that renders without a browser.
+   *
+   * THE RAIL TOO, NOT ONLY THE CANVAS (#245). Under `640` the Inspector is a
+   * sheet over whichever tab is showing, and on the Order tab the tab panel is
+   * the rail, so the sheet is on screen when its box overlaps either zone's
+   * box. A zone that is not drawn measures as an empty box at the origin and
+   * overlaps nothing.
    */
   const inspectorIsLifted = (): boolean => {
     const inspector = surface.querySelector('.ig-zone[data-zone="inspector"]');
-    const canvas = surface.querySelector('.ig-zone[data-zone="canvas"]');
-    if (inspector === null || canvas === null) return false;
+    const covered = ['rail', 'canvas'].flatMap((name) => {
+      const found = surface.querySelector(`.ig-zone[data-zone="${name}"]`);
+      return found === null ? [] : [found.getBoundingClientRect()];
+    });
+    if (inspector === null || covered.length === 0) return false;
     const panel = inspector.getBoundingClientRect();
-    const zone = canvas.getBoundingClientRect();
-    if (panel.width === 0 && zone.width === 0) return true;
-    return panel.left < zone.right && panel.right > zone.left;
+    if (panel.width === 0 && covered.every((box) => box.width === 0)) return true;
+    return covered.some((box) => panel.left < box.right && panel.right > box.left);
   };
 
   const nothingToCancel = (): boolean =>
@@ -2945,6 +2980,8 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     if (destroyed) return;
     const result = reduceHost(state, answer.command, landed());
     if (!result.claimed) return;
+    // The sheet's close control from the keyboard, as from the pointer (#245).
+    if (answer.command.kind === 'control' && answer.command.name === 'narrow-dismiss') sheetFocus = true;
     applyResult(result);
     event.preventDefault();
     // THE PRESS IS NOW RECORDED AS OURS, so its repeats are swallowed at the top
@@ -3088,6 +3125,11 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       }
       if (narrowOverlayOpen(state) && (state.canvasOpen || state.orderPanel || inspectorIsLifted())) {
         event.preventDefault();
+        // The order panel closes first (`reduceHost`). Only a sheet closing
+        // over the focus moves it (#245): a focus outside the sheet stays put.
+        sheetFocus =
+          !state.orderPanel && !state.canvasOpen && inspectorIsLifted() &&
+          surface.querySelector('.ig-zone[data-zone="inspector"]')?.contains(doc.activeElement) === true;
         dispatch({ kind: 'control', name: 'narrow-dismiss' });
         return;
       }
