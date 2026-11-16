@@ -1761,8 +1761,8 @@
       "value": null,
       "tag": "button",
       "role": "button",
-      "tabStop": "tab",
-      "inert": false,
+      "tabStop": "none",
+      "inert": true,
       "name": "aria-label",
       "aria": {}
     },
