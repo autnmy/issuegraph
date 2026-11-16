@@ -244,15 +244,18 @@ describe('the inspector with a set of issues selected', () => {
 });
 
 describe('the inspector drawing a set', () => {
-  /** The inspector's set region, as markup. */
+  /**
+   * The inspector's set region up to the end of its list, as markup. The batch
+   * offers follow the list (#249) and are not part of it.
+   */
   function setRegion(markup: string): string {
     const start = markup.indexOf('<div class="ig-inspector-issues">');
     assert.ok(start !== -1, 'no set region was drawn');
-    const end = markup.indexOf('</ul></div>', start);
-    return markup.slice(start, end + '</ul></div>'.length);
+    const end = markup.indexOf('</ul>', start);
+    return markup.slice(start, end + '</ul>'.length);
   }
 
-  it('says how many for 2 and 3, lists exactly the selected issues, and holds no control', () => {
+  it('says how many for 2 and 3, lists exactly the selected issues, and holds no control in the list', () => {
     for (const keys of [['i0004', 'i0001'], ['i0002', 'i0006', 'i0003']]) {
       const { markup } = renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, selection: { kind: 'issues', keys } });
       const region = setRegion(markup);
@@ -260,6 +263,11 @@ describe('the inspector drawing a set', () => {
       const listed = [...region.matchAll(/<span class="ig-id">([^<]*)<\/span>/g)].map((match) => match[1]);
       assert.deepEqual(listed, keys);
       assert.doesNotMatch(region, /<button|<a |data-ig-command|data-ig-key|tabindex/);
+      // The only controls a set adds are the batch offers, after the list (#249).
+      assert.deepEqual(
+        [...markup.matchAll(/data-ig-command="(batch-[a-z-]+)"/g)].map((match) => match[1]),
+        ['batch-offer', 'batch-offer', 'batch-offer'],
+      );
       // No `+ add` and no relationship list for a set, anywhere in the panel.
       assert.doesNotMatch(markup, /data-ig-command="add"/);
       assert.doesNotMatch(markup, /class="ig-inspector-relationships"/);

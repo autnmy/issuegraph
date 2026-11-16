@@ -36,11 +36,12 @@ describe('the batch Inspector, mounted (#249)', () => {
     try {
       await selectSet(page);
       await press(page, '[data-ig-command="batch-offer"][data-ig-value="serialize"]');
-      assert.equal(page.element.querySelector('.ig-batch-dialog-title')?.textContent, words.confirmTitle(2));
+      assert.equal(page.element.querySelector('.ig-batch-card-title')?.textContent, words.confirmTitle(2));
+      assert.equal(page.element.querySelector('.ig-batch-card')?.getAttribute('aria-modal'), 'true');
       // The confirm's first draw takes the focus onto Cancel, never onto the write.
       assert.equal(page.win.document.activeElement?.getAttribute('data-ig-command'), 'batch-cancel');
       await press(page, '[data-ig-command="batch-confirm"]');
-      assert.equal(page.element.querySelector('.ig-batch-dialog'), null, 'the confirm stayed open');
+      assert.equal(page.element.querySelector('.ig-batch-card'), null, 'the confirm stayed open');
       for (let landed = 0; landed < 2; landed += 1) {
         await page.source.whenPending();
         page.source.settleNext('applied');
@@ -117,6 +118,9 @@ describe('the batch Inspector, mounted (#249)', () => {
       await press(page, '[data-ig-command="batch-offer"][data-ig-value="blocked-by"]');
       const query = page.element.querySelector<HTMLInputElement>('input[data-ig-command="batch-query"]') ?? assert.fail('no search');
       assert.equal(page.win.document.activeElement, query, 'the search did not take the focus');
+      query.value = 'first';
+      query.dispatchEvent(new page.win.Event('input', { bubbles: true }));
+      await flush();
       assert.deepEqual(
         [...page.element.querySelectorAll('[data-ig-command="batch-target"]')].map((pick) => pick.getAttribute('data-ig-target')),
         ['1'],
@@ -126,9 +130,16 @@ describe('the batch Inspector, mounted (#249)', () => {
       assert.equal(page.handle.state.batch.step, 'idle', 'Escape did not close the ask');
       assert.deepEqual(page.handle.state.selection, { kind: 'issues', keys: ['2', '3', '4'] }, 'Escape cleared the set');
 
+      // Enter in the search picks the highlighted match.
       await press(page, '[data-ig-command="batch-offer"][data-ig-value="blocked-by"]');
-      await press(page, '[data-ig-command="batch-target"][data-ig-target="1"]');
-      assert.equal(page.element.querySelector('.ig-batch-dialog-title')?.textContent, words.confirmTitle(3));
+      const again = page.element.querySelector<HTMLInputElement>('input[data-ig-command="batch-query"]') ?? assert.fail('no search');
+      again.value = 'release';
+      again.dispatchEvent(new page.win.Event('input', { bubbles: true }));
+      await flush();
+      const box = page.element.querySelector<HTMLInputElement>('input[data-ig-command="batch-query"]') ?? assert.fail('no search');
+      box.dispatchEvent(new page.win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      await flush();
+      assert.equal(page.element.querySelector('.ig-batch-card-title')?.textContent, words.confirmTitle(3));
     } finally {
       page.handle.destroy();
       page.dom.window.close();

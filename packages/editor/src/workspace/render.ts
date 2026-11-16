@@ -145,7 +145,8 @@ import {
   selectedKeys,
 } from './selection.ts';
 import { workspaceStylesheet } from './styles.ts';
-import { BATCH_OFFERS, type BatchAsk, type BatchOffer, IDLE_BATCH, offerRefusals } from './batch.ts';
+import { BATCH_OFFERS, type BatchAsk, type BatchOffer, IDLE_BATCH, activeMatch, offerRefusals } from './batch.ts';
+import { issueMatches } from './matches.ts';
 import type { BatchRefusal } from '../firstpass/batch.ts';
 
 /** The four fixed positions. */
@@ -730,32 +731,54 @@ export interface BatchWords {
   readonly unitAll: (count: number) => string;
   /** "All 3 are blocked by…": asks for the one issue. */
   readonly blockedByAll: (count: number) => string;
-  /** Heads the one-issue search: "… are blocked by". */
-  readonly blockedByHeading: (count: number) => string;
+  /** Heads the one-issue search, naming the set: "#2231, #2229 and #2239 are blocked by …". */
+  readonly blockedByHeading: (issues: readonly string[]) => string;
   /** Names the one-issue search box for assistive technology: "Target issue". */
   readonly target: string;
   /** Why an offer is disabled, by the plan's refusal. */
   readonly refusal: (reason: BatchRefusal['reason']) => string;
   /** The confirm's title, from the plan's count: "Add 3 relationships?". */
   readonly confirmTitle: (count: number) => string;
-  /** The confirm's sentence: "That is 3 writes. If some fail, you can retry the rest." */
-  readonly confirmBody: (count: number) => string;
+  /**
+   * The confirm's sentence, from what it is about: "#2231, #2229 and #2239
+   * will each be blocked by #2260, Upgrade the Stripe SDK to v3. That is 3
+   * writes. If some fail, you can retry the rest."
+   */
+  readonly confirmBody: (facts: BatchConfirmFacts) => string;
   /** The confirm's write: "Add 3 relationships". */
   readonly confirm: (count: number) => string;
   readonly cancel: string;
-  /** A partial batch: "2 of 3 saved. 1 was not saved." */
+  /** A partial batch: "2 of 3 saved. 1 was not saved." `unsaved` counts the owed and the refused. */
   readonly saved: (saved: number, total: number, unsaved: number) => string;
-  /** "Retry the 1". */
-  readonly retry: (unsaved: number) => string;
-  /** "Discard it" or "Discard them". */
+  /** Follows it when the store refused some: "1 was refused: it would duplicate a relationship or close a loop." */
+  readonly refusedWrites: (refused: number) => string;
+  /** "Retry the 1": only the owed, never the refused. */
+  readonly retry: (owed: number) => string;
+  /** "Discard it" or "Discard them": the owed and the refused. */
   readonly discard: (unsaved: number) => string;
 }
 
-/** What the log's batch note states: how many of the last batch saved (#249). */
+/** What a batch confirm is about, for the host to word (#249). */
+export interface BatchConfirmFacts {
+  readonly offer: BatchOffer;
+  /** The plan's count of writes: what the confirm states. */
+  readonly count: number;
+  /** The selected set, in the order it was built. */
+  readonly issues: readonly string[];
+  /** The one issue "All N are blocked by…" picked; `null` for the other two offers. */
+  readonly target: { readonly key: string; readonly title: string } | null;
+}
+
+/**
+ * What the log's batch note states about the last batch (#249): how many
+ * saved, how many are owed (failed, or met a conflict: a resend can succeed),
+ * and how many the store refused (a resend is refused the same way).
+ */
 export interface BatchNote {
   readonly saved: number;
   readonly total: number;
-  readonly unsaved: number;
+  readonly owed: number;
+  readonly refused: number;
 }
 
 /**
@@ -1347,8 +1370,9 @@ const PICK_LIMIT = 8;
 /**
  * The batch Inspector's block for a selected set (#249): "Add to all 3" over
  * the three offers, an offer the plan refuses disabled with its reason under
- * them, then the step the reader is on: the one-issue search for "All 3 are
- * blocked by…", or the confirm, which states the plan's count.
+ * them, and the Command popover for "All 3 are blocked by…" while the reader
+ * picks the one issue. The confirm is the workspace's, over the page
+ * ({@link batchConfirmSpec}).
  */
 function batchSpec(
   keys: readonly string[],
@@ -1356,19 +1380,6 @@ function batchSpec(
   pickable: readonly { readonly key: string; readonly title: string }[],
   words: BatchWords,
 ): ElementSpec {
-  if (ask.step === 'confirm') {
-    const count = ask.plan.count;
-    return element('div', { class: 'ig-batch-dialog', role: 'dialog', 'aria-label': words.confirmTitle(count) }, [
-      element('h3', { class: 'ig-batch-dialog-title' }, [words.confirmTitle(count)]),
-      element('p', { class: 'ig-batch-dialog-body' }, [words.confirmBody(count)]),
-      element('div', { class: 'ig-batch-dialog-foot' }, [
-        element('button', { type: 'button', class: 'ig-batch-cancel', 'data-ig-command': 'batch-cancel' }, [words.cancel]),
-        element('button', { type: 'button', class: 'ig-batch-confirm', 'data-ig-command': 'batch-confirm' }, [
-          words.confirm(count),
-        ]),
-      ]),
-    ]);
-  }
   const count = keys.length;
   const refused = offerRefusals(keys);
   const offerWords: Readonly<Record<BatchOffer, string>> = {
@@ -1398,24 +1409,26 @@ function batchSpec(
     ),
     // THE REASON UNDER THE OFFERS, once per reason: a refusal is about the set.
     reasons.length === 0 ? null : element('p', {}, [reasons.join(' ')]),
-    ask.step === 'target' ? batchPickSpec(keys, ask.query, pickable, words) : null,
+    ask.step === 'target' ? batchPickSpec(keys, ask.query, ask.active, pickable, words) : null,
   ]);
 }
 
-/** "All 3 are blocked by…": the search for the one issue, and what it matches. */
+/**
+ * "All 3 are blocked by…": the Command popover the board draws, a label naming
+ * the set, the search, and the matches, one highlighted for the keyboard
+ * (`aria-selected`): the arrow keys move it, Enter picks it.
+ */
 function batchPickSpec(
   keys: readonly string[],
   query: string,
+  active: number,
   pickable: readonly { readonly key: string; readonly title: string }[],
   words: BatchWords,
 ): ElementSpec {
-  const needle = query.trim().toLowerCase();
-  const matches = pickable
-    .filter((issue) => !keys.includes(issue.key))
-    .filter((issue) => needle === '' || issue.key.toLowerCase().includes(needle) || issue.title.toLowerCase().includes(needle))
-    .slice(0, PICK_LIMIT);
+  const matches = batchMatches(keys, query, pickable);
+  const highlighted = activeMatch(active, matches.length);
   return element('div', { class: 'ig-batch-pick' }, [
-    element('p', { class: 'ig-batch-pick-head' }, [words.blockedByHeading(keys.length)]),
+    element('p', { class: 'ig-batch-pick-head' }, [words.blockedByHeading(keys)]),
     element('input', {
       type: 'search',
       class: 'ig-batch-query',
@@ -1425,29 +1438,80 @@ function batchPickSpec(
     }, []),
     element(
       'ul',
-      { class: 'ig-batch-pick-list' },
-      matches.map((issue) =>
-        element('li', {}, [
-          element('button', { type: 'button', class: 'ig-batch-pick-item', 'data-ig-command': 'batch-target', 'data-ig-target': issue.key }, [
-            element('span', { class: 'ig-id' }, [issue.key]),
-            ' ',
-            element('span', { class: 'ig-title' }, [issue.title]),
-          ]),
+      { class: 'ig-batch-pick-list', role: 'listbox', 'aria-label': words.target },
+      matches.map((issue, index) =>
+        element('li', { role: 'presentation' }, [
+          element(
+            'button',
+            {
+              type: 'button',
+              class: 'ig-batch-pick-item',
+              role: 'option',
+              'aria-selected': index === highlighted ? 'true' : 'false',
+              'data-ig-command': 'batch-target',
+              'data-ig-target': issue.key,
+            },
+            [element('span', { class: 'ig-id' }, [issue.key]), ' ', element('span', { class: 'ig-title' }, [issue.title])],
+          ),
         ]),
       ),
     ),
   ]);
 }
 
+/** The issues outside the set that the query matches, by the one rule ({@link issueMatches}). */
+function batchMatches(
+  keys: readonly string[],
+  query: string,
+  pickable: readonly { readonly key: string; readonly title: string }[],
+): readonly { readonly key: string; readonly title: string }[] {
+  return issueMatches(pickable, (issue) => issue.key, query, (key) => keys.includes(key), PICK_LIMIT);
+}
+
+/**
+ * The batch confirm: the Dialog part over the page (#249; RULES, "A confirm is
+ * a dialog"), on a scrim over the whole workspace, so nothing behind it takes
+ * a press until it is answered. It states the plan's count in its title and
+ * write, and the host words what it is about from {@link BatchConfirmFacts}.
+ */
+function batchConfirmSpec(
+  ask: Extract<BatchAsk, { readonly step: 'confirm' }>,
+  keys: readonly string[],
+  pickable: readonly { readonly key: string; readonly title: string }[],
+  words: BatchWords,
+  titleId: string,
+): ElementSpec {
+  const count = ask.plan.count;
+  const target =
+    ask.offer === 'blocked-by'
+      ? { key: ask.plan.anchor, title: pickable.find((issue) => issue.key === ask.plan.anchor)?.title ?? '' }
+      : null;
+  return element('div', { class: 'ig-batch-scrim' }, [
+    element('div', { class: 'ig-batch-card', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId }, [
+      element('h2', { class: 'ig-batch-card-title', id: titleId }, [words.confirmTitle(count)]),
+      element('p', { class: 'ig-batch-card-body' }, [words.confirmBody({ offer: ask.offer, count, issues: keys, target })]),
+      element('div', { class: 'ig-batch-card-foot' }, [
+        element('button', { type: 'button', class: 'ig-batch-cancel', 'data-ig-command': 'batch-cancel' }, [words.cancel]),
+        element('button', { type: 'button', class: 'ig-batch-confirm', 'data-ig-command': 'batch-confirm' }, [
+          words.confirm(count),
+        ]),
+      ]),
+    ]),
+  ]);
+}
+
 /** A batch that did not all save (#249): how many did, and Retry or Discard the rest. */
 function batchNoteSpec(note: BatchNote, words: BatchWords): ElementSpec {
+  const unsaved = note.owed + note.refused;
+  const sentence = [words.saved(note.saved, note.total, unsaved), ...(note.refused > 0 ? [words.refusedWrites(note.refused)] : [])];
   return element('div', { class: 'ig-batch-note', role: 'status' }, [
-    element('span', { class: 'ig-batch-note-title' }, [words.saved(note.saved, note.total, note.unsaved)]),
+    element('span', { class: 'ig-batch-note-title' }, [sentence.join(' ')]),
     element('div', { class: 'ig-batch-note-acts' }, [
-      element('button', { type: 'button', class: 'ig-batch-retry', 'data-ig-command': 'batch-retry' }, [words.retry(note.unsaved)]),
-      element('button', { type: 'button', class: 'ig-batch-discard', 'data-ig-command': 'batch-discard' }, [
-        words.discard(note.unsaved),
-      ]),
+      // RETRY ONLY WHAT A RESEND CAN SAVE: a refused write is refused again.
+      note.owed === 0
+        ? null
+        : element('button', { type: 'button', class: 'ig-batch-retry', 'data-ig-command': 'batch-retry' }, [words.retry(note.owed)]),
+      element('button', { type: 'button', class: 'ig-batch-discard', 'data-ig-command': 'batch-discard' }, [words.discard(unsaved)]),
     ]),
   ]);
 }
@@ -3757,7 +3821,7 @@ function inspectorSpec(view: InspectorView, context: InspectorContext): ElementS
     // A SET SAYS HOW MANY AND LISTS THEM, in the order they were added, as
     // text: no link, no command and no key attribute, so the list is
     // agreement with the rail and the canvas, not a second place to act. The
-    // batch offers are a later change.
+    // batch offers follow it (#249).
     subject.kind === 'issues'
       ? element('div', { class: 'ig-inspector-issues' }, [
           element('h3', { class: 'ig-inspector-title' }, [words.issuesSelected(subject.issues.length)]),
@@ -4657,6 +4721,19 @@ export function renderWorkspace(
     // neither is touched by that swap.
     auditPanel,
     renderMarkup(narrowTabsSpec(tab, options.words.narrow, ids)),
+    // THE BATCH CONFIRM, OVER THE PAGE (#249): the workspace's own child, so
+    // its scrim covers every zone.
+    options.batch?.step === 'confirm' && options.words.batch !== undefined && selection.kind === 'issues'
+      ? renderMarkup(
+          batchConfirmSpec(
+            options.batch,
+            selection.keys,
+            document.issues,
+            options.words.batch,
+            options.surfaceId === undefined ? 'ig-batch-title' : `ig-batch-title-${options.surfaceId}`,
+          ),
+        )
+      : '',
     // THE FOLDED ORDER'S STRIP (#313): one button that opens the order over the
     // graph. Drawn always and shown by the sheet only where the order folds.
     renderMarkup(orderStripSpec(options.words, options.orderPanel === true, ids.rail)),

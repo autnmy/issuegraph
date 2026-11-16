@@ -208,7 +208,7 @@ const RENDERS = [
   // selected set, a step of the ask, or a partial batch, so without these the
   // rules for them would read as orphaned.
   renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, selection: BATCH_SET }),
-  renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, selection: BATCH_SET, batch: { step: 'target', query: '' } }),
+  renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, selection: BATCH_SET, batch: { step: 'target', query: 'i000', active: 0 } }),
   ...(BATCH_OUTCOME.ok
     ? [
         renderWorkspace(DOCUMENT, {
@@ -218,7 +218,7 @@ const RENDERS = [
         }),
       ]
     : []),
-  renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, batchNote: { saved: 2, total: 3, unsaved: 1 } }),
+  renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, batchNote: { saved: 2, total: 3, owed: 1, refused: 0 } }),
   renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, selection: { kind: 'issue', key: 'i0005' } }),
   renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, selection: { kind: 'issue', key: 'i0001' } }),
   renderWorkspace(DOCUMENT, {

@@ -103,6 +103,7 @@ import type { RailWindow } from './rail.ts';
 import { relatedListView, relatedRowKeys } from './related.ts';
 import { markedEdges, writeLog, writeRefusals } from './log.ts';
 import {
+  type BatchNote,
   type WorkspaceOptions,
   type WorkspaceWords,
   canvasDrawing,
@@ -716,28 +717,37 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   };
 
   /**
-   * The live batch's settlement: `null` while any write is in flight, else the
-   * ids of the writes that did not save. A saved create leaves no record in the
-   * ledger, so a write with no record is one that saved.
+   * The live batch's settlement: `null` while any write is in flight. A saved
+   * create leaves no record in the ledger. A write that `failed` or met a
+   * `conflict` is OWED: a resend can succeed. A write the store REFUSED
+   * (`invalid`: a duplicate, a loop) is not owed, since a resend is refused the
+   * same way; the reader sees it named and discards it.
    */
-  const batchUnsaved = (): readonly MutationId[] | null => {
+  const batchSettlement = (): { readonly owed: readonly MutationId[]; readonly refused: readonly MutationId[] } | null => {
     if (liveBatch === null) return null;
     const writes = store.getSnapshot().writes;
-    const records = liveBatch.ids.map((id) => writes.find((write) => write.mutationId === id));
-    if (records.some((record) => record?.state === 'pending')) return null;
-    return liveBatch.ids.filter((_, index) => records[index] !== undefined);
+    const states = liveBatch.ids.map((id) => writes.find((write) => write.mutationId === id)?.state);
+    if (states.includes('pending')) return null;
+    return {
+      owed: liveBatch.ids.filter((_, index) => states[index] === 'failed' || states[index] === 'conflict'),
+      refused: liveBatch.ids.filter((_, index) => states[index] === 'invalid'),
+    };
   };
 
-  /** What the log's batch note says, or `null` when there is nothing to say (#249). */
-  const batchNote = (): { readonly saved: number; readonly total: number; readonly unsaved: number } | null => {
-    const unsaved = batchUnsaved();
-    if (liveBatch === null || unsaved === null) return null;
-    if (unsaved.length === 0) {
-      liveBatch = null;
-      return null;
-    }
+  /** Forget the live batch once all of it saved: before a draw, never inside one. */
+  const forgetSavedBatch = (): void => {
+    const settlement = batchSettlement();
+    if (settlement !== null && settlement.owed.length === 0 && settlement.refused.length === 0) liveBatch = null;
+  };
+
+  /** What the log's batch note says, or `null` when there is nothing to say (#249). Reads only. */
+  const batchNote = (): BatchNote | null => {
+    const settlement = batchSettlement();
+    if (liveBatch === null || settlement === null) return null;
+    const { owed, refused } = settlement;
+    if (owed.length === 0 && refused.length === 0) return null;
     const total = liveBatch.ids.length;
-    return { saved: total - unsaved.length, total, unsaved: unsaved.length };
+    return { saved: total - owed.length - refused.length, total, owed: owed.length, refused: refused.length };
   };
 
   /**
@@ -801,28 +811,33 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         sendBatch(effect.plan, effect.carriers);
         return;
       case 'batch-retry': {
-        // "Retry the 2": `resumeBatch` over what saved, sent as a new batch. The
-        // unsaved records are discarded first, so the log lists each write once.
-        const unsaved = batchUnsaved();
-        if (liveBatch === null || unsaved === null || unsaved.length === 0) return;
+        // "Retry the 2": `resumeBatch` over every write that is not owed, so a
+        // refused write is never resent, sent as a new batch. The owed records
+        // are discarded first, so the log lists each write once; a refused one
+        // stays in the log for the reader to discard.
+        const settlement = batchSettlement();
+        if (liveBatch === null || settlement === null || settlement.owed.length === 0) return;
         const { plan, ids } = liveBatch;
+        const { owed: owedIds } = settlement;
         const settlements = plan.proposals.map(
           (proposal, index): BatchSettlement => ({
             proposal,
-            settled: unsaved.some((id) => id === ids[index]) ? 'failed' : 'landed',
+            settled: owedIds.some((id) => id === ids[index]) ? 'failed' : 'landed',
           }),
         );
         const owed = resumeBatch(plan, settlements);
-        const carriers = unsaved.map((id) => writeCarriers.get(id) ?? null);
-        for (const id of unsaved) store.discardMine(id);
+        const carriers = owedIds.map((id) => writeCarriers.get(id) ?? null);
+        for (const id of owedIds) store.discardMine(id);
         liveBatch = null;
         if (owed !== null) sendBatch(owed, carriers);
         return;
       }
       case 'batch-discard': {
-        // "Discard them": a write nobody discarded stays owed, so this is the only
-        // way the note goes away with writes unsaved.
-        for (const id of batchUnsaved() ?? []) store.discardMine(id);
+        // "Discard them": what is owed and what was refused. A write nobody
+        // discarded stays owed, so this is the only way the note goes away with
+        // writes unsaved.
+        const settlement = batchSettlement();
+        for (const id of [...(settlement?.owed ?? []), ...(settlement?.refused ?? [])]) store.discardMine(id);
         liveBatch = null;
         return;
       }
@@ -1669,6 +1684,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       state = { ...state, diffOpen: null };
     }
 
+    forgetSavedBatch();
     const result = renderWorkspace(viewer, {
       words: current.words,
       // §17c's CAUSE AND EFFECT, STRAIGHT OFF THE SNAPSHOT. The store is the
@@ -3221,6 +3237,24 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // audit panel up closes the audit panel, at any width — without this order
     // a reader at the wide layout, where nothing of §17k's is drawn, would
     // press Escape and watch the panel stay put.
+    // THE BATCH COMMAND POPOVER'S KEYS (#249), from its search box: the arrows
+    // move the highlighted match and Enter picks it, as the board draws it.
+    // Read off the drawn markup, since the render is what wraps the highlight
+    // over however many matches there are.
+    const batchQuery = isElement(doc.activeElement) && doc.activeElement.getAttribute(COMMAND_ATTRIBUTE) === 'batch-query';
+    if (batchQuery && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+      event.preventDefault();
+      dispatch({ kind: 'control', name: 'batch-move', value: event.key === 'ArrowUp' ? 'up' : 'down' });
+      return;
+    }
+    if (batchQuery && event.key === 'Enter') {
+      event.preventDefault();
+      const highlighted = surface
+        .querySelector(`[${COMMAND_ATTRIBUTE}="batch-target"][aria-selected="true"]`)
+        ?.getAttribute(TARGET_ATTRIBUTE);
+      if (highlighted !== null && highlighted !== undefined) dispatch({ kind: 'control', name: 'batch-target', target: highlighted });
+      return;
+    }
     if (event.key === 'Escape' && nothingToCancel()) {
       if (state.auditOpen) {
         event.preventDefault();

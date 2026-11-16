@@ -837,8 +837,13 @@ export const workspaceStylesheet = `
   gap: var(--ig-space-tight);
 }
 
+/* The containing block for the Command popover under the offers. */
+.ig-batch {
+  position: relative;
+}
+
 .ig-batch-offers,
-.ig-batch-dialog-foot,
+.ig-batch-card-foot,
 .ig-batch-note-acts {
   display: flex;
   flex-wrap: wrap;
@@ -868,6 +873,20 @@ export const workspaceStylesheet = `
   font-size: var(--ig-font-size-small);
 }
 
+/* "All 3 are blocked by…": THE COMMAND POPOVER the board draws, a card over
+   the panel under the offers, never a block that pushes the panel down. */
+.ig-batch-pick {
+  position: absolute;
+  inset-inline: 0;
+  top: 100%;
+  z-index: 2;
+  padding: var(--ig-space-tight);
+  background: var(--ig-surface);
+  border: var(--ig-stroke) solid var(--ig-line);
+  border-radius: var(--ig-radius-large);
+  box-shadow: var(--ig-elevation-overlay);
+}
+
 .ig-batch-pick-list {
   margin: 0;
   padding: 0;
@@ -889,14 +908,31 @@ export const workspaceStylesheet = `
   cursor: pointer;
 }
 
-.ig-batch-pick-item:hover {
+.ig-batch-pick-item:hover,
+.ig-batch-pick-item[aria-selected='true'] {
   background: var(--ig-surface-2);
 }
 
-.ig-batch-dialog {
+/* THE BATCH CONFIRM IS DRAWN OVER THE PAGE, as RULES draws every confirm: a
+   scrim over the whole workspace, so nothing behind it takes a press until it
+   is answered, and the card centred on it. The scrim is the ground colour,
+   part-transparent, so it stays the theme's. (The audit's surfaces stay
+   ambient: this is the one confirm, and it asks before writes.) */
+.ig-batch-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  padding: var(--ig-space);
+  background: color-mix(in srgb, var(--ig-bg) 60%, transparent);
+}
+
+.ig-batch-card {
   display: flex;
   flex-direction: column;
   gap: var(--ig-space-tight);
+  inline-size: min(100%, calc(var(--ig-char-width) * 56));
   padding: var(--ig-space);
   background: var(--ig-surface);
   border: var(--ig-stroke) solid var(--ig-line);
@@ -904,19 +940,19 @@ export const workspaceStylesheet = `
   box-shadow: var(--ig-elevation-overlay);
 }
 
-.ig-batch-dialog-title {
+.ig-batch-card-title {
   margin: 0;
   font-size: inherit;
   font-weight: var(--ig-weight-medium);
 }
 
-.ig-batch-dialog-body {
+.ig-batch-card-body {
   margin: 0;
   color: var(--ig-text-body);
   font-size: var(--ig-font-size-small);
 }
 
-.ig-batch-dialog-foot {
+.ig-batch-card-foot {
   justify-content: flex-end;
 }
 

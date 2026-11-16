@@ -32,8 +32,12 @@ export function isBatchOffer(value: string): value is BatchOffer {
 /** Where the reader is in a batch ask. */
 export type BatchAsk =
   | { readonly step: 'idle' }
-  /** "All N are blocked by…": choosing the one issue, by a search in the Inspector. */
-  | { readonly step: 'target'; readonly query: string }
+  /**
+   * "All N are blocked by…": choosing the one issue in the Command popover.
+   * `active` is the highlighted match, moved by the arrow keys; the render
+   * wraps it over however many matches there are.
+   */
+  | { readonly step: 'target'; readonly query: string; readonly active: number }
   /** The confirm: the plan whose count the dialog states. */
   | { readonly step: 'confirm'; readonly offer: BatchOffer; readonly plan: BatchPlan };
 
@@ -103,11 +107,16 @@ export function batchControlled(
   switch (name) {
     case 'batch-offer': {
       if (value === undefined || !isBatchOffer(value)) return { batch, send: null };
-      if (value === 'blocked-by') return { batch: { step: 'target', query: '' }, send: null };
+      if (value === 'blocked-by') return { batch: { step: 'target', query: '', active: 0 }, send: null };
       return confirming(value, offerPlan(value, keys), batch);
     }
     case 'batch-query':
-      return batch.step === 'target' ? { batch: { step: 'target', query: value ?? '' }, send: null } : { batch, send: null };
+      // A new query highlights its first match again.
+      return batch.step === 'target' ? { batch: { step: 'target', query: value ?? '', active: 0 }, send: null } : { batch, send: null };
+    case 'batch-move':
+      return batch.step === 'target'
+        ? { batch: { ...batch, active: batch.active + (value === 'up' ? -1 : 1) }, send: null }
+        : { batch, send: null };
     case 'batch-target':
       return batch.step === 'target' && target !== undefined
         ? confirming('blocked-by', offerPlan('blocked-by', keys, target), batch)
@@ -125,4 +134,16 @@ function confirming(offer: BatchOffer, outcome: BatchOutcome, batch: BatchAsk): 
   return outcome.ok ? { batch: { step: 'confirm', offer, plan: outcome.plan }, send: null } : { batch, send: null };
 }
 
-const BATCH_COMMANDS: ReadonlySet<string> = new Set(['batch-offer', 'batch-query', 'batch-target', 'batch-confirm', 'batch-cancel']);
+const BATCH_COMMANDS: ReadonlySet<string> = new Set([
+  'batch-offer',
+  'batch-query',
+  'batch-move',
+  'batch-target',
+  'batch-confirm',
+  'batch-cancel',
+]);
+
+/** The highlighted match's index: `active` wrapped over `count` matches, either way. */
+export function activeMatch(active: number, count: number): number {
+  return count === 0 ? -1 : ((active % count) + count) % count;
+}

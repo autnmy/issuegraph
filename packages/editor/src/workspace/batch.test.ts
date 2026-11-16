@@ -8,7 +8,7 @@ import { describe, it } from 'node:test';
 
 import type { GraphDocument } from '@issuegraph/store';
 
-import { IDLE_BATCH, batchControlled, offerPlan, offerRefusals } from './batch.ts';
+import { IDLE_BATCH, activeMatch, batchControlled, offerPlan, offerRefusals } from './batch.ts';
 import { INITIAL_HOST_STATE, reduceHost } from './host.ts';
 
 const SET = ['a', 'b', 'c'] as const;
@@ -79,9 +79,11 @@ describe('the ask, step by step (#249)', () => {
 
   it('asks for the one issue first for "blocked by", keeps the query, and confirms on a pick', () => {
     const asking = batchControlled(IDLE_BATCH, 'batch-offer', undefined, 'blocked-by', SET);
-    assert.deepEqual(asking?.batch, { step: 'target', query: '' });
+    assert.deepEqual(asking?.batch, { step: 'target', query: '', active: 0 });
     const typed = batchControlled(asking?.batch ?? IDLE_BATCH, 'batch-query', undefined, 'rel', SET);
-    assert.deepEqual(typed?.batch, { step: 'target', query: 'rel' });
+    assert.deepEqual(typed?.batch, { step: 'target', query: 'rel', active: 0 });
+    const moved = batchControlled(typed?.batch ?? IDLE_BATCH, 'batch-move', undefined, 'down', SET);
+    assert.deepEqual(moved?.batch, { step: 'target', query: 'rel', active: 1 });
     const picked = batchControlled(typed?.batch ?? IDLE_BATCH, 'batch-target', 'z', undefined, SET);
     assert.equal(picked?.batch.step === 'confirm' ? picked.batch.plan.count : -1, 3);
   });
@@ -99,6 +101,10 @@ describe('the ask, step by step (#249)', () => {
     assert.deepEqual(batchControlled(IDLE_BATCH, 'batch-confirm', undefined, undefined, SET), { batch: IDLE_BATCH, send: null });
     assert.deepEqual(batchControlled(IDLE_BATCH, 'batch-target', 'z', undefined, SET), { batch: IDLE_BATCH, send: null });
     assert.deepEqual(batchControlled(IDLE_BATCH, 'batch-offer', undefined, 'retype', SET), { batch: IDLE_BATCH, send: null });
+  });
+
+  it('wraps the highlighted match over the matches, either way', () => {
+    assert.deepEqual([activeMatch(0, 3), activeMatch(3, 3), activeMatch(-1, 3), activeMatch(5, 0)], [0, 0, 2, -1]);
   });
 
   it('has no batch to ask about under two issues, and is not asked about other commands', () => {

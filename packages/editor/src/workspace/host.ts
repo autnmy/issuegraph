@@ -46,6 +46,7 @@ import {
   firstPassReducer,
 } from './firstpass.ts';
 import { type BatchAsk, IDLE_BATCH, batchControlled } from './batch.ts';
+import { issueMatches } from './matches.ts';
 import { type CanvasMode, type NarrowView, isNarrowTab, pressNarrowTab } from './narrow.ts';
 import { SWITCHABLE_KINDS } from './neighbourhood.ts';
 import {
@@ -1366,12 +1367,7 @@ export function targetMatches(
   source: string | null,
   limit = 8,
 ): readonly StoredIssue[] {
-  const needle = query.trim().toLowerCase();
-  if (needle === '') return [];
-  return issues
-    .filter((issue) => issue.ref !== source)
-    .filter((issue) => issue.ref.includes(needle) || issue.title.toLowerCase().includes(needle))
-    .slice(0, limit);
+  return issueMatches(issues, (issue) => issue.ref, query, (ref) => ref === source, limit);
 }
 
 /** How far the reader may scroll into the rail window before it is re-cut around them, in rows. */
