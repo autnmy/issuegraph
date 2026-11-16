@@ -14,6 +14,7 @@ import { JSDOM } from 'jsdom';
 
 import { auditStylesheet } from '../audit/styles.ts';
 import { AUDIT_SEVERITY_ATTRIBUTE } from '../audit/surface.ts';
+import { planBatch } from '../firstpass/batch.ts';
 import { firstPassStylesheet } from '../firstpass/styles.ts';
 import { edgeOverlayStylesheet } from '../overlay/styles.ts';
 import { pickerStylesheet } from '../picker/styles.ts';
@@ -197,8 +198,27 @@ const PAST_BUDGET = backlogOf(62, {
     .map((key) => ['blocked-by', 'i0001', key] as const),
 });
 
+/** A confirmable batch over three of `DOCUMENT`'s issues (#249). */
+const BATCH_SET = { kind: 'issues' as const, keys: ['i0002', 'i0003', 'i0004'] };
+const BATCH_OUTCOME = planBatch({ anchor: 'i0002', members: ['i0003', 'i0004'], kind: 'serialize-with' });
+
 const RENDERS = [
   renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS }),
+  // THE BATCH INSPECTOR'S STEPS AND ITS NOTE (#249). Each is drawn only for a
+  // selected set, a step of the ask, or a partial batch, so without these the
+  // rules for them would read as orphaned.
+  renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, selection: BATCH_SET }),
+  renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, selection: BATCH_SET, batch: { step: 'target', query: 'i000', active: 0 } }),
+  ...(BATCH_OUTCOME.ok
+    ? [
+        renderWorkspace(DOCUMENT, {
+          words: WORKSPACE_WORDS,
+          selection: BATCH_SET,
+          batch: { step: 'confirm', offer: 'serialize', plan: BATCH_OUTCOME.plan },
+        }),
+      ]
+    : []),
+  renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, batchNote: { saved: 2, total: 3, owed: 1, refused: 0 } }),
   renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, selection: { kind: 'issue', key: 'i0005' } }),
   renderWorkspace(DOCUMENT, { words: WORKSPACE_WORDS, selection: { kind: 'issue', key: 'i0001' } }),
   renderWorkspace(DOCUMENT, {

@@ -68,6 +68,7 @@ import type { AuditInput } from '../audit/findings.ts';
 import { isChoosingKind, isDraftLive } from '../create/draft.ts';
 import { type CreateInteraction, type KeyboardContext, KIND_KEYS, keyIntent } from '../create/keys.ts';
 import { pickerPlacement } from '../create/placement.ts';
+import { type BatchPlan, type BatchSettlement, resumeBatch } from '../firstpass/batch.ts';
 import type { CandidateSource } from '../firstpass/candidates.ts';
 import { type FirstPassContext, firstPassIntent } from '../firstpass/keys.ts';
 import { ANSWER_ATTRIBUTE, renderFirstPass } from '../firstpass/render.ts';
@@ -102,6 +103,7 @@ import type { RailWindow } from './rail.ts';
 import { relatedListView, relatedRowKeys } from './related.ts';
 import { markedEdges, writeLog, writeRefusals } from './log.ts';
 import {
+  type BatchNote,
   type WorkspaceOptions,
   type WorkspaceWords,
   canvasDrawing,
@@ -694,6 +696,59 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
    * a write settling with no queue in sight would never be forgotten at all.
    */
   const writeCarriers = new Map<MutationId, string | null>();
+  /**
+   * THE LAST CONFIRMED BATCH (#249), with each proposal's mutation id in the
+   * plan's order. Only this shell sees mutation ids, so only it can say how
+   * many of a batch saved and which are owed. Forgotten once every write has
+   * saved, or when the reader discards what is owed.
+   */
+  let liveBatch: { readonly plan: BatchPlan; readonly ids: readonly MutationId[] } | null = null;
+  /** The batch ask's step at the last draw, so a step's first draw moves the focus once. */
+  let batchStepDrawn: string = 'idle';
+
+  /** Send a plan's proposals and remember them as the live batch. */
+  const sendBatch = (plan: BatchPlan, carriers: readonly (string | null)[]): void => {
+    const ids = plan.proposals.map((proposal, index) => {
+      const id = store.propose(proposal).mutationId;
+      writeCarriers.set(id, carriers[index] ?? null);
+      return id;
+    });
+    liveBatch = { plan, ids };
+  };
+
+  /**
+   * The live batch's settlement: `null` while any write is in flight. A saved
+   * create leaves no record in the ledger. A write that `failed` or met a
+   * `conflict` is OWED: a resend can succeed. A write the store REFUSED
+   * (`invalid`: a duplicate, a loop) is not owed, since a resend is refused the
+   * same way; the reader sees it named and discards it.
+   */
+  const batchSettlement = (): { readonly owed: readonly MutationId[]; readonly refused: readonly MutationId[] } | null => {
+    if (liveBatch === null) return null;
+    const writes = store.getSnapshot().writes;
+    const states = liveBatch.ids.map((id) => writes.find((write) => write.mutationId === id)?.state);
+    if (states.includes('pending')) return null;
+    return {
+      owed: liveBatch.ids.filter((_, index) => states[index] === 'failed' || states[index] === 'conflict'),
+      refused: liveBatch.ids.filter((_, index) => states[index] === 'invalid'),
+    };
+  };
+
+  /** Forget the live batch once all of it saved: before a draw, never inside one. */
+  const forgetSavedBatch = (): void => {
+    const settlement = batchSettlement();
+    if (settlement !== null && settlement.owed.length === 0 && settlement.refused.length === 0) liveBatch = null;
+  };
+
+  /** What the log's batch note says, or `null` when there is nothing to say (#249). Reads only. */
+  const batchNote = (): BatchNote | null => {
+    const settlement = batchSettlement();
+    if (liveBatch === null || settlement === null) return null;
+    const { owed, refused } = settlement;
+    if (owed.length === 0 && refused.length === 0) return null;
+    const total = liveBatch.ids.length;
+    return { saved: total - owed.length - refused.length, total, owed: owed.length, refused: refused.length };
+  };
 
   /**
    * The conflict whose `retry on latest` is the last one the reader pressed.
@@ -752,6 +807,40 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
 
   const perform = (effect: HostEffect): void => {
     switch (effect.kind) {
+      case 'batch-propose':
+        sendBatch(effect.plan, effect.carriers);
+        return;
+      case 'batch-retry': {
+        // "Retry the 2": `resumeBatch` over every write that is not owed, so a
+        // refused write is never resent, sent as a new batch. The owed records
+        // are discarded first, so the log lists each write once; a refused one
+        // stays in the log for the reader to discard.
+        const settlement = batchSettlement();
+        if (liveBatch === null || settlement === null || settlement.owed.length === 0) return;
+        const { plan, ids } = liveBatch;
+        const { owed: owedIds } = settlement;
+        const settlements = plan.proposals.map(
+          (proposal, index): BatchSettlement => ({
+            proposal,
+            settled: owedIds.some((id) => id === ids[index]) ? 'failed' : 'landed',
+          }),
+        );
+        const owed = resumeBatch(plan, settlements);
+        const carriers = owedIds.map((id) => writeCarriers.get(id) ?? null);
+        for (const id of owedIds) store.discardMine(id);
+        liveBatch = null;
+        if (owed !== null) sendBatch(owed, carriers);
+        return;
+      }
+      case 'batch-discard': {
+        // "Discard them": what is owed and what was refused. A write nobody
+        // discarded stays owed, so this is the only way the note goes away with
+        // writes unsaved.
+        const settlement = batchSettlement();
+        for (const id of [...(settlement?.owed ?? []), ...(settlement?.refused ?? [])]) store.discardMine(id);
+        liveBatch = null;
+        return;
+      }
       case 'propose':
         // THE CARRIER IS RECORDED, NOT RE-DERIVED. See `writeCarriers`: the
         // reducer decided it from the document the reader acted on, and the
@@ -1595,6 +1684,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       state = { ...state, diffOpen: null };
     }
 
+    forgetSavedBatch();
     const result = renderWorkspace(viewer, {
       words: current.words,
       // §17c's CAUSE AND EFFECT, STRAIGHT OFF THE SNAPSHOT. The store is the
@@ -1636,6 +1726,10 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       canvas: state.canvas,
       shownGroups: state.shownGroups,
       switchedKinds: state.switchedKinds,
+      // THE BATCH ASK AND ITS NOTE (#249). The note is read off the ledger at
+      // each draw, so a write settling redraws it.
+      batch: state.batch,
+      batchNote: batchNote(),
       // §17d's overlay. Host state, for the same reason the filter beside it
       // is: the renderer keeps nothing across a redraw.
       auditOpen: state.auditOpen,
@@ -2159,6 +2253,17 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
         }
       }
     }
+    // A BATCH STEP'S FIRST DRAW TAKES THE FOCUS (#249): the target search's
+    // box, or the confirm's Cancel, never its write. Only on the draw that
+    // opens the step, so typing in the search keeps the caret where it is.
+    if (state.batch.step !== batchStepDrawn) {
+      const stop =
+        state.batch.step === 'target' ? `input[${COMMAND_ATTRIBUTE}="batch-query"]`
+        : state.batch.step === 'confirm' ? `[${COMMAND_ATTRIBUTE}="batch-cancel"]`
+        : null;
+      if (stop !== null) surface.querySelector<HTMLElement>(stop)?.focus({ preventScroll: true });
+      batchStepDrawn = state.batch.step;
+    }
     // THE KEYBOARD IS GIVEN BACK. The overlay is removed with focus inside it,
     // so without this `activeElement` is the body — and the keydown listener is
     // on the mount's element, so no press reaches it and the whole workspace is
@@ -2472,7 +2577,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const target = isElement(event.target) && isInput(event.target) ? event.target : null;
     if (target === null || !surface.contains(target)) return;
     const name = target.getAttribute(COMMAND_ATTRIBUTE);
-    if (name === 'search' || name === 'target-query') {
+    if (name === 'search' || name === 'target-query' || name === 'batch-query') {
       dispatch({ kind: 'control', name, value: target.value });
     }
   };
@@ -3132,10 +3237,35 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     // audit panel up closes the audit panel, at any width — without this order
     // a reader at the wide layout, where nothing of §17k's is drawn, would
     // press Escape and watch the panel stay put.
+    // THE BATCH COMMAND POPOVER'S KEYS (#249), from its search box: the arrows
+    // move the highlighted match and Enter picks it, as the board draws it.
+    // Read off the drawn markup, since the render is what wraps the highlight
+    // over however many matches there are.
+    const batchQuery = isElement(doc.activeElement) && doc.activeElement.getAttribute(COMMAND_ATTRIBUTE) === 'batch-query';
+    if (batchQuery && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+      event.preventDefault();
+      dispatch({ kind: 'control', name: 'batch-move', value: event.key === 'ArrowUp' ? 'up' : 'down' });
+      return;
+    }
+    if (batchQuery && event.key === 'Enter') {
+      event.preventDefault();
+      const highlighted = surface
+        .querySelector(`[${COMMAND_ATTRIBUTE}="batch-target"][aria-selected="true"]`)
+        ?.getAttribute(TARGET_ATTRIBUTE);
+      if (highlighted !== null && highlighted !== undefined) dispatch({ kind: 'control', name: 'batch-target', target: highlighted });
+      return;
+    }
     if (event.key === 'Escape' && nothingToCancel()) {
       if (state.auditOpen) {
         event.preventDefault();
         dispatch({ kind: 'control', name: 'audit-close' });
+        return;
+      }
+      // A BATCH ASK IS THE INNERMOST OPEN THING (#249): the confirm or the
+      // target search closes before the sheet or the selection.
+      if (state.batch.step !== 'idle') {
+        event.preventDefault();
+        dispatch({ kind: 'control', name: 'batch-cancel' });
         return;
       }
       if (narrowOverlayOpen(state) && (state.canvasOpen || state.orderPanel || inspectorIsLifted())) {

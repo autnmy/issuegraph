@@ -34,6 +34,7 @@ import { findEdge } from '@issuegraph/store';
 import { type CreateDraft, IDLE_CREATE_DRAFT, createReducer } from '../create/draft.ts';
 import type { KeyIntent } from '../create/keys.ts';
 import type { Point } from '../create/placement.ts';
+import type { BatchPlan } from '../firstpass/batch.ts';
 import type { CandidateId } from '../firstpass/candidates.ts';
 import { type Answer, type QueueResult } from '../firstpass/queue.ts';
 import { pickerView } from '../picker/view.ts';
@@ -44,6 +45,8 @@ import {
   INITIAL_FIRST_PASS,
   firstPassReducer,
 } from './firstpass.ts';
+import { type BatchAsk, IDLE_BATCH, batchControlled } from './batch.ts';
+import { issueMatches } from './matches.ts';
 import { type CanvasMode, type NarrowView, isNarrowTab, pressNarrowTab } from './narrow.ts';
 import { SWITCHABLE_KINDS } from './neighbourhood.ts';
 import {
@@ -176,6 +179,12 @@ export interface HostState {
    * kinds start over.
    */
   readonly switchedKinds: readonly EdgeField[];
+  /**
+   * Where the reader is in a batch ask on a selected set (#249): idle, choosing
+   * the one issue for "All N are blocked by…", or confirming a plan. Cleared
+   * whenever the selection moves, since an ask is about the set it was made on.
+   */
+  readonly batch: BatchAsk;
 }
 
 export const INITIAL_HOST_STATE: HostState = Object.freeze({
@@ -198,6 +207,7 @@ export const INITIAL_HOST_STATE: HostState = Object.freeze({
   narrowView: 'order',
   shownGroups: [],
   switchedKinds: [],
+  batch: IDLE_BATCH,
 });
 
 /**
@@ -275,6 +285,17 @@ export type HostEffect =
        */
       readonly carrier: string | null;
     }
+  /**
+   * A confirmed batch (#249): send every proposal of the plan, and remember
+   * their mutation ids as one batch so a partial failure can say how many
+   * saved and resume the rest. `carriers[i]` is `proposals[i]`'s, as on
+   * `propose`.
+   */
+  | { readonly kind: 'batch-propose'; readonly plan: BatchPlan; readonly carriers: readonly (string | null)[] }
+  /** Resume the remembered batch's unsaved writes (`resumeBatch`). */
+  | { readonly kind: 'batch-retry' }
+  /** Discard the remembered batch's unsaved writes. */
+  | { readonly kind: 'batch-discard' }
   | { readonly kind: 'retry'; readonly mutationId: MutationId }
   | { readonly kind: 'discard'; readonly mutationId: MutationId }
   | { readonly kind: 'dismiss-change' }
@@ -765,8 +786,39 @@ function controlled(
   document: GraphDocument,
 ): HostResult {
   const edgeId = selectedEdgeId(state.selection);
+  // THE BATCH ASK (#249), its own module's reducer. Its writes leave as ONE
+  // effect so the shell can remember them as one batch.
+  const batched = batchControlled(
+    state.batch,
+    name,
+    target,
+    value,
+    state.selection.kind === 'issues' ? state.selection.keys : [],
+  );
+  if (batched !== null) {
+    const next = { ...state, batch: batched.batch };
+    return batched.send === null
+      ? settled(next)
+      : {
+          state: next,
+          effects: [
+            {
+              kind: 'batch-propose',
+              plan: batched.send,
+              carriers: batched.send.proposals.map((proposal) => editCarrier(document, proposal)),
+            },
+          ],
+          claimed: true,
+        };
+  }
   switch (name) {
     // --- the package's own commands ---
+    // A PARTIAL BATCH'S NOTE (#249): retry what is owed, or discard it. The
+    // shell holds the batch's mutation ids, so both are its to perform.
+    case 'batch-retry':
+      return { state, effects: [{ kind: 'batch-retry' }], claimed: true };
+    case 'batch-discard':
+      return { state, effects: [{ kind: 'batch-discard' }], claimed: true };
     case 'select-edge':
       return target === undefined ? settled(state) : selectEdge(state, target);
     case 'select-issue':
@@ -1113,6 +1165,8 @@ function afterSelectionMoved(state: HostState, keepsSubject: boolean): HostState
     ...(keepsSubject ? { shownGroups: state.shownGroups } : {}),
     // A PICK IN THE ORDER'S PANEL MOVES THE SELECTION AND CLOSES IT (#313).
     orderPanel: false,
+    // AN ASK IS ABOUT THE SET IT WAS MADE ON (#249).
+    batch: IDLE_BATCH,
     inspectorDismissed: state.selection.kind === 'none' ? state.inspectorDismissed : false,
   };
 }
@@ -1313,12 +1367,7 @@ export function targetMatches(
   source: string | null,
   limit = 8,
 ): readonly StoredIssue[] {
-  const needle = query.trim().toLowerCase();
-  if (needle === '') return [];
-  return issues
-    .filter((issue) => issue.ref !== source)
-    .filter((issue) => issue.ref.includes(needle) || issue.title.toLowerCase().includes(needle))
-    .slice(0, limit);
+  return issueMatches(issues, (issue) => issue.ref, query, (ref) => ref === source, limit);
 }
 
 /** How far the reader may scroll into the rail window before it is re-cut around them, in rows. */

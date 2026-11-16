@@ -87,6 +87,27 @@ export const WORKSPACE_WORDS: WorkspaceWords = {
     noSelection: 'select an issue to list its links',
     nothingRelated: 'nothing here is linked yet',
   },
+  // THE BATCH INSPECTOR'S WORDS (#249), each naming its count so a test can
+  // tell which number a render stated.
+  batch: {
+    addToAll: (count: number): string => `apply to the ${String(count)}`,
+    serializeAll: (count: number): string => `queue the ${String(count)} in turn`,
+    unitAll: (count: number): string => `bind the ${String(count)} together`,
+    blockedByAll: (count: number): string => `hold the ${String(count)} behind`,
+    blockedByHeading: (issues: readonly string[]): string => `${issues.join(' + ')} wait on`,
+    target: 'blocking issue',
+    refusal: (reason): string => `refused: ${reason}`,
+    confirmTitle: (count: number): string => `write ${String(count)} links?`,
+    confirmBody: (facts): string =>
+      `${facts.issues.join(' + ')} ${facts.target === null ? facts.offer : `wait on ${facts.target.key} ${facts.target.title}`}: ${String(facts.count)} writes go to the host`,
+    confirm: (count: number): string => `write ${String(count)} links`,
+    cancel: 'keep things as they are',
+    saved: (saved: number, total: number, unsaved: number): string =>
+      `${String(saved)} of ${String(total)} landed, ${String(unsaved)} did not`,
+    refusedWrites: (refused: number): string => `${String(refused)} turned away`,
+    retry: (unsaved: number): string => `send the ${String(unsaved)} again`,
+    discard: (unsaved: number): string => `drop the ${String(unsaved)}`,
+  },
   whyRank: 'why rank',
   whyHeld: 'why held',
   filteredEmpty: 'no flagged rows match',

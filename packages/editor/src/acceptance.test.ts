@@ -1002,6 +1002,91 @@ describe('done when: under 640 a selection lifts the Inspector as a sheet from t
   });
 });
 
+describe('done when: a selected set is changed in one step, and a partial batch says what saved (#249)', () => {
+  const words: surface.BatchWords = {
+    addToAll: (count) => `apply to the ${String(count)}`,
+    serializeAll: (count) => `queue the ${String(count)} in turn`,
+    unitAll: (count) => `bind the ${String(count)} together`,
+    blockedByAll: (count) => `hold the ${String(count)} behind`,
+    blockedByHeading: (issues) => `${issues.join(' + ')} wait on`,
+    target: 'blocking issue',
+    refusal: (reason) => `refused: ${reason}`,
+    confirmTitle: (count) => `write ${String(count)} links?`,
+    confirmBody: (facts) =>
+      `${facts.issues.join(' + ')} ${facts.target === null ? facts.offer : `wait on ${facts.target.key} ${facts.target.title}`}: ${String(facts.count)} writes`,
+    confirm: (count) => `write ${String(count)} links`,
+    cancel: 'keep things as they are',
+    saved: (saved, total, unsaved) => `${String(saved)} of ${String(total)} landed, ${String(unsaved)} did not`,
+    refusedWrites: (refused) => `${String(refused)} turned away`,
+    retry: (unsaved) => `send the ${String(unsaved)} again`,
+    discard: (unsaved) => `drop the ${String(unsaved)}`,
+  };
+  const withBatch: surface.WorkspaceWords = { ...WORKSPACE_WORDS, batch: words };
+  const set = { kind: 'issues' as const, keys: ['i0002', 'i0004', 'i0006'] };
+  const buttons = (markup: string, command: string): string[] =>
+    [...markup.matchAll(new RegExp(`<button[^>]*data-ig-command="${command}"[^>]*>(.*?)</button>`, 'gs'))].map((match) => match[1] ?? '');
+
+  it('says how many are selected, lists them, and offers the three changes, each counting the set', () => {
+    const { markup } = renderWorkspace(ranked(8), { words: withBatch, selection: set });
+    assert.match(markup, new RegExp(words.addToAll(3)));
+    assert.deepEqual(buttons(markup, 'batch-offer'), [words.serializeAll(3), words.unitAll(3), words.blockedByAll(3)]);
+    assert.equal(/data-ig-command="batch-offer"[^>]*disabled/.test(markup), false, 'an offer the plan accepts is disabled');
+    // No bulk remove and no bulk retype.
+    assert.equal(/data-ig-command="(delete|retype)"/.test(markup), false);
+  });
+
+  it('asks for the one issue for "blocked by", from issues outside the set', () => {
+    const { markup } = renderWorkspace(ranked(8), { words: withBatch, selection: set, batch: { step: 'target', query: 'issue', active: 0 } });
+    assert.match(markup, new RegExp(words.blockedByHeading(set.keys).replaceAll('+', '\\+')));
+    // The first match is highlighted for the keyboard.
+    assert.match(markup, /aria-selected="true" data-ig-command="batch-target" data-ig-target="i0001"/);
+    assert.match(markup, new RegExp(`<input[^>]*data-ig-command="batch-query"[^>]*aria-label="${words.target}"`));
+    const picks = [...markup.matchAll(/data-ig-command="batch-target" data-ig-target="([^"]+)"/g)].map((match) => match[1]);
+    assert.deepEqual(picks, ['i0001', 'i0003', 'i0005', 'i0007', 'i0008']);
+  });
+
+  it('confirms in a dialog over the page, stating the plan’s count and what it is about, with Cancel and the write', () => {
+    const outcome = surface.planBatch({ anchor: 'i0001', members: set.keys, kind: 'blocked-by', direction: 'to-anchor' });
+    if (!outcome.ok) throw new Error('the plan refused');
+    const { markup } = renderWorkspace(ranked(8), {
+      words: withBatch,
+      selection: set,
+      batch: { step: 'confirm', offer: 'blocked-by', plan: outcome.plan },
+    });
+    assert.match(markup, /<div class="ig-batch-scrim"><div class="ig-batch-card" role="dialog" aria-modal="true" aria-labelledby="([^"]+)"><h2 class="ig-batch-card-title" id="\1">/);
+    assert.ok(markup.includes(words.confirmTitle(3)), 'the title does not state the plan\u2019s count');
+    assert.ok(
+      markup.includes(words.confirmBody({ offer: 'blocked-by', count: 3, issues: set.keys, target: { key: 'i0001', title: 'Issue i0001' } })),
+      'the body does not name the set and the one issue',
+    );
+    // Over the page: the workspace's own child, not inside the Inspector.
+    assert.ok(markup.indexOf('ig-batch-scrim') < markup.indexOf('data-zone="rail"'), 'the confirm is drawn inside a zone');
+    assert.deepEqual(buttons(markup, 'batch-cancel'), [words.cancel]);
+    assert.deepEqual(buttons(markup, 'batch-confirm'), [words.confirm(3)]);
+  });
+
+  it('says in the log how many of a partial batch saved, with Retry and Discard for the rest', () => {
+    const { markup } = renderWorkspace(ranked(8), { words: withBatch, batchNote: { saved: 4, total: 6, owed: 2, refused: 0 } });
+    const log = markup.slice(markup.indexOf('ig-workspace-log'));
+    assert.match(log, new RegExp(words.saved(4, 6, 2)));
+    assert.deepEqual(buttons(log, 'batch-retry'), [words.retry(2)]);
+    assert.deepEqual(buttons(log, 'batch-discard'), [words.discard(2)]);
+  });
+
+  it('names a refused write as refused, and offers no Retry for it, since a resend is refused again', () => {
+    const { markup } = renderWorkspace(ranked(8), { words: withBatch, batchNote: { saved: 1, total: 3, owed: 0, refused: 2 } });
+    const log = markup.slice(markup.indexOf('ig-workspace-log'));
+    assert.ok(log.includes(`${words.saved(1, 3, 2)} ${words.refusedWrites(2)}`), log);
+    assert.deepEqual(buttons(log, 'batch-retry'), []);
+    assert.deepEqual(buttons(log, 'batch-discard'), [words.discard(2)]);
+  });
+
+  it('draws no offers for a host that does not word them', () => {
+    const { markup } = renderWorkspace(ranked(8), { words: WORKSPACE_WORDS, selection: set });
+    assert.equal(/data-ig-command="batch-/.test(markup), false);
+  });
+});
+
 describe('done when: the rail is virtualised and complete — 312 rows, every rank addressable', () => {
   const document = ranked(312);
 
