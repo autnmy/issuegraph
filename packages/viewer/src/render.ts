@@ -43,6 +43,9 @@ export function sceneFor(
   projection: Projection,
   options: GraphOptions,
 ): Scene {
+  // `listOnly` fixes the list whatever projection the host asked for, so a
+  // switch while it is set changes nothing a reader sees.
+  if (options.listOnly === true) return linearScene(document, options);
   switch (projection) {
     case 'linear':
       return linearScene(document, options);
