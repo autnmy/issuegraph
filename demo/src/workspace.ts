@@ -65,6 +65,17 @@ import {
 import type { DemoSource, NextOutcome } from './source.ts';
 import { STAMPED_PACKAGES, VERSIONS } from './versions.ts';
 
+/** "#2231, #2229 and #2239": the set as the board names it in the batch words (#249). */
+function issueList(issues: readonly string[]): string {
+  const named = issues.map((key) => `#${key}`);
+  return named.length < 2 ? named.join('') : `${named.slice(0, -1).join(', ')} and ${named.at(-1) ?? ''}`;
+}
+
+/** "3 relationships", "1 relationship". */
+function relationships(count: number): string {
+  return `${String(count)} ${count === 1 ? 'relationship' : 'relationships'}`;
+}
+
 /** The two themes the page offers: the package default, and the README's paper theme. */
 export const THEMES = Object.freeze(['default', 'paper'] as const);
 export type ThemeName = (typeof THEMES)[number];
@@ -303,6 +314,40 @@ export const WORKSPACE_WORDS: MountWords = {
     // Design content.md 82b78fd (#315): a picked group, and nothing related.
     noSelection: 'Select an issue to see its relationships.',
     nothingRelated: 'No issue has relationships yet. Select an issue to add one.',
+  },
+  // THE BATCH INSPECTOR (#249), in the board's words (RULES, "Several issues at
+  // once"; the issue-graph-states multi-select figures, design e11be66).
+  batch: {
+    addToAll: (count) => `Add to all ${String(count)}`,
+    serializeAll: (count) => `Serialize all ${String(count)}`,
+    unitAll: (count) => `Make all ${String(count)} one unit`,
+    blockedByAll: (count) => `All ${String(count)} are blocked by…`,
+    blockedByHeading: (issues) => `${issueList(issues)} are blocked by …`,
+    target: 'Target issue',
+    refusal: (reason) =>
+      ({
+        'no-members': 'Select at least two issues to change them together.',
+        'direction-required': 'This change needs to know which way the relationships point.',
+        'direction-not-applicable': 'This change has no direction to choose.',
+        'anchor-cannot-carry': 'One issue cannot hold this relationship to several others.',
+      })[reason],
+    confirmTitle: (count) => `Add ${relationships(count)}?`,
+    confirmBody: (facts) => {
+      const what =
+        facts.target !== null
+          ? `will each be blocked by #${facts.target.key}, ${facts.target.title}`
+          : facts.offer === 'serialize'
+            ? 'will be serialized: one runs at a time'
+            : 'will be one unit, worked together';
+      return `${issueList(facts.issues)} ${what}. That is ${String(facts.count)} ${facts.count === 1 ? 'write' : 'writes'}. If some fail, you can retry the rest.`;
+    },
+    confirm: (count) => `Add ${relationships(count)}`,
+    cancel: 'Cancel',
+    saved: (saved, total, unsaved) => `${String(saved)} of ${String(total)} saved. ${String(unsaved)} ${unsaved === 1 ? 'was' : 'were'} not saved.`,
+    refusedWrites: (refused) =>
+      `${String(refused)} ${refused === 1 ? 'was' : 'were'} refused: ${refused === 1 ? 'it' : 'they'} would repeat a relationship or close a loop.`,
+    retry: (owed) => `Retry the ${String(owed)}`,
+    discard: (unsaved) => (unsaved === 1 ? 'Discard it' : 'Discard them'),
   },
   // §17a's inspector explains the position before it lists the relationships.
   // The frame draws the heading in caps; the caps are the stylesheet's, so the
