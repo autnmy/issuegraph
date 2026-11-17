@@ -254,34 +254,64 @@ test('auditToggle: an onChange that reapplies the same option gets one call per 
   }
 });
 
-test('auditToggle: update with a new onChange tells only the new callback the current facts', async () => {
+test('auditToggle: update with a new onChange tells it nothing until a fact changes, and the old one nothing more', async () => {
   const first = recordingAuditToggle();
   const page = await mounted(SEED, { project: withCycleAudit, auditToggle: first.option });
   try {
     page.handle.dispatch({ kind: 'control', name: 'audit-panel' });
     await flush();
     const firstHeard = first.told.length;
-    const lastToFirst = first.latest();
-    assert.ok(lastToFirst !== undefined, 'the first onChange was never called');
-    assert.equal(lastToFirst.open, true);
+    assert.equal(first.latest()?.open, true, 'the first onChange was never told the panel opened');
 
     const second = recordingAuditToggle();
     page.handle.update({ auditToggle: second.option });
     await flush();
-    // The facts did not change, but the new callback has never been told them.
-    assert.equal(second.told.length, 1, 'the new callback was not told the current facts exactly once');
-    assert.deepEqual({ ...second.told[0] }, { ...lastToFirst });
-    assert.equal(second.told[0]?.count, auditOverlay(cycleAuditInput(page.store.getSnapshot())).count);
-
-    page.handle.update();
-    await flush();
-    assert.equal(second.told.length, 1, 'a redraw with unchanged facts told the new callback again');
+    // A new function is not a new fact, so it is not told the unchanged facts.
+    assert.equal(second.told.length, 0, 'swapping onChange re-sent facts that had not changed');
 
     page.handle.dispatch({ kind: 'control', name: 'audit-close' });
     await flush();
     assert.equal(first.told.length, firstHeard, 'the replaced onChange was still called');
-    assert.equal(second.told.length, 2);
-    assert.equal(second.told[1]?.open, false);
+    assert.equal(second.told.length, 1, 'the new onChange was not told the change');
+    assert.equal(second.told[0]?.open, false);
+    assert.equal(second.told[0]?.count, auditOverlay(cycleAuditInput(page.store.getSnapshot())).count);
+  } finally {
+    closePage(page);
+  }
+});
+
+test('auditToggle: a host that passes a fresh onChange closure on every update is not called in a loop', async () => {
+  const told: AuditToggleFacts[] = [];
+  const updateLimit = 50;
+  let updates = 0;
+  let page: Mounted | undefined;
+  // Each report builds a new closure and hands it back through update(), as a
+  // host that recreates its callbacks on every render does.
+  const freshOption = (): AuditToggleOption => ({
+    placement: 'host',
+    onChange: (facts) => {
+      told.push(facts);
+      if (page !== undefined && updates < updateLimit) {
+        updates += 1;
+        page.handle.update({ auditToggle: freshOption() });
+      }
+    },
+    focusToggle: () => {},
+  });
+  page = await mounted(SEED, { project: withCycleAudit, auditToggle: freshOption() });
+  try {
+    await flush();
+    await flush();
+    assert.equal(told.length, 1, 'the first draw must be reported once');
+    page.handle.dispatch({ kind: 'control', name: 'audit-panel' });
+    await flush();
+    await flush();
+    assert.deepEqual(
+      told.map((facts) => facts.open),
+      [false, true],
+      'a fresh closure on each update re-sent unchanged facts',
+    );
+    assert.ok(updates < updateLimit, 'passing a fresh onChange on every update redrew without end');
   } finally {
     closePage(page);
   }

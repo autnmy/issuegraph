@@ -3620,12 +3620,13 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     update(next?: WorkspaceUpdate): void {
       if (destroyed) return;
       if (next !== undefined) {
-        const toldTo = current.auditToggle?.onChange;
+        const hadToggle = current.auditToggle !== undefined;
         current = { ...current, ...next, store };
-        // A NEW RECIPIENT IS TOLD THE CURRENT FACTS on the next draw. The same
-        // `onChange` passed again keeps the record, so a host that reapplies its
-        // options from inside `onChange` is not called again for nothing.
-        if (current.auditToggle?.onChange !== toldTo) toldFacts = null;
+        // ONLY ADDING THE OPTION RE-SENDS THE FACTS. A new `onChange` function is
+        // not a new fact: a host that builds a fresh closure on every render and
+        // calls `update()` after each report would otherwise be told the same
+        // facts again on every draw, without end. `onSelectionChange` works the same way.
+        if (!hadToggle && current.auditToggle !== undefined) toldFacts = null;
         // ONLY AN UPDATE THAT NAMES THE MODE SETS IT. `current` keeps the mount's
         // seed, so re-reading it here would undo the reader's last tab press.
         if (next.canvas !== undefined) state = { ...state, canvas: next.canvas };
