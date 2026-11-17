@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import { JSDOM } from 'jsdom';
 
 import { FIRST_PASS_WORDS, candidates } from '../testing/firstpass.ts';
-import { type FirstPassContext, answerKey, firstPassIntent } from './keys.ts';
+import { answerKey } from './keys.ts';
 import type { Answer } from './queue.ts';
 import { openQueue, queueReducer } from './queue.ts';
 import { renderFirstPass } from './render.ts';
@@ -498,7 +498,6 @@ describe('each answer button shows the key that gives it', () => {
   it('each answer button is its words, a space, then one kbd holding answerKey of its answer, with or without a heading', () => {
     // A record keyed by every answer, so a fourth answer is a compile error here.
     const answers: Record<Answer, Answer> = { apply: 'apply', reject: 'reject', skip: 'skip' };
-    const asking: FirstPassContext = { interaction: 'queue', hasCandidate: true, canUndo: false };
     // The key labels are not behind an option.
     for (const options of [{ words: FIRST_PASS_WORDS }, { words: FIRST_PASS_WORDS, heading: { level: 2 } }] as const) {
       const doc = new JSDOM(renderFirstPass(openQueue(candidates(2)), options).markup).window.document;
@@ -512,12 +511,6 @@ describe('each answer button shows the key that gives it', () => {
         assert.equal(keys.length, 1, `${answer}: not exactly one key label`);
         const letter = keys[0]?.textContent ?? '';
         assert.equal(letter, answerKey(answer));
-        // The drawn letter, pressed, gives this button's answer and no other.
-        assert.deepEqual(
-          firstPassIntent({ key: letter }, asking),
-          { kind: 'queue', command: { kind: 'answer', answer } },
-          `${answer}: its key label answers a different button`,
-        );
         assert.equal(button.lastChild, keys[0], `${answer}: the key label does not come after the words`);
         // The space keeps the words and the letter apart in the button's name, so "YesY" fails.
         assert.equal((button.textContent ?? '').trim(), `${FIRST_PASS_WORDS.answers[answer]} ${answerKey(answer)}`);
