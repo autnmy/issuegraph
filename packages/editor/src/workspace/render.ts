@@ -96,7 +96,7 @@ import type {
   StoredEdge,
 } from '@issuegraph/store';
 
-import type { AuditInput, AuditSeverity } from '../audit/findings.ts';
+import type { AuditClass, AuditInput, AuditSeverity } from '../audit/findings.ts';
 import { type EdgeField, edgeIdentity } from '@issuegraph/core';
 import { type AuditWords, renderAuditPanel } from '../audit/panel.ts';
 import type { RefusedNoteOptions } from '../audit/refused.ts';
@@ -117,6 +117,7 @@ import {
   auditOverlay,
   heaviestRow,
   renderAuditHeader,
+  worstClass,
 } from '../audit/surface.ts';
 import { type ScaleState, INITIAL_SCALE_STATE } from '../scale/commands.ts';
 import type { IsolatedChip, ScaleAround, ScaleLadder, ScaleTier } from '../scale/ladder.ts';
@@ -1174,6 +1175,16 @@ export interface WorkspaceOptions {
    * Ignored with no audit, because a refusal arrives on the audit's input.
    */
   readonly issueUrl?: RefusedNoteOptions['issueUrl'];
+  /**
+   * Who draws the audit count and the control that opens §17d's panel.
+   *
+   * `'host'` means a control outside this surface does, so the header draws no
+   * audit count, and drops its row when nothing else is in it. The panel and
+   * the rail's `data-ig-audit` marks are drawn either way, and the facts that
+   * host control needs are on {@link WorkspaceView.auditToggle}. Absent, the
+   * header draws the count as it always has.
+   */
+  readonly auditToggle?: 'host' | undefined;
   readonly theme?: Theme | undefined;
   /** The selector the theme's custom properties are written onto. */
   readonly themeSelector?: string | undefined;
@@ -1305,6 +1316,27 @@ export interface WorkspaceOptions {
   readonly switchedKinds?: readonly EdgeField[] | undefined;
 }
 
+/**
+ * What a control drawn outside the surface needs to stand in for the header's
+ * audit count.
+ *
+ * READ OFF THE SAME OVERLAY THE PANEL IS DRAWN FROM, so the count a host shows
+ * and the list its control opens cannot disagree.
+ */
+export interface AuditToggleFacts {
+  /** The findings counted, as the header's count reads. 0 with no audit input. */
+  readonly count: number;
+  /** The heaviest finding's class, the one `data-ig-audit-worst` names. `null` when nothing was found. */
+  readonly worst: AuditClass | null;
+  /**
+   * Whether the panel is DRAWN, not whether it was asked for: with nothing to
+   * list no panel is drawn, so a control's `aria-expanded` must read false.
+   */
+  readonly open: boolean;
+  /** The panel's element id, for the host control's `aria-controls`. */
+  readonly panelId: string;
+}
+
 export interface WorkspaceView {
   readonly selection: WorkspaceSelection;
   readonly rail: RailWindow;
@@ -1319,6 +1351,8 @@ export interface WorkspaceView {
    * asked for.
    */
   readonly auditFiltered: boolean;
+  /** What a host control standing in for the header's audit count shows. */
+  readonly auditToggle: AuditToggleFacts;
 }
 
 export interface WorkspaceResult {
@@ -2966,6 +3000,7 @@ function headerMarkup(
   host: HostFacts | undefined,
   auditHeader: string,
   words: WorkspaceWords,
+  dropWhenEmpty: boolean,
 ): string {
 
   // A STRING, not a spec, because one member of this zone already is one: the
@@ -2991,7 +3026,11 @@ function headerMarkup(
         ),
   ];
 
-  return `<div class="ig-workspace-header">${parts.join('')}</div>`;
+  const inner = parts.join('');
+  // A ROW OF NOTHING IS DROPPED ONLY WHEN THE HOST DRAWS THE AUDIT COUNT. A
+  // mount without that option has always drawn the row, empty or not, and its
+  // markup stays exactly as it was.
+  return dropWhenEmpty && inner === '' ? '' : `<div class="ig-workspace-header">${inner}</div>`;
 }
 
 /**
@@ -4639,6 +4678,16 @@ export function renderWorkspace(
         return renderMarkup(element('div', { class: 'ig-audit-overlay', id: auditPanelId(options.surfaceId) }, [panel]));
       })();
 
+  // ONE READ OF THE OVERLAY AND THE PANEL FOR BOTH TOGGLES: the header's count
+  // below and a host's control outside the surface, so the two never disagree.
+  const auditToggle: AuditToggleFacts = {
+    count: overlay?.count ?? 0,
+    worst: overlay === null ? null : worstClass(overlay) ?? null,
+    open: auditPanel !== '',
+    panelId: auditPanelId(options.surfaceId),
+  };
+  const hostDrawsAuditToggle = options.auditToggle === 'host';
+
   // ONE MARKING FOR BOTH HALVES OF THE RAIL'S VIEWER — the window's root and the
   // detached footer group — so the two cannot be decorated by different rules.
   const markRailRows = (spec: ElementSpec): ElementSpec =>
@@ -4676,12 +4725,13 @@ export function renderWorkspace(
           document.host,
           // OPEN MEANS DRAWN (review-41, PR 336): with nothing to list the panel
           // is not drawn, so the count is not expanded and names no panel.
-          overlay === null ? '' : renderAuditHeader(overlay, {
-            open: auditPanel !== '',
-            controls: auditPanelId(options.surfaceId),
+          overlay === null || hostDrawsAuditToggle ? '' : renderAuditHeader(overlay, {
+            open: auditToggle.open,
+            controls: auditToggle.panelId,
             label: options.words.audit.heading,
           }),
           options.words,
+          hostDrawsAuditToggle,
         ),
         // THE LOG IS IN THE HEADER because the header is the one zone drawn at
         // every width: under 640 the grid keeps only the header and the view.
@@ -4883,7 +4933,7 @@ export function renderWorkspace(
   ].join('');
 
   return {
-    view: { selection, rail, inspector, audit: overlay, auditFiltered: filtered },
+    view: { selection, rail, inspector, audit: overlay, auditFiltered: filtered, auditToggle },
     markup,
     // THE THEME IS WRITTEN ONCE. Both leaves below emit their own copy of the
     // viewer's stylesheet and the theme rule, so taking `canvas.styles`

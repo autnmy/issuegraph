@@ -267,9 +267,10 @@ function rowWeight(row: AuditRow): number {
  *
  * BY THE CLASS TABLE'S WEIGHT, the same ordering {@link AuditRow.severity}
  * picks a row's class by, so the header's dot and the rail's bar agree about
- * which finding is worst.
+ * which finding is worst. Exported so the workspace reports the same worst
+ * class to a host that draws the count outside the mount.
  */
-function worstClass(overlay: AuditOverlay): AuditClass | undefined {
+export function worstClass(overlay: AuditOverlay): AuditClass | undefined {
   let worst: AuditClass | undefined;
   for (const found of overlay.findings) {
     if (worst === undefined || AUDIT_CLASS_SPECS[found.kind].weight > AUDIT_CLASS_SPECS[worst].weight) {

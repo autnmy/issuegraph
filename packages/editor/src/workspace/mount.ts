@@ -103,6 +103,7 @@ import type { RailWindow } from './rail.ts';
 import { relatedListView, relatedRowKeys } from './related.ts';
 import { markedEdges, writeLog, writeRefusals } from './log.ts';
 import {
+  type AuditToggleFacts,
   type BatchNote,
   type WorkspaceOptions,
   type WorkspaceWords,
@@ -206,6 +207,11 @@ export interface MountWorkspaceOptions {
    */
   readonly onSelectionChange?: ((selection: WorkspaceSelection) => void) | undefined;
   /**
+   * A control the host draws outside the element, in place of the header's
+   * audit count. Absent, the header draws the count. See {@link AuditToggleOption}.
+   */
+  readonly auditToggle?: AuditToggleOption | undefined;
+  /**
    * What the canvas zone draws when the workspace mounts. A SEED, not a
    * setting: the reader's Sub-issues and Related groups tabs change the mode
    * too, so after the mount `handle.state.canvas` is the mode drawn, and only an
@@ -231,6 +237,24 @@ export interface MountWorkspaceOptions {
    * the entry is inert until a host supplies this.
    */
   readonly firstPass?: FirstPassOption | undefined;
+}
+
+/**
+ * What a host supplies to draw the audit count and the control that opens
+ * §17d's panel itself, outside the mounted element.
+ *
+ * The host opens and closes the panel with the `audit-panel` and `audit-close`
+ * controls through `handle.dispatch`. Its control must not carry
+ * `data-ig-audit-panel`, or the mount's own click listener toggles the panel a
+ * second time.
+ */
+export interface AuditToggleOption {
+  /** Only the host can draw it here; the field names that choice. */
+  readonly placement: 'host';
+  /** Told the facts after each draw that changed one of them. */
+  readonly onChange: (facts: AuditToggleFacts) => void;
+  /** Moves focus to the host's control when the panel closes with focus inside it. */
+  readonly focusToggle: () => void;
 }
 
 /** What a host supplies to make §17a's first-pass entry work. */
@@ -284,11 +308,13 @@ const KEY_ATTRIBUTE = 'data-ig-key';
  * what has to be preserved is the live region specifically.
  */
 const LIVE_REGION = '.ig-change-line[role="status"]';
+/** The box `renderWorkspace` draws §17d's panel in, present only while the panel is drawn. */
+const AUDIT_OVERLAY = '.ig-audit-overlay';
 /**
  * The regions that scroll inside a bound of their own, whose offsets a redraw
  * keeps: the audit's findings and the log under the head.
  */
-const SCROLLED_REGIONS = ['.ig-audit-overlay', '.ig-workspace-log'] as const;
+const SCROLLED_REGIONS = [AUDIT_OVERLAY, '.ig-workspace-log'] as const;
 const GROUP_ATTRIBUTE = 'data-ig-group';
 const COMMAND_ATTRIBUTE = 'data-ig-command';
 
@@ -513,6 +539,11 @@ function withoutChrome(document: ViewerDocument): ViewerDocument {
   return host.condition === undefined ? rest : { ...rest, host: { condition: host.condition } };
 }
 
+/** Whether two audit facts records say the same thing, field by field. */
+function sameAuditFacts(a: AuditToggleFacts, b: AuditToggleFacts): boolean {
+  return a.count === b.count && a.worst === b.worst && a.open === b.open && a.panelId === b.panelId;
+}
+
 /**
  * Mount the workspace into an element.
  *
@@ -578,6 +609,12 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   // which every path reaches — a gesture, a store notification, the
   // reconciliation that drops a member — so the notice has one home.
   let announced: WorkspaceSelection = state.selection;
+  // THE LAST AUDIT FACTS THE HOST'S CONTROL WAS TOLD, compared by value at the
+  // end of `render()` as `announced` is. `null` until the first real draw, so
+  // that draw reports and the loading placeholder reports nothing; set back to
+  // `null` only when `update()` adds the option after it was absent. A different
+  // `onChange` function is not a new fact (see `update()`).
+  let toldFacts: AuditToggleFacts | null = null;
   /** The viewer document last drawn, which a Shift range reads its rank order from. */
   let lastViewer: ViewerDocument | null = null;
   // THE RAIL OFFSET THE SCROLL HANDLER LAST SAW, which is what every redraw
@@ -1735,6 +1772,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       auditOpen: state.auditOpen,
       issueUrl: current.issueUrl,
       runCap: current.runCap,
+      auditToggle: current.auditToggle?.placement,
       theme: resolved,
       themeSelector: current.themeSelector,
       // THE WRITE STATES ONLY. The workspace holds the one selection, and the
@@ -1830,6 +1868,11 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const auditStop = isElement(active)
       ? (AUDIT_STOPS.find((one) => active.matches(one)) ?? null)
       : null;
+    // A HOST THAT DRAWS THE AUDIT TOGGLE ITSELF TAKES BACK A FOCUS THE PANEL HELD.
+    // Its toggle is outside this surface, so no arm below can find it, and the
+    // last-resort arms would put the reader on a rail row instead.
+    const panelHeldFocus =
+      current.auditToggle !== undefined && isElement(active) && surface.contains(active) && active.closest(AUDIT_OVERLAY) !== null;
     // The ZONE too: an issue is commonly drawn in the rail and on the canvas,
     // and restoring "the first element with this key" would move focus from
     // a canvas node into the rail on every redraw.
@@ -2046,6 +2089,11 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       const tab = surface.querySelector<HTMLElement>(`[${COMMAND_ATTRIBUTE}="narrow-tab"][aria-selected="true"]`);
       return tab !== null && !folded(tab.closest('.ig-narrow-tabs')) ? tab : null;
     })();
+    // THE PANEL WENT WITH THE FOCUS IN IT. Decided before any arm moves focus,
+    // and handed to the host after `onChange` at the end of this draw, so its
+    // control already reads as closed when it takes the focus. The first-pass
+    // overlay keeps its claim: it takes the focus on every draw while it is up.
+    const focusToHost = panelHeldFocus && overlay === null && surface.querySelector(AUDIT_OVERLAY) === null;
     if (overlay !== null) {
       // FOCUS IS TAKEN BACK ON EVERY RENDER WHILE THE OVERLAY IS UP, not only on
       // the one that opens it. Every answer dispatches, every dispatch redraws,
@@ -2062,6 +2110,8 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       // first control is `apply`, and landing focus there would put the one
       // irreversible answer under the reader's next Space.
       (again ?? overlay).focus({ preventScroll: true });
+    } else if (focusToHost) {
+      // NO ARM MOVES IT: the host's `focusToggle` runs at the end of this draw.
     } else if (auditStop !== null && surface.querySelector<HTMLElement>(auditStop) !== null) {
       // THE READER WAS IN THE AUDIT, SO THEY STAY THERE — and on the same one of
       // its two surfaces, which is why the stop is restored by the name it was
@@ -2316,6 +2366,8 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     firstPassWas = state.firstPass.phase.kind;
     searchWasOpen = search !== null;
     announceSelection();
+    announceAuditToggle(result.view.auditToggle);
+    if (focusToHost) current.auditToggle?.focusToggle();
   };
 
   /**
@@ -2330,6 +2382,19 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const handed: WorkspaceSelection =
       now.kind === 'issues' ? Object.freeze({ kind: 'issues', keys: Object.freeze([...now.keys]) }) : Object.freeze({ ...now });
     current.onSelectionChange?.(handed);
+  };
+
+  /**
+   * Tell the host's audit control the facts changed, once, with a fresh frozen
+   * copy. The facts are the ones this draw's panel was drawn from. The record
+   * is written BEFORE the callback, for `announceSelection`'s reason: a host
+   * that calls `update()` from inside it is not told the same facts again.
+   */
+  const announceAuditToggle = (facts: AuditToggleFacts): void => {
+    const toggle = current.auditToggle;
+    if (toggle === undefined || (toldFacts !== null && sameAuditFacts(toldFacts, facts))) return;
+    toldFacts = Object.freeze({ ...facts });
+    toggle.onChange(toldFacts);
   };
 
   /**
@@ -3556,7 +3621,13 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     update(next?: WorkspaceUpdate): void {
       if (destroyed) return;
       if (next !== undefined) {
+        const hadToggle = current.auditToggle !== undefined;
         current = { ...current, ...next, store };
+        // ONLY ADDING THE OPTION RE-SENDS THE FACTS. A new `onChange` function is
+        // not a new fact: a host that builds a fresh closure on every render and
+        // calls `update()` after each report would otherwise be told the same
+        // facts again on every draw, without end. `onSelectionChange` works the same way.
+        if (!hadToggle && current.auditToggle !== undefined) toldFacts = null;
         // ONLY AN UPDATE THAT NAMES THE MODE SETS IT. `current` keeps the mount's
         // seed, so re-reading it here would undo the reader's last tab press.
         if (next.canvas !== undefined) state = { ...state, canvas: next.canvas };
