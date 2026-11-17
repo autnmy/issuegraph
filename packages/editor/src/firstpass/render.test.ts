@@ -65,6 +65,10 @@ describe('every readable byte comes from the host or from the document', () => {
       .filter((text) => text !== '');
     const allowed = new Set<string>([
       ...Object.values(FIRST_PASS_WORDS.answers),
+      // The key labels are the key table's letters, not words of this surface.
+      answerKey('apply'),
+      answerKey('reject'),
+      answerKey('skip'),
       FIRST_PASS_WORDS.undo,
       FIRST_PASS_WORDS.evidence,
       FIRST_PASS_WORDS.answersLabel,

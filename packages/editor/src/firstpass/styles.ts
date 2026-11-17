@@ -116,6 +116,33 @@ export const firstPassStylesheet = `
   cursor: pointer;
 }
 
+/* An answer lays its words and its key side by side, as the export's buttons
+   do, so the gap and not the space in the markup sets the distance between
+   them. */
+.ig-firstpass-answer {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ig-space-snug);
+}
+
+/* THE KEY THAT GIVES THE ANSWER, as the export's keyboard hint: muted ink on
+   the panel ground inside a hairline, at a small radius. The export sets it in
+   an 11px caption on a 16px line in a 20px box; no theme token holds those, so
+   it takes the small size and the body line. */
+.ig-firstpass-key {
+  display: inline-flex;
+  align-items: center;
+  margin-left: var(--ig-space-tight);
+  padding: 0 var(--ig-space-tight);
+  border-radius: var(--ig-radius-small);
+  background: var(--ig-bg);
+  box-shadow: inset 0 0 0 var(--ig-hairline-width) var(--ig-hairline);
+  color: var(--ig-text-muted);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+  line-height: var(--ig-line-height);
+}
+
 /* The one answer that writes. Weighted so the irreversible option is the one
    the eye lands on — §17e's consent rule is about knowing what you agreed to,
    and that starts before the keystroke. */

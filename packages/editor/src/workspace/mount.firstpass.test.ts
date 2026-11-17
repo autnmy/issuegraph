@@ -1278,3 +1278,385 @@ describe('the first pass, composed behind §17a’s entry', () => {
     }
   });
 });
+
+import { answerKey } from '../firstpass/keys.ts';
+import type { Answer } from '../firstpass/queue.ts';
+
+describe("more tests", function () {
+it('first-pass key labels: a click on the Y key label writes exactly one edge, the candidate on screen', async () => {
+  // The key label sits inside the answer button, so a click on it must reach
+  // the store as that button's one consent: one click, one write, this pair.
+  const found: readonly Candidate[] = [
+    { id: 'key-0', kind: 'blocked-by', from: '1', to: '2', evidence: [] },
+    { id: 'key-1', kind: 'blocked-by', from: '3', to: '4', evidence: [] },
+  ];
+  const backlogWithEntry: GraphDocument = {
+    issues: Array.from({ length: 6 }, (_unused, index) => ({
+      ref: String(index + 1),
+      title: `Issue number ${String(index + 1)}`,
+      state: 'open' as const,
+      priority: 2,
+    })),
+    edges: [],
+  };
+  const withEntry = (snapshot: StoreSnapshot): WorkspaceProjection => {
+    const base = project(snapshot);
+    return { ...base, viewer: { ...base.viewer, host: { identity: 'acme/widgets', firstPass: 'First pass' } } };
+  };
+  const page = await mounted(backlogWithEntry, {
+    project: withEntry,
+    firstPass: {
+      source: { findCandidates: (): Promise<readonly Candidate[]> => Promise.resolve(found) },
+      words: FIRST_PASS_WORDS,
+      exit: 'leave the first pass',
+      scanning: 'looking for candidates',
+      scanFailed: 'the scan did not answer',
+    },
+  });
+  try {
+    const entry = page.control('first-pass');
+    assert.ok(entry !== null, 'no first-pass entry was drawn');
+    page.click(entry);
+    await flush();
+    await flush();
+    const key = page.element.querySelector('.ig-firstpass [data-ig-answer="apply"] kbd');
+    assert.ok(key !== null, 'the apply button holds no key label');
+    assert.equal(key.textContent, answerKey('apply'));
+
+    key.dispatchEvent(new page.win.MouseEvent('click', { bubbles: true }));
+    await flush();
+    assert.equal(page.element.querySelector('.ig-firstpass')?.getAttribute('data-ig-answered'), '1');
+    const { writes } = page.store.getSnapshot();
+    assert.equal(writes.length, 1, 'one click on the key label was not one write');
+    assert.deepEqual(writes[0]?.mutation, {
+      op: 'create',
+      kind: 'blocked-by',
+      from: '1',
+      to: '2',
+      mutationId: writes[0]?.mutationId,
+    });
+    assert.notEqual(writes[0]?.state, 'invalid', 'the write never left the store');
+  } finally {
+    page.handle.destroy();
+    page.dom.window.close();
+  }
+});
+
+it('first-pass key labels: clicks on the N and S key labels advance the queue and write nothing', async () => {
+  // A refusal or a skip is never a consent, whichever part of the button the
+  // reader clicks: the queue moves on and the store holds no write.
+  const found: readonly Candidate[] = [
+    { id: 'key-0', kind: 'blocked-by', from: '1', to: '2', evidence: [] },
+    { id: 'key-1', kind: 'blocked-by', from: '3', to: '4', evidence: [] },
+    { id: 'key-2', kind: 'blocked-by', from: '5', to: '6', evidence: [] },
+  ];
+  const backlogWithEntry: GraphDocument = {
+    issues: Array.from({ length: 8 }, (_unused, index) => ({
+      ref: String(index + 1),
+      title: `Issue number ${String(index + 1)}`,
+      state: 'open' as const,
+      priority: 2,
+    })),
+    edges: [],
+  };
+  const withEntry = (snapshot: StoreSnapshot): WorkspaceProjection => {
+    const base = project(snapshot);
+    return { ...base, viewer: { ...base.viewer, host: { identity: 'acme/widgets', firstPass: 'First pass' } } };
+  };
+  const page = await mounted(backlogWithEntry, {
+    project: withEntry,
+    firstPass: {
+      source: { findCandidates: (): Promise<readonly Candidate[]> => Promise.resolve(found) },
+      words: FIRST_PASS_WORDS,
+      exit: 'leave the first pass',
+      scanning: 'looking for candidates',
+      scanFailed: 'the scan did not answer',
+    },
+  });
+  try {
+    const entry = page.control('first-pass');
+    assert.ok(entry !== null, 'no first-pass entry was drawn');
+    page.click(entry);
+    await flush();
+    await flush();
+
+    for (const [answer, answered] of [['reject', '1'], ['skip', '2']] as const) {
+      const key = page.element.querySelector(`.ig-firstpass [data-ig-answer="${answer}"] kbd`);
+      assert.ok(key !== null, `the ${answer} button holds no key label`);
+      assert.equal(key.textContent, answerKey(answer));
+      key.dispatchEvent(new page.win.MouseEvent('click', { bubbles: true }));
+      await flush();
+      assert.equal(
+        page.element.querySelector('.ig-firstpass')?.getAttribute('data-ig-answered'),
+        answered,
+        `a click on the ${answer} key label did not answer`,
+      );
+      assert.deepEqual(page.store.getSnapshot().writes, [], `a click on the ${answer} key label wrote something`);
+    }
+  } finally {
+    page.handle.destroy();
+    page.dom.window.close();
+  }
+});
+
+it('first-pass key labels: re-answering a pending undo by its Y key label does not propose the create twice', async () => {
+  // An undo leaves an in-flight create standing, so a second consent given by
+  // clicking the key label must not send the same create again: when the first
+  // lands, a second would turn invalid and show the reader a false error.
+  const found: readonly Candidate[] = [
+    { id: 'key-0', kind: 'blocked-by', from: '1', to: '2', evidence: [] },
+    { id: 'key-1', kind: 'blocked-by', from: '3', to: '4', evidence: [] },
+  ];
+  const backlogWithEntry: GraphDocument = {
+    issues: Array.from({ length: 6 }, (_unused, index) => ({
+      ref: String(index + 1),
+      title: `Issue number ${String(index + 1)}`,
+      state: 'open' as const,
+      priority: 2,
+    })),
+    edges: [],
+  };
+  const withEntry = (snapshot: StoreSnapshot): WorkspaceProjection => {
+    const base = project(snapshot);
+    return { ...base, viewer: { ...base.viewer, host: { identity: 'acme/widgets', firstPass: 'First pass' } } };
+  };
+  const page = await mounted(backlogWithEntry, {
+    project: withEntry,
+    firstPass: {
+      source: { findCandidates: (): Promise<readonly Candidate[]> => Promise.resolve(found) },
+      words: FIRST_PASS_WORDS,
+      exit: 'leave the first pass',
+      scanning: 'looking for candidates',
+      scanFailed: 'the scan did not answer',
+    },
+  });
+  const applyKey = (): Element => {
+    const key = page.element.querySelector('.ig-firstpass [data-ig-answer="apply"] kbd');
+    assert.ok(key !== null, 'the apply button holds no key label');
+    assert.equal(key.textContent, answerKey('apply'));
+    return key;
+  };
+  const answeredCount = (): string | null | undefined =>
+    page.element.querySelector('.ig-firstpass')?.getAttribute('data-ig-answered');
+  try {
+    const entry = page.control('first-pass');
+    assert.ok(entry !== null, 'no first-pass entry was drawn');
+    page.click(entry);
+    await flush();
+    await flush();
+
+    applyKey().dispatchEvent(new page.win.MouseEvent('click', { bubbles: true }));
+    await flush();
+    await page.source.whenPending();
+    await flush();
+    const first = page.store.getSnapshot().writes;
+    assert.equal(first.length, 1, 'the first click on the key label was not one write');
+    const firstId = first[0]?.mutationId;
+
+    page.element.dispatchEvent(
+      new page.win.KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }),
+    );
+    await flush();
+    assert.equal(answeredCount(), '0', 'the queue did not step back');
+    assert.equal(page.store.getSnapshot().writes.length, 1, 'the pending write went away');
+
+    applyKey().dispatchEvent(new page.win.MouseEvent('click', { bubbles: true }));
+    await flush();
+    const again = page.store.getSnapshot().writes;
+    assert.equal(again.length, 1, 'the create was proposed twice');
+    assert.equal(again[0]?.mutationId, firstId, 'the standing write was replaced by another');
+    assert.equal(answeredCount(), '1', 'the second consent did not advance the queue');
+  } finally {
+    page.handle.destroy();
+    page.dom.window.close();
+  }
+});
+});
+
+describe("more tests 2", function () {
+it('the first-pass overlay draws the key labels inside its answer buttons and no heading', async () => {
+  // Candidates over issues the backlog carries, so the store accepts their writes.
+  const found: readonly Candidate[] = [
+    { id: 'k0', kind: 'blocked-by', from: '1', to: '2', evidence: [] },
+    { id: 'k1', kind: 'blocked-by', from: '3', to: '4', evidence: [] },
+  ];
+  const backlog: GraphDocument = {
+    issues: ['1', '2', '3', '4'].map((ref) => ({ ref, title: `Issue number ${ref}`, state: 'open' as const, priority: 2 })),
+    edges: [],
+  };
+  const withEntry = (snapshot: StoreSnapshot): WorkspaceProjection => {
+    const base = project(snapshot);
+    return { ...base, viewer: { ...base.viewer, host: { identity: 'acme/widgets', firstPass: 'First pass' } } };
+  };
+  const page = await mounted(backlog, {
+    project: withEntry,
+    firstPass: {
+      source: { findCandidates: () => Promise.resolve(found) },
+      words: FIRST_PASS_WORDS,
+      exit: 'leave the first pass',
+      scanning: 'looking for candidates',
+      scanFailed: 'the scan did not answer',
+    },
+  });
+  try {
+    const entry = page.control('first-pass');
+    assert.ok(entry !== null, 'no first-pass entry was drawn');
+    page.click(entry);
+    await flush();
+    await flush();
+    const queue = page.element.querySelector('.ig-firstpass-overlay .ig-firstpass');
+    assert.ok(queue !== null, 'the queue did not open');
+
+    // "So every caller of `renderFirstPass` draws them, including the mount's own first-pass overlay."
+    const answers: Record<Answer, Answer> = { apply: 'apply', reject: 'reject', skip: 'skip' };
+    for (const answer of Object.values(answers)) {
+      const button: Element | null = queue.querySelector(`[data-ig-answer="${answer}"]`);
+      assert.ok(button !== null, `${answer}: no answer button`);
+      const keys: NodeListOf<HTMLElement> = button.querySelectorAll('kbd');
+      assert.equal(keys.length, 1, `${answer}: not exactly one key label`);
+      assert.equal(keys[0]?.textContent, answerKey(answer));
+      assert.equal((button.textContent ?? '').trim(), `${FIRST_PASS_WORDS.answers[answer]} ${answerKey(answer)}`);
+    }
+    // The mount asks for no heading, so its band keeps the progress last.
+    assert.equal(queue.querySelector('h1, h2, h3, h4, h5, h6'), null, 'the overlay drew a heading it never asked for');
+    assert.equal(queue.lastElementChild?.classList.contains('ig-firstpass-progress'), true, 'the progress is not the last child');
+  } finally {
+    page.handle.destroy();
+    page.dom.window.close();
+  }
+});
+
+it('a click on a key label in the first-pass overlay answers through its button', async () => {
+  // Candidates over issues the backlog carries, so the store accepts their writes.
+  const found: readonly Candidate[] = [
+    { id: 'k0', kind: 'blocked-by', from: '1', to: '2', evidence: [] },
+    { id: 'k1', kind: 'blocked-by', from: '3', to: '4', evidence: [] },
+    { id: 'k2', kind: 'blocked-by', from: '5', to: '6', evidence: [] },
+  ];
+  const backlog: GraphDocument = {
+    issues: ['1', '2', '3', '4', '5', '6'].map((ref) => ({ ref, title: `Issue number ${ref}`, state: 'open' as const, priority: 2 })),
+    edges: [],
+  };
+  const withEntry = (snapshot: StoreSnapshot): WorkspaceProjection => {
+    const base = project(snapshot);
+    return { ...base, viewer: { ...base.viewer, host: { identity: 'acme/widgets', firstPass: 'First pass' } } };
+  };
+  const page = await mounted(backlog, {
+    project: withEntry,
+    firstPass: {
+      source: { findCandidates: () => Promise.resolve(found) },
+      words: FIRST_PASS_WORDS,
+      exit: 'leave the first pass',
+      scanning: 'looking for candidates',
+      scanFailed: 'the scan did not answer',
+    },
+  });
+  try {
+    const entry = page.control('first-pass');
+    assert.ok(entry !== null, 'no first-pass entry was drawn');
+    page.click(entry);
+    await flush();
+    await flush();
+    const answered = (): string | null | undefined =>
+      page.element.querySelector('.ig-firstpass')?.getAttribute('data-ig-answered');
+    // "A click on the `kbd` resolves `closest('[data-ig-answer]')` to its button in the mount's overlay path."
+    const clickKeyOf = async (answer: Answer): Promise<void> => {
+      const key = page.element.querySelector(`.ig-firstpass-overlay [data-ig-answer="${answer}"] kbd`);
+      assert.ok(key !== null, `no key label in the ${answer} button`);
+      key.dispatchEvent(new page.win.MouseEvent('click', { bubbles: true }));
+      await flush();
+    };
+    assert.equal(answered(), '0');
+
+    await clickKeyOf('apply');
+    assert.equal(answered(), '1', 'a click on the apply key label answered nothing');
+    assert.equal(page.store.getSnapshot().writes.length, 1, 'a click on the apply key label proposed no edge');
+
+    await clickKeyOf('reject');
+    assert.equal(answered(), '2', 'a click on the reject key label answered nothing');
+    assert.equal(page.store.getSnapshot().writes.length, 1, 'a click on the reject key label wrote something');
+
+    await clickKeyOf('skip');
+    assert.equal(answered(), '3', 'a click on the skip key label answered nothing');
+    assert.equal(page.store.getSnapshot().writes.length, 1, 'a click on the skip key label wrote something');
+  } finally {
+    page.handle.destroy();
+    page.dom.window.close();
+  }
+});
+});
+
+describe("more tests 3", function () {
+it('answers the button whose key label was clicked, once, and writes only for a Yes', async () => {
+  // Two candidates over the backlog's own issues, so the store accepts a create and a wrong pair shows as wrong digits.
+  const found: readonly Candidate[] = [0, 1].map((index) => ({
+    id: `key-label-${String(index)}`,
+    kind: 'blocked-by' as const,
+    from: String(index * 2 + 1),
+    to: String(index * 2 + 2),
+    evidence: [],
+  }));
+  const backlogOfSix: GraphDocument = {
+    issues: ['1', '2', '3', '4', '5', '6'].map((ref) => ({
+      ref,
+      title: `Issue number ${ref}`,
+      state: 'open' as const,
+      priority: 2,
+    })),
+    edges: [],
+  };
+  const withFirstPassEntry = (snapshot: StoreSnapshot): WorkspaceProjection => {
+    const base = project(snapshot);
+    return { ...base, viewer: { ...base.viewer, host: { identity: 'acme/widgets', firstPass: 'First pass' } } };
+  };
+  const page = await mounted(backlogOfSix, {
+    project: withFirstPassEntry,
+    firstPass: {
+      source: { findCandidates: (): Promise<readonly Candidate[]> => Promise.resolve(found) },
+      words: FIRST_PASS_WORDS,
+      exit: 'leave the first pass',
+      scanning: 'looking for candidates',
+      scanFailed: 'the scan did not answer',
+    },
+  });
+  try {
+    const entry = page.control('first-pass');
+    assert.ok(entry !== null, 'no first-pass entry was drawn');
+    page.click(entry);
+    await flush();
+    await flush();
+    const answered = (): string | null | undefined =>
+      page.element.querySelector('.ig-firstpass')?.getAttribute('data-ig-answered');
+    const keyLabel = (answer: string): Element | null =>
+      page.element.querySelector(`.ig-firstpass-overlay [data-ig-answer="${answer}"] kbd`);
+    assert.equal(answered(), '0');
+
+    // "A click on the `kbd` resolves `closest('[data-ig-answer]')` to its button in the mount's overlay path."
+    // A click resolved to the wrong button writes for a No; one handled twice answers two questions.
+    const no = keyLabel('reject');
+    assert.ok(no !== null, 'the No button holds no key label');
+    no.dispatchEvent(new page.win.MouseEvent('click', { bubbles: true }));
+    await flush();
+    assert.equal(answered(), '1', 'a click on the No key label did not answer exactly once');
+    assert.deepEqual(page.store.getSnapshot().writes, [], 'a click on the No key label wrote a relationship');
+
+    const yes = keyLabel('apply');
+    assert.ok(yes !== null, 'the Yes button holds no key label');
+    yes.dispatchEvent(new page.win.MouseEvent('click', { bubbles: true }));
+    await flush();
+    assert.equal(answered(), '2', 'a click on the Yes key label did not answer exactly once');
+    const { writes } = page.store.getSnapshot();
+    assert.equal(writes.length, 1, 'a click on the Yes key label was not one write');
+    assert.deepEqual(writes[0]?.mutation, {
+      op: 'create',
+      kind: 'blocked-by',
+      from: '3',
+      to: '4',
+      mutationId: writes[0]?.mutationId,
+    });
+  } finally {
+    page.handle.destroy();
+    page.dom.window.close();
+  }
+});
+});

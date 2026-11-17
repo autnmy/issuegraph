@@ -60,6 +60,7 @@ import {
 import { isEdgeField } from '@issuegraph/core';
 import { type FirstPassQuestion, type FirstPassView, firstPassView } from './view.ts';
 import type { QueueProgress, QueueState } from './queue.ts';
+import { answerKey } from './keys.ts';
 import { firstPassStylesheet } from './styles.ts';
 import type { FirstPassWords } from './words.ts';
 
@@ -208,6 +209,11 @@ function questionSpec(question: FirstPassQuestion, words: FirstPassWords): Eleme
  * the loop is reachable with no pointer, not that a pointer is refused. A
  * surface with keys and no controls would also be a surface with no discoverable
  * vocabulary and nothing for assistive technology to name.
+ *
+ * Each button ends with the key that gives its answer, read from `keys.ts` so
+ * the label and the binding cannot disagree. The space before it is a text
+ * node rather than CSS because an accessible name joins text with no
+ * separator: without it the apply button would be named "Yes, add itY".
  */
 function answersSpec(words: FirstPassWords): ElementSpec {
   return element(
@@ -217,7 +223,7 @@ function answersSpec(words: FirstPassWords): ElementSpec {
       element(
         'button',
         { type: 'button', class: 'ig-firstpass-answer', [ANSWER_ATTRIBUTE]: answer },
-        [words.answers[answer]],
+        [words.answers[answer], ' ', element('kbd', { class: 'ig-firstpass-key' }, [answerKey(answer)])],
       ),
     ),
   );
