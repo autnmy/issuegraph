@@ -537,6 +537,11 @@ function withoutChrome(document: ViewerDocument): ViewerDocument {
   return host.condition === undefined ? rest : { ...rest, host: { condition: host.condition } };
 }
 
+/** Whether two audit facts records say the same thing, field by field. */
+function sameAuditFacts(a: AuditToggleFacts, b: AuditToggleFacts): boolean {
+  return a.count === b.count && a.worst === b.worst && a.open === b.open && a.panelId === b.panelId;
+}
+
 /**
  * Mount the workspace into an element.
  *
@@ -602,6 +607,11 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   // which every path reaches — a gesture, a store notification, the
   // reconciliation that drops a member — so the notice has one home.
   let announced: WorkspaceSelection = state.selection;
+  // THE LAST AUDIT FACTS THE HOST'S CONTROL WAS TOLD, compared by value at the
+  // end of `render()` as `announced` is. `null` until the first real draw, so
+  // that draw reports and the loading placeholder reports nothing; set back to
+  // `null` when `update()` hands over a different `onChange`.
+  let toldFacts: AuditToggleFacts | null = null;
   /** The viewer document last drawn, which a Shift range reads its rank order from. */
   let lastViewer: ViewerDocument | null = null;
   // THE RAIL OFFSET THE SCROLL HANDLER LAST SAW, which is what every redraw
@@ -2341,6 +2351,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     firstPassWas = state.firstPass.phase.kind;
     searchWasOpen = search !== null;
     announceSelection();
+    announceAuditToggle(result.view.auditToggle);
   };
 
   /**
@@ -2355,6 +2366,19 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const handed: WorkspaceSelection =
       now.kind === 'issues' ? Object.freeze({ kind: 'issues', keys: Object.freeze([...now.keys]) }) : Object.freeze({ ...now });
     current.onSelectionChange?.(handed);
+  };
+
+  /**
+   * Tell the host's audit control the facts changed, once, with a fresh frozen
+   * copy. The facts are the ones this draw's panel was drawn from. The record
+   * is written BEFORE the callback, for `announceSelection`'s reason: a host
+   * that calls `update()` from inside it is not told the same facts again.
+   */
+  const announceAuditToggle = (facts: AuditToggleFacts): void => {
+    const toggle = current.auditToggle;
+    if (toggle === undefined || (toldFacts !== null && sameAuditFacts(toldFacts, facts))) return;
+    toldFacts = Object.freeze({ ...facts });
+    toggle.onChange(toldFacts);
   };
 
   /**
@@ -3581,7 +3605,12 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     update(next?: WorkspaceUpdate): void {
       if (destroyed) return;
       if (next !== undefined) {
+        const toldTo = current.auditToggle?.onChange;
         current = { ...current, ...next, store };
+        // A NEW RECIPIENT IS TOLD THE CURRENT FACTS on the next draw. The same
+        // `onChange` passed again keeps the record, so a host that reapplies its
+        // options from inside `onChange` is not called again for nothing.
+        if (current.auditToggle?.onChange !== toldTo) toldFacts = null;
         // ONLY AN UPDATE THAT NAMES THE MODE SETS IT. `current` keeps the mount's
         // seed, so re-reading it here would undo the reader's last tab press.
         if (next.canvas !== undefined) state = { ...state, canvas: next.canvas };
