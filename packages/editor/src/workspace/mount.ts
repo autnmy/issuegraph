@@ -103,6 +103,7 @@ import type { RailWindow } from './rail.ts';
 import { relatedListView, relatedRowKeys } from './related.ts';
 import { markedEdges, writeLog, writeRefusals } from './log.ts';
 import {
+  type AuditToggleFacts,
   type BatchNote,
   type WorkspaceOptions,
   type WorkspaceWords,
@@ -206,6 +207,11 @@ export interface MountWorkspaceOptions {
    */
   readonly onSelectionChange?: ((selection: WorkspaceSelection) => void) | undefined;
   /**
+   * A control the host draws outside the element, in place of the header's
+   * audit count. Absent, the header draws the count. See {@link AuditToggleOption}.
+   */
+  readonly auditToggle?: AuditToggleOption | undefined;
+  /**
    * What the canvas zone draws when the workspace mounts. A SEED, not a
    * setting: the reader's Sub-issues and Related groups tabs change the mode
    * too, so after the mount `handle.state.canvas` is the mode drawn, and only an
@@ -231,6 +237,24 @@ export interface MountWorkspaceOptions {
    * the entry is inert until a host supplies this.
    */
   readonly firstPass?: FirstPassOption | undefined;
+}
+
+/**
+ * What a host supplies to draw the audit count and the control that opens
+ * §17d's panel itself, outside the mounted element.
+ *
+ * The host opens and closes the panel with the `audit-panel` and `audit-close`
+ * controls through `handle.dispatch`. Its control must not carry
+ * `data-ig-audit-panel`, or the mount's own click listener toggles the panel a
+ * second time.
+ */
+export interface AuditToggleOption {
+  /** Only the host can draw it here; the field names that choice. */
+  readonly placement: 'host';
+  /** Told the facts after each draw that changed one of them. */
+  readonly onChange: (facts: AuditToggleFacts) => void;
+  /** Moves focus to the host's control when the panel closes with focus inside it. */
+  readonly focusToggle: () => void;
 }
 
 /** What a host supplies to make §17a's first-pass entry work. */
@@ -1735,6 +1759,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       auditOpen: state.auditOpen,
       issueUrl: current.issueUrl,
       runCap: current.runCap,
+      auditToggle: current.auditToggle?.placement,
       theme: resolved,
       themeSelector: current.themeSelector,
       // THE WRITE STATES ONLY. The workspace holds the one selection, and the
