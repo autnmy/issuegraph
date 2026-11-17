@@ -340,6 +340,8 @@ export {
   COMMAND_ATTRIBUTE,
   EVIDENCE_TOKEN_ATTRIBUTE,
   FOUND_ATTRIBUTE,
+  type FirstPassHeading,
+  type FirstPassHeadingLevel,
   type FirstPassOptions,
   type FirstPassResult,
   renderFirstPass,

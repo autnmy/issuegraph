@@ -134,10 +134,38 @@ export const firstPassStylesheet = `
   outline-offset: var(--ig-stroke);
 }
 
+/* THE TITLE ROW, drawn only when the host asks for a heading: the heading at
+   the start and the count at the end of one line, centred on each other, as
+   the export draws its "Suggested relationships" row. */
+.ig-firstpass-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ig-space);
+}
+
+/* The export's panel title: one step above the body, at medium weight, in
+   text ink — the treatment the audit panel's heading already takes. */
+.ig-firstpass-heading {
+  margin: 0;
+  color: var(--ig-text);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-panel-title);
+  font-weight: var(--ig-weight-medium);
+  line-height: var(--ig-panel-title-line);
+}
+
 .ig-firstpass-progress {
   margin: 0;
   font-size: var(--ig-font-size-small);
   color: var(--ig-text-muted);
+}
+
+/* In the title row the count is the export's: the body size with tabular
+   figures, so its digits hold still as the answers climb. */
+.ig-firstpass-title .ig-firstpass-progress {
+  font-size: var(--ig-font-size);
+  font-variant-numeric: tabular-nums;
 }
 
 .ig-firstpass-finished,
