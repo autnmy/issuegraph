@@ -17,7 +17,7 @@ import { JSDOM } from 'jsdom';
 import { PICKER_WORDS } from './picker.ts';
 import { WORKSPACE_WORDS } from './workspace.ts';
 import type { WorkspaceSelection } from '../workspace/selection.ts';
-import { type CanvasMode, type FirstPassOption, type MountWords, type WorkspaceProjection, mountWorkspace } from '../workspace/mount.ts';
+import { type AuditToggleOption, type CanvasMode, type FirstPassOption, type MountWords, type WorkspaceProjection, mountWorkspace } from '../workspace/mount.ts';
 
 export const WORDS: MountWords = {
   ...WORKSPACE_WORDS,
@@ -183,6 +183,8 @@ export async function mounted(
     /** §17d's outward link is drawn only for a URL the host can name. */
     issueUrl?: (ref: string) => string | null;
     onSelectionChange?: (selection: WorkspaceSelection) => void;
+    /** Lets a host outside the mount draw the audit count and open the panel. */
+    auditToggle?: AuditToggleOption;
     /** The store's injected guard: the only route to a `would-cycle` refusal. */
     guard?: EdgeGuard;
   } = {},
