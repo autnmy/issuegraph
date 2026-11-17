@@ -76,36 +76,32 @@ describe('the first-pass stylesheet carries structure, never a value', () => {
     // picker's, the ladder's and the overlay's sheets keep.
     assert.equal(/\.ig-(station|edge|spine|row)\b/.test(css), false);
   });
-});
 
-describe("more tests", function () {
-it('styles the title row, heading and key label only with defined --ig-* tokens', () => {
-  // "Styles in `packages/editor/src/firstpass/styles.ts` use only `--ig-*` tokens, as `packages/editor/src/firstpass/styles.test.ts` enforces."
-  const css = firstPassStylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
-  for (const className of ['ig-firstpass-title', 'ig-firstpass-heading', 'ig-firstpass-key']) {
-    const rules = [...css.matchAll(new RegExp(`\\.${className}(?![\\w-])[^{]*\\{([^}]*)\\}`, 'g'))]
-      .map((match) => match[1] ?? '')
-      .join('\n');
-    assert.ok(rules.trim() !== '', `.${className} is not styled`);
+  it('styles the title row, heading and key label only with defined --ig-* tokens', () => {
+    for (const className of ['ig-firstpass-title', 'ig-firstpass-heading', 'ig-firstpass-key']) {
+      const rules = [...css.matchAll(new RegExp(`\\.${className}(?![\\w-])[^{]*\\{([^}]*)\\}`, 'g'))]
+        .map((match) => match[1] ?? '')
+        .join('\n');
+      assert.ok(rules.trim() !== '', `.${className} is not styled`);
 
-    const tokens = [...rules.matchAll(/var\(\s*(--[a-zA-Z0-9-]+)/g)].map((match) => match[1] ?? '');
-    assert.ok(tokens.length > 0, `.${className} references no token`);
-    assert.deepEqual(
-      tokens.filter((token) => !token.startsWith('--ig-') || !THEME_TOKENS.includes(token)),
-      [],
-      `.${className} references a token that is not a defined --ig-* token`,
-    );
-    assert.equal(/#[0-9a-fA-F]{3,8}\b/.test(rules), false, `.${className} has a literal colour`);
-    assert.equal(
-      /\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(/.test(rules),
-      false,
-      `.${className} has a literal colour function`,
-    );
-    assert.equal(
-      /\b\d+(\.\d+)?(px|rem|em|pt|ch|ex|vw|vh)\b/.test(rules),
-      false,
-      `.${className} has a fixed length`,
-    );
-  }
-});
+      const tokens = [...rules.matchAll(/var\(\s*(--[a-zA-Z0-9-]+)/g)].map((match) => match[1] ?? '');
+      assert.ok(tokens.length > 0, `.${className} references no token`);
+      assert.deepEqual(
+        tokens.filter((token) => !token.startsWith('--ig-') || !THEME_TOKENS.includes(token)),
+        [],
+        `.${className} references a token that is not a defined --ig-* token`,
+      );
+      assert.equal(/#[0-9a-fA-F]{3,8}\b/.test(rules), false, `.${className} has a literal colour`);
+      assert.equal(
+        /\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(/.test(rules),
+        false,
+        `.${className} has a literal colour function`,
+      );
+      assert.equal(
+        /\b\d+(\.\d+)?(px|rem|em|pt|ch|ex|vw|vh)\b/.test(rules),
+        false,
+        `.${className} has a fixed length`,
+      );
+    }
+  });
 });
