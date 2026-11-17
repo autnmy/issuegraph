@@ -308,11 +308,13 @@ const KEY_ATTRIBUTE = 'data-ig-key';
  * what has to be preserved is the live region specifically.
  */
 const LIVE_REGION = '.ig-change-line[role="status"]';
+/** The box `renderWorkspace` draws §17d's panel in, present only while the panel is drawn. */
+const AUDIT_OVERLAY = '.ig-audit-overlay';
 /**
  * The regions that scroll inside a bound of their own, whose offsets a redraw
  * keeps: the audit's findings and the log under the head.
  */
-const SCROLLED_REGIONS = ['.ig-audit-overlay', '.ig-workspace-log'] as const;
+const SCROLLED_REGIONS = [AUDIT_OVERLAY, '.ig-workspace-log'] as const;
 const GROUP_ATTRIBUTE = 'data-ig-group';
 const COMMAND_ATTRIBUTE = 'data-ig-command';
 
@@ -1865,6 +1867,11 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     const auditStop = isElement(active)
       ? (AUDIT_STOPS.find((one) => active.matches(one)) ?? null)
       : null;
+    // A HOST THAT DRAWS THE AUDIT TOGGLE ITSELF TAKES BACK A FOCUS THE PANEL HELD.
+    // Its toggle is outside this surface, so no arm below can find it, and the
+    // last-resort arms would put the reader on a rail row instead.
+    const panelHeldFocus =
+      current.auditToggle !== undefined && isElement(active) && surface.contains(active) && active.closest(AUDIT_OVERLAY) !== null;
     // The ZONE too: an issue is commonly drawn in the rail and on the canvas,
     // and restoring "the first element with this key" would move focus from
     // a canvas node into the rail on every redraw.
@@ -2081,6 +2088,11 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       const tab = surface.querySelector<HTMLElement>(`[${COMMAND_ATTRIBUTE}="narrow-tab"][aria-selected="true"]`);
       return tab !== null && !folded(tab.closest('.ig-narrow-tabs')) ? tab : null;
     })();
+    // THE PANEL WENT WITH THE FOCUS IN IT. Decided before any arm moves focus,
+    // and handed to the host after `onChange` at the end of this draw, so its
+    // control already reads as closed when it takes the focus. The first-pass
+    // overlay keeps its claim: it takes the focus on every draw while it is up.
+    const focusToHost = panelHeldFocus && overlay === null && surface.querySelector(AUDIT_OVERLAY) === null;
     if (overlay !== null) {
       // FOCUS IS TAKEN BACK ON EVERY RENDER WHILE THE OVERLAY IS UP, not only on
       // the one that opens it. Every answer dispatches, every dispatch redraws,
@@ -2097,6 +2109,8 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
       // first control is `apply`, and landing focus there would put the one
       // irreversible answer under the reader's next Space.
       (again ?? overlay).focus({ preventScroll: true });
+    } else if (focusToHost) {
+      // NO ARM MOVES IT: the host's `focusToggle` runs at the end of this draw.
     } else if (auditStop !== null && surface.querySelector<HTMLElement>(auditStop) !== null) {
       // THE READER WAS IN THE AUDIT, SO THEY STAY THERE — and on the same one of
       // its two surfaces, which is why the stop is restored by the name it was
@@ -2352,6 +2366,7 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
     searchWasOpen = search !== null;
     announceSelection();
     announceAuditToggle(result.view.auditToggle);
+    if (focusToHost) current.auditToggle?.focusToggle();
   };
 
   /**

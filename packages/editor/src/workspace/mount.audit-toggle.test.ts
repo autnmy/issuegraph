@@ -1894,3 +1894,53 @@ test('KTD6: removing auditToggle through update() stops the reports and draws th
     page.dom.window.close();
   }
 });
+
+test('R7 KTD5: the host closing the panel while focus is on a control in it hands focus to the host once', async () => {
+  // The default projection with a declared cycle, so the audit has findings and draws a remedy control.
+  const withCycle = (snapshot: StoreSnapshot): WorkspaceProjection => ({
+    ...project(snapshot),
+    audit: {
+      document: { issues: snapshot.issues, edges: snapshot.landed },
+      graph: { cycles: [['1', '2']], duplicateCanonical: () => null },
+    },
+  });
+  let focusToggleCalls = 0;
+  let hostButton: HTMLElement | undefined;
+  const page = await mounted(SEED, {
+    project: withCycle,
+    auditToggle: {
+      placement: 'host',
+      onChange: (): void => {},
+      focusToggle: (): void => {
+        focusToggleCalls += 1;
+        hostButton?.focus();
+      },
+    },
+  });
+  try {
+    const button = page.win.document.createElement('button');
+    button.textContent = 'problems to fix';
+    page.win.document.body.append(button);
+    hostButton = button;
+
+    page.handle.dispatch({ kind: 'control', name: 'audit-panel' });
+    await flush();
+    // A remedy names an issue, so without the hand-off the mount's own restore would look for that issue's control.
+    const remedy = page.element.querySelector<HTMLElement>('.ig-audit-panel [data-ig-remedy]');
+    assert.ok(remedy !== null, 'the panel drew no remedy control, so this proves nothing');
+    remedy.focus();
+    assert.equal(page.win.document.activeElement, remedy, 'the fixture cannot focus the remedy');
+
+    page.handle.dispatch({ kind: 'control', name: 'audit-close' });
+    await flush();
+
+    assert.equal(page.element.querySelector('.ig-audit-overlay'), null, 'the panel did not close');
+    // "When the panel closes with focus inside it, the mount calls `focusToggle` instead of searching its own surface for a toggle that is no longer there."
+    assert.equal(focusToggleCalls, 1);
+    assert.equal(page.win.document.activeElement, button);
+    assert.notEqual(page.win.document.activeElement, page.win.document.body);
+  } finally {
+    page.handle.destroy();
+    page.dom.window.close();
+  }
+});
