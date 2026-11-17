@@ -111,6 +111,35 @@ const BINDINGS: ReadonlyMap<string, Binding> = new Map<string, Binding>([
 const NONE: FirstPassIntent = Object.freeze({ kind: 'none' });
 
 /**
+ * The key bound to an answer in {@link BINDINGS}, as the board labels it.
+ *
+ * Throws at module load when an answer has no binding, so a table that loses
+ * one fails every importer at once instead of drawing a button with no label.
+ */
+function boundKey(answer: Answer): string {
+  for (const [key, binding] of BINDINGS) {
+    if (binding.action === 'answer' && binding.answer === answer) return key.toUpperCase();
+  }
+  throw new Error(`no key is bound to the answer "${answer}"`);
+}
+
+/**
+ * One entry per answer, so an answer added without a key is a compile error.
+ * Capitals because the design names the keys that way; {@link normalize}
+ * folds a capital back to the table's spelling, so the label is also the key.
+ */
+const ANSWER_KEYS: Readonly<Record<Answer, string>> = Object.freeze({
+  apply: boundKey('apply'),
+  reject: boundKey('reject'),
+  skip: boundKey('skip'),
+});
+
+/** The key that gives this answer, for a host or the band to label it with. */
+export function answerKey(answer: Answer): string {
+  return ANSWER_KEYS[answer];
+}
+
+/**
  * The press type is `create/keys.ts`'s, imported rather than redeclared.
  *
  * A KEY PRESS IS A PLATFORM FACT, not a fact about either flow: the fields are

@@ -116,3 +116,55 @@ describe('a key whose subject is missing resolves to none', () => {
     });
   });
 });
+
+import { answerKey } from './keys.ts';
+import type { Answer } from './queue.ts';
+
+describe("more tests", function () {
+it('answerKey names Y for apply, N for reject and S for skip', () => {
+  // "The `kbd` stays in each button's accessible name: "Yes, add it Y", "No N", "Skip for now S"."
+  assert.equal(answerKey('apply'), 'Y');
+  assert.equal(answerKey('reject'), 'N');
+  assert.equal(answerKey('skip'), 'S');
+});
+
+it('answerKey of every answer is one capital letter that firstPassIntent resolves back to that answer', () => {
+  // A record keyed by every answer, so a fourth answer is a compile error here.
+  const answers: Record<Answer, Answer> = { apply: 'apply', reject: 'reject', skip: 'skip' };
+  const asking: FirstPassContext = { interaction: 'queue', hasCandidate: true, canUndo: false };
+  for (const answer of Object.values(answers)) {
+    const key = answerKey(answer);
+    // A blank or lower-case letter would draw a label the board does not show.
+    assert.match(key, /^[A-Z]$/, `${answer}: ${JSON.stringify(key)}`);
+    // "`answerKey(answer)` pressed as a key resolves to that same answer, for every answer."
+    assert.deepEqual(
+      firstPassIntent({ key }, asking),
+      { kind: 'queue', command: { kind: 'answer', answer } },
+      answer,
+    );
+  }
+});
+});
+
+describe("more tests 2", function () {
+it('gives each answer one capital letter, and pressing that letter gives the same answer', () => {
+  // A record over the answer type, so an answer added later without a letter fails to compile here.
+  const letters: Record<Parameters<typeof answerKey>[0], string> = {
+    apply: answerKey('apply'),
+    reject: answerKey('reject'),
+    skip: answerKey('skip'),
+  };
+  const asking: FirstPassContext = { interaction: 'queue', hasCandidate: true, canUndo: false };
+  for (const [answer, letter] of Object.entries(letters)) {
+    // A blank, lowercase or multi-character label would reach a button as drawn.
+    assert.match(letter, /^\S$/u, `${answer}: ${JSON.stringify(letter)} is not one visible character`);
+    assert.equal(letter, letter.toUpperCase(), `${answer}: the label is not a capital`);
+    // "`answerKey(answer)` pressed as a key resolves to that same answer, for every answer."
+    assert.deepEqual(
+      firstPassIntent({ key: letter }, asking),
+      { kind: 'queue', command: { kind: 'answer', answer } },
+      `${answer}: its letter answers something else`,
+    );
+  }
+});
+});

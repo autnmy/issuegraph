@@ -319,6 +319,7 @@ export {
 } from './firstpass/batch.ts';
 
 export {
+  answerKey,
   type FirstPassContext,
   type FirstPassInteraction,
   type FirstPassIntent,
