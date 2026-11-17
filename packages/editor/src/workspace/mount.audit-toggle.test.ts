@@ -401,6 +401,39 @@ test('auditToggle: onChange worst equals the worst class a mount without the opt
   }
 });
 
+test('auditToggle: a change of worst class alone, with the count unchanged, is reported once', async () => {
+  // One refused declaration and no cycle: the same count as the cycle fixture, a lighter class.
+  const refusedOnly = (snapshot: StoreSnapshot): WorkspaceProjection => ({
+    ...project(snapshot),
+    audit: {
+      document: { issues: snapshot.issues, edges: snapshot.landed },
+      graph: { cycles: [], duplicateCanonical: () => null },
+      encodingRefused: [{ ref: '1' }],
+    },
+  });
+  const host = recordingAuditToggle();
+  const page = await mounted(SEED, { project: withCycleAudit, auditToggle: host.option });
+  try {
+    await flush();
+    const before = host.latest();
+    assert.ok(before !== undefined && before.count > 0, 'the cycle fixture produced no finding, so this proves nothing');
+    const heard = host.told.length;
+
+    page.handle.update({ project: refusedOnly });
+    await flush();
+    const after = host.latest();
+    assert.ok(after !== undefined);
+    // Only the worst class moved, so a comparison that skipped it would report nothing here.
+    assert.deepEqual(
+      { reports: host.told.length - heard, count: after.count, open: after.open, panelId: after.panelId },
+      { reports: 1, count: before.count, open: before.open, panelId: before.panelId },
+    );
+    assert.notEqual(after.worst, before.worst);
+  } finally {
+    closePage(page);
+  }
+});
+
 test('auditToggle: panelId in onChange names the drawn panel, while shut, open and after a reopen', async () => {
   const host = recordingAuditToggle();
   const page = await mounted(SEED, { project: withCycleAudit, auditToggle: host.option });
