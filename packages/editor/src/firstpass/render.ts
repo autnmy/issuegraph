@@ -31,20 +31,20 @@
  * bar draws one knowing what it is claiming. `<progress>` is deliberately not
  * used for the same reason.
  *
- * ## It names itself without claiming a heading level
+ * ## It draws a heading only at a level the host names
  *
- * Same call `picker/render.ts` records: a heading would be a claim about the
+ * Same call `picker/render.ts` records: a heading level is a claim about the
  * HOST's document outline — whether this surface is a section of something, and
- * at what depth — which a package rendered into an unknown page cannot make.
+ * at what depth — which a package rendered into an unknown page cannot make on
+ * its own. So the band draws no heading unless the host names the level in
+ * {@link FirstPassOptions.heading}; then it draws `words.label` at that level,
+ * in one row with the progress.
  *
- * That refusal used to be the whole of it, and it left the root `<section>`
- * with no accessible name at all: a screen-reader user navigating by landmarks
- * met an unnamed generic region and could not tell it from any other. The
- * refusal was right and the silence that followed it was not, so the region now
- * carries an `aria-label` from {@link ./words.ts FirstPassWords} — which names
- * the surface without asserting anything about where it sits in an outline. A
- * host that wants it in the outline still wraps it in a heading of its own
- * choosing.
+ * The root `<section>` carries an `aria-label` from
+ * {@link ./words.ts FirstPassWords} in every case. Without it, a screen-reader
+ * user navigating by landmarks meets an unnamed generic region and cannot tell
+ * it from any other; the label names the region without asserting where it sits
+ * in an outline.
  */
 
 import {
@@ -60,6 +60,7 @@ import {
 import { isEdgeField } from '@issuegraph/core';
 import { type FirstPassQuestion, type FirstPassView, firstPassView } from './view.ts';
 import type { QueueProgress, QueueState } from './queue.ts';
+import { answerKey } from './keys.ts';
 import { firstPassStylesheet } from './styles.ts';
 import type { FirstPassWords } from './words.ts';
 
@@ -82,12 +83,29 @@ export const ANSWERED_ATTRIBUTE = 'data-ig-answered';
 /** Candidates found — the denominator, on the root. */
 export const FOUND_ATTRIBUTE = 'data-ig-found';
 
+/**
+ * The heading levels a host may ask for. No `h1`: the band is always one part
+ * of a host page, never the page's own title.
+ */
+export type FirstPassHeadingLevel = 2 | 3 | 4 | 5 | 6;
+
+/** Asks the band to draw `words.label` as a heading at this level. */
+export interface FirstPassHeading {
+  readonly level: FirstPassHeadingLevel;
+}
+
 export interface FirstPassOptions {
   /** The words. Required — see {@link ./words.ts FirstPassWords} for why. */
   readonly words: FirstPassWords;
   readonly theme?: Theme | undefined;
   /** The selector the theme's custom properties are written onto. */
   readonly themeSelector?: string | undefined;
+  /**
+   * Draws a title row: the label as a heading at this level, with the progress
+   * beside it, before everything else. Left out, the band draws no heading and
+   * the progress comes last.
+   */
+  readonly heading?: FirstPassHeading | undefined;
 }
 
 export interface FirstPassResult {
@@ -103,6 +121,28 @@ export interface FirstPassResult {
    * installs the queue alone a stylesheet whose every selector matches nothing.
    */
   readonly styles: string;
+}
+
+/**
+ * The one place a heading level becomes a tag name.
+ *
+ * A fixed table, so no host value is ever written into the markup as a tag. A
+ * `Map` rather than an object, because `Map.get` reads no inherited property
+ * and matches by type as well as value: `'2'`, `'__proto__'` or `7` from an
+ * untyped caller finds nothing, and the band is drawn with no heading.
+ */
+const HEADING_TAGS: ReadonlyMap<FirstPassHeadingLevel, string> = new Map<FirstPassHeadingLevel, string>([
+  [2, 'h2'],
+  [3, 'h3'],
+  [4, 'h4'],
+  [5, 'h5'],
+  [6, 'h6'],
+]);
+
+/** The tag for the host's heading option, or `undefined` for no heading. */
+function headingTag(heading: FirstPassHeading | undefined): string | undefined {
+  const level = heading?.level;
+  return level === undefined ? undefined : HEADING_TAGS.get(level);
 }
 
 /** The three answer controls, in §17e's order. */
@@ -169,6 +209,11 @@ function questionSpec(question: FirstPassQuestion, words: FirstPassWords): Eleme
  * the loop is reachable with no pointer, not that a pointer is refused. A
  * surface with keys and no controls would also be a surface with no discoverable
  * vocabulary and nothing for assistive technology to name.
+ *
+ * Each button ends with the key that gives its answer, read from `keys.ts` so
+ * the label and the binding cannot disagree. The space before it is a text
+ * node rather than CSS because an accessible name joins text with no
+ * separator: without it the apply button would be named "Yes, add itY".
  */
 function answersSpec(words: FirstPassWords): ElementSpec {
   return element(
@@ -178,7 +223,7 @@ function answersSpec(words: FirstPassWords): ElementSpec {
       element(
         'button',
         { type: 'button', class: 'ig-firstpass-answer', [ANSWER_ATTRIBUTE]: answer },
-        [words.answers[answer]],
+        [words.answers[answer], ' ', element('kbd', { class: 'ig-firstpass-key' }, [answerKey(answer)])],
       ),
     ),
   );
@@ -225,6 +270,34 @@ function progressSpec(progress: QueueProgress, words: FirstPassWords): ElementSp
 }
 
 /**
+ * The title row: the host's label as a heading, then the progress.
+ *
+ * NO PROGRESS WHEN NOTHING WAS FOUND. "0 of 0 answered" counts work that does
+ * not exist, so with a found total of 0 the row holds the heading alone.
+ */
+function titleSpec(tag: string, progress: QueueProgress, words: FirstPassWords): ElementSpec {
+  return element('div', { class: 'ig-firstpass-title' }, [
+    element(tag, { class: 'ig-firstpass-heading' }, [words.label]),
+    progress.found === 0 ? null : progressSpec(progress, words),
+  ]);
+}
+
+/**
+ * The root's children: the title row before the state's body when the host
+ * asked for a heading, and otherwise the body with the progress last.
+ */
+function bandChildren(
+  body: readonly (ElementSpec | null)[],
+  tag: string | undefined,
+  progress: QueueProgress,
+  words: FirstPassWords,
+): readonly (ElementSpec | null)[] {
+  return tag === undefined
+    ? [...body, progressSpec(progress, words)]
+    : [titleSpec(tag, progress, words), ...body];
+}
+
+/**
  * Draw the queue.
  *
  * Takes a {@link QueueState} — never a store and never a source. A host hands
@@ -263,16 +336,15 @@ export function renderFirstPass(state: QueueState, options: FirstPassOptions): F
     'section',
     {
       class: 'ig-firstpass',
-      // NAMED WITHOUT CLAIMING AN OUTLINE POSITION. The heading refusal above
-      // is unchanged — a heading LEVEL is a claim about the host's document
-      // structure — but an unnamed `<section>` is a landmark a screen-reader
-      // user cannot identify, so the region carries the host's own name here.
+      // NAMED IN EVERY STATE, with or without a heading. An unnamed
+      // `<section>` is a landmark a screen-reader user cannot identify, and a
+      // heading is drawn only when the host names its level.
       'aria-label': words.label,
       'data-ig-state': view.state,
       [ANSWERED_ATTRIBUTE]: String(view.progress.answered),
       [FOUND_ATTRIBUTE]: String(view.progress.found),
     },
-    [...body, progressSpec(view.progress, words)],
+    bandChildren(body, headingTag(options.heading), view.progress, words),
   );
 
   return {

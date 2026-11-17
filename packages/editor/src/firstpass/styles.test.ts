@@ -27,8 +27,8 @@ describe('the first-pass stylesheet carries structure, never a value', () => {
 
   it('writes no literal colour and no fixed length', () => {
     assert.equal(/#[0-9a-fA-F]{3,8}\b/.test(css), false, 'a literal colour');
-    assert.equal(/\brgba?\(/.test(css), false, 'a literal colour function');
-    assert.equal(/\b\d+(\.\d+)?(px|rem|em|pt)\b/.test(css), false, 'a fixed length');
+    assert.equal(/\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(/.test(css), false, 'a literal colour function');
+    assert.equal(/\b\d+(\.\d+)?(px|rem|em|pt|ch|ex|vw|vh)\b/.test(css), false, 'a fixed length');
   });
 
   it('gives every control a visible focus ring', () => {
@@ -75,5 +75,18 @@ describe('the first-pass stylesheet carries structure, never a value', () => {
     // It ADDS selectors rather than redefining them — the same contract the
     // picker's, the ladder's and the overlay's sheets keep.
     assert.equal(/\.ig-(station|edge|spine|row)\b/.test(css), false);
+  });
+
+  it('styles the title row, heading and key label from tokens', () => {
+    // Which tokens are defined, and that no rule holds a literal colour or a
+    // fixed length, the whole-sheet checks above already enforce; this case
+    // pins that each new class is styled at all, and through a token.
+    for (const className of ['ig-firstpass-title', 'ig-firstpass-heading', 'ig-firstpass-key']) {
+      const rules = [...css.matchAll(new RegExp(`\\.${className}(?![\\w-])[^{]*\\{([^}]*)\\}`, 'g'))]
+        .map((match) => match[1] ?? '')
+        .join('\n');
+      assert.ok(rules.trim() !== '', `.${className} is not styled`);
+      assert.match(rules, /var\(\s*--ig-/, `.${className} references no --ig-* token`);
+    }
   });
 });

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { type FirstPassContext, firstPassIntent } from './keys.ts';
+import { answerKey } from './keys.ts';
+import type { Answer } from './queue.ts';
 
 /** The ordinary case: the queue has the keyboard and a question on screen. */
 const LIVE: FirstPassContext = Object.freeze({
@@ -114,5 +116,29 @@ describe('a key whose subject is missing resolves to none', () => {
     assert.deepEqual(firstPassIntent({ key: 'Backspace' }, { ...LIVE, canUndo: false }), {
       kind: 'none',
     });
+  });
+});
+
+describe('answerKey labels each answer with the key that gives it', () => {
+  it('answerKey names Y for apply, N for reject and S for skip', () => {
+    assert.equal(answerKey('apply'), 'Y');
+    assert.equal(answerKey('reject'), 'N');
+    assert.equal(answerKey('skip'), 'S');
+  });
+
+  it('answerKey of every answer is one capital letter that firstPassIntent resolves back to that answer', () => {
+    // A record keyed by every answer, so a fourth answer is a compile error here.
+    const answers: Record<Answer, Answer> = { apply: 'apply', reject: 'reject', skip: 'skip' };
+    const asking: FirstPassContext = { interaction: 'queue', hasCandidate: true, canUndo: false };
+    for (const answer of Object.values(answers)) {
+      const key = answerKey(answer);
+      // A blank or lower-case letter would draw a label the board does not show.
+      assert.match(key, /^[A-Z]$/, `${answer}: ${JSON.stringify(key)}`);
+      assert.deepEqual(
+        firstPassIntent({ key }, asking),
+        { kind: 'queue', command: { kind: 'answer', answer } },
+        answer,
+      );
+    }
   });
 });

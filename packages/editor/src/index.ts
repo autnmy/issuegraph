@@ -319,6 +319,7 @@ export {
 } from './firstpass/batch.ts';
 
 export {
+  answerKey,
   type FirstPassContext,
   type FirstPassInteraction,
   type FirstPassIntent,
@@ -339,6 +340,8 @@ export {
   COMMAND_ATTRIBUTE,
   EVIDENCE_TOKEN_ATTRIBUTE,
   FOUND_ATTRIBUTE,
+  type FirstPassHeading,
+  type FirstPassHeadingLevel,
   type FirstPassOptions,
   type FirstPassResult,
   renderFirstPass,

@@ -116,6 +116,35 @@ export const firstPassStylesheet = `
   cursor: pointer;
 }
 
+/* An answer lays its words and its key side by side, as the export's buttons
+   do. The distance between them is this gap plus the key's own left margin,
+   both from the export (its button gap and its key margin inside the
+   first-pass actions); the space in the markup adds nothing, because a flex
+   gap replaces it. */
+.ig-firstpass-answer {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ig-space-snug);
+}
+
+/* THE KEY THAT GIVES THE ANSWER, as the export's keyboard hint: muted ink on
+   the panel ground inside a hairline, at a small radius. The export sets it in
+   an 11px caption on a 16px line in a 20px box; no theme token holds those, so
+   it takes the small size and the body line. */
+.ig-firstpass-key {
+  display: inline-flex;
+  align-items: center;
+  margin-left: var(--ig-space-tight);
+  padding: 0 var(--ig-space-tight);
+  border-radius: var(--ig-radius-small);
+  background: var(--ig-bg);
+  box-shadow: inset 0 0 0 var(--ig-hairline-width) var(--ig-hairline);
+  color: var(--ig-text-muted);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-small);
+  line-height: var(--ig-line-height);
+}
+
 /* The one answer that writes. Weighted so the irreversible option is the one
    the eye lands on — §17e's consent rule is about knowing what you agreed to,
    and that starts before the keystroke. */
@@ -134,10 +163,38 @@ export const firstPassStylesheet = `
   outline-offset: var(--ig-stroke);
 }
 
+/* THE TITLE ROW, drawn only when the host asks for a heading: the heading at
+   the start and the count at the end of one line, centred on each other, as
+   the export draws its "Suggested relationships" row. */
+.ig-firstpass-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ig-space);
+}
+
+/* The export's panel title: one step above the body, at medium weight, in
+   text ink — the treatment the audit panel's heading already takes. */
+.ig-firstpass-heading {
+  margin: 0;
+  color: var(--ig-text);
+  font-family: var(--ig-font-ui);
+  font-size: var(--ig-font-size-panel-title);
+  font-weight: var(--ig-weight-medium);
+  line-height: var(--ig-panel-title-line);
+}
+
 .ig-firstpass-progress {
   margin: 0;
   font-size: var(--ig-font-size-small);
   color: var(--ig-text-muted);
+}
+
+/* In the title row the count is the export's: the body size with tabular
+   figures, so its digits hold still as the answers climb. */
+.ig-firstpass-title .ig-firstpass-progress {
+  font-size: var(--ig-font-size);
+  font-variant-numeric: tabular-nums;
 }
 
 .ig-firstpass-finished,

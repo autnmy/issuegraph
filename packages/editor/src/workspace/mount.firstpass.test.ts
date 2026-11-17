@@ -17,6 +17,8 @@ import { THEME_TOKENS } from '@issuegraph/viewer';
 
 import { RELATE_KEY } from '../create/keys.ts';
 import type { Candidate } from '../firstpass/candidates.ts';
+import { answerKey } from '../firstpass/keys.ts';
+import type { Answer } from '../firstpass/queue.ts';
 import { FIRST_PASS_WORDS } from '../testing/firstpass.ts';
 import { mountStylesheet } from './chrome.ts';
 import type { WorkspaceProjection } from './mount.ts';
@@ -1276,5 +1278,115 @@ describe('the first pass, composed behind §17a’s entry', () => {
       page.handle.destroy();
       page.dom.window.close();
     }
+  });
+
+  describe('the key labels in the overlay', () => {
+    const answeredOf = (page: Mounted): string | null | undefined =>
+      page.element.querySelector('.ig-firstpass')?.getAttribute('data-ig-answered');
+
+    const keyLabelOf = (page: Mounted, answer: Answer): Element => {
+      const key = page.element.querySelector(`.ig-firstpass-overlay [data-ig-answer="${answer}"] kbd`);
+      assert.ok(key !== null, `no key label in the ${answer} button`);
+      return key;
+    };
+
+    const clickKeyLabel = async (page: Mounted, answer: Answer): Promise<void> => {
+      keyLabelOf(page, answer).dispatchEvent(new page.win.MouseEvent('click', { bubbles: true }));
+      await flush();
+    };
+
+    it('the first-pass overlay draws the key labels inside its answer buttons and no heading', async () => {
+      const page = await firstPassPage();
+      try {
+        await open(page);
+        const queue = page.element.querySelector('.ig-firstpass-overlay .ig-firstpass');
+        assert.ok(queue !== null, 'the queue did not open');
+
+        // Every caller of `renderFirstPass` draws the key labels, the mount's own overlay included.
+        const answers: Record<Answer, Answer> = { apply: 'apply', reject: 'reject', skip: 'skip' };
+        for (const answer of Object.values(answers)) {
+          const button: Element | null = queue.querySelector(`[data-ig-answer="${answer}"]`);
+          assert.ok(button !== null, `${answer}: no answer button`);
+          const keys: NodeListOf<HTMLElement> = button.querySelectorAll('kbd');
+          assert.equal(keys.length, 1, `${answer}: not exactly one key label`);
+          assert.equal(keys[0]?.textContent, answerKey(answer));
+          assert.equal((button.textContent ?? '').trim(), `${FIRST_PASS_WORDS.answers[answer]} ${answerKey(answer)}`);
+        }
+        // The mount asks for no heading, so its band keeps the progress last.
+        assert.equal(queue.querySelector('h1, h2, h3, h4, h5, h6'), null, 'the overlay drew a heading it never asked for');
+        assert.equal(queue.lastElementChild?.classList.contains('ig-firstpass-progress'), true, 'the progress is not the last child');
+      } finally {
+        page.handle.destroy();
+        page.dom.window.close();
+      }
+    });
+
+    it('answers the button whose key label was clicked, once, and writes only for a Yes', async () => {
+      // The key label sits inside the answer button, so a click on it must reach
+      // the store as that button's answer: a click resolved to the wrong button
+      // writes for a No, and one handled twice answers two questions.
+      const page = await firstPassPage();
+      try {
+        await open(page);
+        assert.equal(answeredOf(page), '0');
+
+        await clickKeyLabel(page, 'reject');
+        assert.equal(answeredOf(page), '1', 'a click on the No key label did not answer exactly once');
+        assert.deepEqual(page.store.getSnapshot().writes, [], 'a click on the No key label wrote a relationship');
+
+        await clickKeyLabel(page, 'apply');
+        assert.equal(answeredOf(page), '2', 'a click on the Yes key label did not answer exactly once');
+        const { writes } = page.store.getSnapshot();
+        assert.equal(writes.length, 1, 'a click on the Yes key label was not one write');
+        // The candidate on screen, not the first one found.
+        assert.deepEqual(writes[0]?.mutation, {
+          op: 'create',
+          kind: 'blocked-by',
+          from: '3',
+          to: '4',
+          mutationId: writes[0]?.mutationId,
+        });
+        assert.notEqual(writes[0]?.state, 'invalid', 'the write never left the store');
+
+        await clickKeyLabel(page, 'skip');
+        assert.equal(answeredOf(page), '3', 'a click on the Skip key label did not answer exactly once');
+        assert.equal(page.store.getSnapshot().writes.length, 1, 'a click on the Skip key label wrote something');
+      } finally {
+        page.handle.destroy();
+        page.dom.window.close();
+      }
+    });
+
+    it('re-answering a pending undo by its Y key label does not propose the create twice', async () => {
+      // An undo leaves an in-flight create standing, so a second consent given by
+      // clicking the key label must not send the same create again: when the first
+      // lands, a second would turn invalid and show the reader a false error.
+      const page = await firstPassPage();
+      try {
+        await open(page);
+        assert.equal(keyLabelOf(page, 'apply').textContent, answerKey('apply'));
+
+        await clickKeyLabel(page, 'apply');
+        await page.source.whenPending();
+        await flush();
+        const first = page.store.getSnapshot().writes;
+        assert.equal(first.length, 1, 'the first click on the key label was not one write');
+        const firstId = first[0]?.mutationId;
+
+        press(page, 'Backspace');
+        await flush();
+        assert.equal(answeredOf(page), '0', 'the queue did not step back');
+        assert.equal(page.store.getSnapshot().writes.length, 1, 'the pending write went away');
+
+        await clickKeyLabel(page, 'apply');
+        const again = page.store.getSnapshot().writes;
+        assert.equal(again.length, 1, 'the create was proposed twice');
+        assert.equal(again[0]?.mutationId, firstId, 'the standing write was replaced by another');
+        assert.equal(answeredOf(page), '1', 'the second consent did not advance the queue');
+      } finally {
+        page.handle.destroy();
+        page.dom.window.close();
+      }
+    });
   });
 });

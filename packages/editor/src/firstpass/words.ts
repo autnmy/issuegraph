@@ -31,17 +31,14 @@ export interface FirstPassWords {
   /**
    * The accessible name of the surface as a whole.
    *
-   * REQUIRED, and it is the one entry here that exists because of what
-   * `render.ts` REFUSES to do. That module declines to draw a heading, on the
-   * grounds that a heading level is a claim about the HOST's document outline
-   * which a package rendered into an unknown page cannot make. That reasoning
-   * is sound and unchanged — but a `<section>` with neither a heading nor a
-   * label is exposed to a screen reader navigating by landmarks as an unnamed
-   * generic region, so the refusal was quietly costing the reader the ability
-   * to find this surface at all.
+   * REQUIRED, because the root `<section>` always carries it as its
+   * `aria-label`. A `<section>` with no name is exposed to a screen reader
+   * navigating by landmarks as an unnamed generic region, and the band draws a
+   * heading only when the host names its level (`FirstPassOptions.heading`) —
+   * a heading level is a claim about the HOST's document outline, which a
+   * package rendered into an unknown page cannot make on its own. With that
+   * option, this is also the heading's text.
    *
-   * An `aria-label` is the half the package CAN supply without making that
-   * claim: it names the region without asserting where it sits in an outline.
    * The word is the host's, for the same reason every other word here is.
    */
   readonly label: string;

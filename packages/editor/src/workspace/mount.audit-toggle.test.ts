@@ -855,7 +855,8 @@ test('auditToggle: rail rows keep data-ig-audit and the panel still opens while 
 });
 
 // "Without the option, the mount's output is byte-for-byte what it is today."
-// These guards pass on 0.49.0 by design: the golden was captured from that release before any source edit.
+// The markup in the golden is what 0.49.0 drew. The stylesheet digest is this release's sheet, because the
+// mount installs the first-pass sheet into every mount and that sheet gained the title row and key label rules.
 type AuditToggleGoldenKey = 'findings-shut' | 'panel-open' | 'no-findings';
 
 function assertMatchesAuditToggleGolden(page: Mounted, key: AuditToggleGoldenKey): void {
@@ -869,9 +870,9 @@ function assertMatchesAuditToggleGolden(page: Mounted, key: AuditToggleGoldenKey
     stylesheetSha256: createHash('sha256').update(normalise(sheet.textContent ?? '')).digest('hex'),
   };
   const golden = new URL('./mount.audit-toggle.golden.json', import.meta.url);
-  const paste = `capture it from untouched 0.49.0 and paste this under "${key}":\n${JSON.stringify(actual, null, 2)}\n`;
+  const paste = `keep the markup 0.49.0 drew, take the digest of this release's sheet, and paste this under "${key}":\n${JSON.stringify(actual, null, 2)}\n`;
   const committed: Record<string, { markup: string; stylesheetSha256: string }> = JSON.parse(readFileSync(golden, 'utf8'));
-  assert.deepEqual(actual, committed[key], `the mount without auditToggle no longer draws what 0.49.0 drew; only if the golden is wrong, ${paste}`);
+  assert.deepEqual(actual, committed[key], `the mount without auditToggle no longer draws 0.49.0's markup with this release's sheet; only if the golden is wrong, ${paste}`);
 }
 
 test('auditToggle: without the option, a mount with findings and the panel shut matches the 0.49.0 golden', async () => {

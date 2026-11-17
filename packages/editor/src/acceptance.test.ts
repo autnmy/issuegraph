@@ -1363,4 +1363,15 @@ describe('done when: the package\'s public surface is final and self-sufficient'
       }
     }
   });
+
+  it('the package entry exports answerKey and the first-pass heading option types', () => {
+    // The two annotations are checked by the type checker, not at run time.
+    const level: surface.FirstPassHeadingLevel = 4;
+    const heading: surface.FirstPassHeading = { level };
+    assert.deepEqual(heading, { level: 4 });
+    assert.deepEqual(
+      [surface.answerKey('apply'), surface.answerKey('reject'), surface.answerKey('skip')],
+      ['Y', 'N', 'S'],
+    );
+  });
 });
