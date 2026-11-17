@@ -117,8 +117,10 @@ export const firstPassStylesheet = `
 }
 
 /* An answer lays its words and its key side by side, as the export's buttons
-   do, so the gap and not the space in the markup sets the distance between
-   them. */
+   do. The distance between them is this gap plus the key's own left margin,
+   both from the export (its button gap and its key margin inside the
+   first-pass actions); the space in the markup adds nothing, because a flex
+   gap replaces it. */
 .ig-firstpass-answer {
   display: inline-flex;
   align-items: center;
