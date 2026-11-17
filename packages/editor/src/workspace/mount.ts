@@ -612,7 +612,8 @@ export function mountWorkspace(element: HTMLElement, options: MountWorkspaceOpti
   // THE LAST AUDIT FACTS THE HOST'S CONTROL WAS TOLD, compared by value at the
   // end of `render()` as `announced` is. `null` until the first real draw, so
   // that draw reports and the loading placeholder reports nothing; set back to
-  // `null` when `update()` hands over a different `onChange`.
+  // `null` only when `update()` adds the option after it was absent. A different
+  // `onChange` function is not a new fact (see `update()`).
   let toldFacts: AuditToggleFacts | null = null;
   /** The viewer document last drawn, which a Shift range reads its rank order from. */
   let lastViewer: ViewerDocument | null = null;
