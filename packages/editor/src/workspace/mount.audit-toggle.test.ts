@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
@@ -801,11 +802,12 @@ function assertMatchesAuditToggleGolden(page: Mounted, key: AuditToggleGoldenKey
   const normalise = (text: string): string => text.replace(/\bw\d+\b/g, 'w#');
   const actual = {
     markup: normalise(page.element.innerHTML.replace(sheet.outerHTML, '')),
-    stylesheet: normalise(sheet.textContent ?? ''),
+    // A digest, not the text: the stylesheet is about 246 KB, and three copies of it made the golden too large to read in review.
+    stylesheetSha256: createHash('sha256').update(normalise(sheet.textContent ?? '')).digest('hex'),
   };
   const golden = new URL('./mount.audit-toggle.golden.json', import.meta.url);
   const paste = `capture it from untouched 0.49.0 and paste this under "${key}":\n${JSON.stringify(actual, null, 2)}\n`;
-  const committed: Record<string, { markup: string; stylesheet: string }> = JSON.parse(readFileSync(golden, 'utf8'));
+  const committed: Record<string, { markup: string; stylesheetSha256: string }> = JSON.parse(readFileSync(golden, 'utf8'));
   assert.deepEqual(actual, committed[key], `the mount without auditToggle no longer draws what 0.49.0 drew; only if the golden is wrong, ${paste}`);
 }
 
