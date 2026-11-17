@@ -428,6 +428,9 @@ export {
   type BatchConfirmFacts,
   // AND AGAIN — the log under the head. `WorkspaceWords.log` is required too.
   type LogWords,
+  // The argument `AuditToggleOption.onChange` is called with, so a host can
+  // name what its audit control is handed.
+  type AuditToggleFacts,
   ZONES,
   renderWorkspace,
 } from './workspace/render.ts';
@@ -460,6 +463,7 @@ export {
 } from './workspace/host.ts';
 
 export {
+  type AuditToggleOption,
   type CanvasMode,
   type FirstPassOption,
   type MountWords,
