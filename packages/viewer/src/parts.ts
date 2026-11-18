@@ -1818,3 +1818,29 @@ export function slotLabel(document: NormalizedDocument, slot: ViewerSlot): strin
 export function emptyState(message: string): ElementSpec {
   return element('p', { class: 'ig-empty' }, [message]);
 }
+
+/** One piece of a host's line: its words, or a value a reader copies, which is drawn as code. */
+export type WordPart = string | { readonly code: string };
+
+/**
+ * The empty work order in the host's words (#34419): a title, then an optional
+ * muted line. The detail is PARTS, not markup, so a host can name a value (the
+ * label that puts an issue in the order) as code without the package ever
+ * reading host text as HTML.
+ */
+export interface EmptyOrderWords {
+  readonly title: string;
+  readonly detail?: readonly WordPart[] | undefined;
+}
+
+/** A host's line, its values drawn as code. */
+function wordParts(parts: readonly WordPart[]): SpecChild[] {
+  return parts.map((part) => (typeof part === 'string' ? part : element('code', { class: 'ig-code' }, [part.code])));
+}
+
+/** The empty work order as the host words it: the title, then the detail line when there is one. */
+export function emptyOrderState(words: EmptyOrderWords): ElementSpec {
+  const title = element('p', { class: 'ig-empty-order-title' }, [words.title]);
+  const detail = words.detail === undefined ? [] : [element('p', { class: 'ig-empty-order-detail' }, wordParts(words.detail))];
+  return element('div', { class: 'ig-empty-order' }, [title, ...detail]);
+}

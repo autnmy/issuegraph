@@ -1870,6 +1870,31 @@ ${railDensity(".ig-viewer[data-density='dense']")}
   padding: var(--ig-space);
 }
 
+/* THE EMPTY WORK ORDER IN THE HOST'S WORDS (issue 34419), as the board draws it:
+   no fill and no border, a medium title over a muted line, eight apart, sixteen
+   in from the zone's edges. The line's values are code, in the mono face. */
+.ig-empty-order {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ig-space-snug);
+  padding: var(--ig-space-loose);
+}
+
+.ig-empty-order-title {
+  color: var(--ig-text);
+  font-weight: var(--ig-weight-medium);
+  margin: 0;
+}
+
+.ig-empty-order-detail {
+  color: var(--ig-text-muted);
+  margin: 0;
+}
+
+.ig-code {
+  font-family: var(--ig-font-mono);
+}
+
 .ig-refusal-next {
   color: var(--ig-text);
   margin: var(--ig-space-tight) 0 0;

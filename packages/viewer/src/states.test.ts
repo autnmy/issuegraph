@@ -336,6 +336,14 @@ describe('the §16 states', () => {
       assert.ok(!withCondition.markup.includes('ig-empty'), `${projection} drew two cause statements`);
       assert.ok(withCondition.markup.includes(EMPTY.reason), `${projection} lost the host’s reason`);
     }
+    // #34419: the host's own words for an empty order are the list's sentence in another voice, so a
+    // recorded condition leaves them out too.
+    const worded = renderViewer(
+      { ...nothingRanked, host: { freshness: FRESHNESS, condition: EMPTY } },
+      { projection: 'linear', emptyOrder: { title: 'No issues to work on right now' } },
+    );
+    assert.ok(!worded.markup.includes('ig-empty-order'), 'the host’s empty-order words beside a recorded cause');
+    assert.ok(worded.markup.includes(EMPTY.reason), 'the host’s reason lost beside its empty-order words');
   });
 
   it('draws no control the host named no word for', () => {

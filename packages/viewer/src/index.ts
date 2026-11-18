@@ -197,6 +197,8 @@ export {
 // The legend's per-kind switch (#303): the editor builds one for a dense
 // selection and hands it to the graph through `SceneOptions.legendSwitch`.
 export type { LegendCount, LegendSwitch, LegendSwitchKind } from './parts.ts';
+// The empty work order in the host's words (#34419), handed to the list through `SceneOptions.emptyOrder`.
+export type { EmptyOrderWords, WordPart } from './parts.ts';
 
 export type { Cluster, ClusterReach } from './clusters.ts';
 export { clusterReach, clusterReachLabel, clustersOf } from './clusters.ts';

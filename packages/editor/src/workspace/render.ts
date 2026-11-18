@@ -57,6 +57,7 @@ import {
   type EdgeTreatment,
   type Freshness,
   type HostFacts,
+  type EmptyOrderWords,
   type LegendSwitch,
   type NormalizedDocument,
   type NormalizedHostFacts,
@@ -348,6 +349,14 @@ export interface WorkspaceWords {
    * is intact and the view is narrow.
    */
   readonly filteredEmpty: string;
+  /**
+   * What the rail says when the order has nothing in it, in the host's words
+   * (#34419): a title and an optional muted line, which may name a value such
+   * as the label that puts an issue in the order. OPTIONAL: absent, the rail
+   * says the viewer's own sentence. Handed to the viewer as
+   * `SceneOptions.emptyOrder`, which leaves it out where it always did.
+   */
+  readonly emptyOrder?: EmptyOrderWords | undefined;
   /**
    * The count that makes the sentence above unmisreadable: *"8 issues are
    * ranked"*.
@@ -4408,6 +4417,8 @@ export function renderWorkspace(
     // crossover. So the rail asks for dense rows outright, and the option is
     // gone. The canvas's viewer is left to its own box.
     density: 'dense',
+    // The host's words for an order with nothing in it (#34419).
+    emptyOrder: options.words.emptyOrder,
   });
   // Built once, over the slots the viewer draws, so a rail of 312 costs one pass
   // rather than one scan of `overlay.rows` per drawn row. THE DRAWN SLOTS, NOT
