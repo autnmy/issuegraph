@@ -4,6 +4,18 @@ Releases are recorded here. While the spec is a pre-1.0 draft, drafting churn li
 
 ## Unreleased
 
+- **`@issuegraph/viewer` `0.31.0` and `@issuegraph/editor` `0.51.0`: a host can word the empty work order (autnmy/descant#34419).** **Additive: optional `SceneOptions.emptyOrder` (`EmptyOrderWords`, with `WordPart`) and `WorkspaceWords.emptyOrder`.** Without them the list says what it said in `0.30.0`.
+  - The board draws an empty work order as a title over a muted line that names the label putting an issue in the order. The sentence was hard-coded in the linear projection, so no host could say that. `emptyOrder: { title, detail }` draws the title, then the line, with no fill and no border (`.ig-empty-order`).
+  - `detail` is a list of parts: a string is words, `{ code }` is a value drawn as `<code class="ig-code">` in the mono face. Every part is escaped like any host string, so no host text is read as markup.
+  - It is left out exactly where the list's own sentence was: when the document states its own cause, a recorded condition wins. The editor passes `WorkspaceWords.emptyOrder` to its rail.
+  - **Pinned** in `projections/linear.test.ts` and `states.test.ts` (title, line, code, escaping, the condition) and `workspace/render.test.ts` (the pass-through, and the default with no words).
+
+- **`@issuegraph/editor` `0.51.0`: the first pass and the audit panel draw their buttons as the board does (autnmy/descant#34420).** **Style and icon change for every caller; no API change.**
+  - The first-pass band has no fill of its own. Every answer is a secondary button (`--ig-surface-2`, no border; `--ig-fill-strong` on hover); Yes is no longer weighted apart, because the board draws the three alike. Undo is a ghost button in the text ink, filled only on hover, as the design owners ruled.
+  - The audit remedies and the unreadable note's two controls are small secondary buttons: the fill, no border.
+  - An attention note draws the alert circle, as attention notes do across the product, in place of the triangle.
+  - **Pinned** in `firstpass/styles.test.ts`, `audit/panel.test.ts` and `audit/refused.test.ts`. The audit-toggle golden keeps its markup and takes this release's stylesheet digest.
+
 - **`@issuegraph/editor` `0.50.0`: the first-pass band can draw its title row, and each answer button shows its key.** **Additive: optional `FirstPassOptions.heading` (`FirstPassHeading`, with `FirstPassHeadingLevel`), and `answerKey(answer)`.** **Markup change for every caller of `renderFirstPass`, the mount's first-pass overlay included: each answer button ends with a `kbd`, so its accessible name gains the letter** ("Yes, add it Y", "No N", "Skip for now S"). A host matching on the old names reads the new ones.
   - With `heading: { level: 2 }`, the band opens with a row that holds `words.label` as an `h2` and the "N of M answered" count beside it, before the question. The level picks one of the fixed tags `h2` to `h6`, so no host text becomes a tag name. A level outside that set draws the band as if the option were left out. The finished state keeps its undo, and the empty state draws the row with the heading and no count, because there is nothing to count.
   - Without the option, the band draws no heading and the count stays last, as in `0.49.0`. The root keeps its `aria-label` in every case.
