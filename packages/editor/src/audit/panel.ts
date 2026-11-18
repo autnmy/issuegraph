@@ -305,9 +305,9 @@ const NOTE_STATE: Readonly<Record<AuditClass, NoteState>> = Object.freeze({
 
 /**
  * The SVG children of each state's icon, as the export's boards draw them: the
- * alert circle for the error state, the triangle for attention, the clock for
- * neutral. Built in the SVG namespace, because an icon built with `element`
- * draws nothing once mounted.
+ * alert circle for the error and attention states (attention notes draw it
+ * across the product, #34420), the clock for neutral. Built in the SVG
+ * namespace, because an icon built with `element` draws nothing once mounted.
  */
 const NOTE_ICON: Readonly<Record<NoteState, () => readonly ElementSpec[]>> = Object.freeze({
   error: () => [
@@ -316,9 +316,9 @@ const NOTE_ICON: Readonly<Record<NoteState, () => readonly ElementSpec[]>> = Obj
     svg('line', { x1: '12', x2: '12.01', y1: '16', y2: '16' }),
   ],
   attention: () => [
-    svg('path', { d: 'm21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3' }),
-    svg('path', { d: 'M12 9v4' }),
-    svg('path', { d: 'M12 17h.01' }),
+    svg('circle', { cx: '12', cy: '12', r: '10' }),
+    svg('line', { x1: '12', x2: '12', y1: '8', y2: '12' }),
+    svg('line', { x1: '12', x2: '12.01', y1: '16', y2: '16' }),
   ],
   neutral: () => [
     svg('circle', { cx: '12', cy: '12', r: '9' }),

@@ -75,7 +75,7 @@ describe('the unreadable relationships, as notes in the problems panel (#296)', 
     // mono class chip used to be.
     assert.match(markup, /<li class="ig-audit-card" data-ig-audit-kind="encoding-refused" data-s="attention">/);
     // THE ATTENTION STATE'S ICON leads it, as every note's does.
-    assert.match(markup, /data-s="attention"><svg class="ig-audit-icon"[^>]*><path d="m21\.73 18/);
+    assert.match(markup, /data-s="attention"><svg class="ig-audit-icon"[^>]*><circle cx="12" cy="12" r="10" \/>/);
     assert.match(markup, new RegExp(`<p class="ig-audit-title">${WORDS.titles['encoding-refused']}</p>`));
     assert.equal(markup.includes('ig-audit-chip'), false, 'the card still draws a class chip');
   });

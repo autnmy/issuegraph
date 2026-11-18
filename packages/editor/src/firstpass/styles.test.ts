@@ -65,10 +65,19 @@ describe('the first-pass stylesheet carries structure, never a value', () => {
     }
   });
 
-  it('weights the one answer that writes', () => {
-    // Consent starts before the keystroke: the irreversible option is the one
-    // the eye should land on. The rule keys on the attribute render.ts writes.
-    assert.match(css, /\.ig-firstpass-answer\[data-ig-answer='apply'\]/);
+  it('draws the answers as the board\'s secondary buttons and Undo as its ghost button', () => {
+    // #34420, from the board and the design owners' grade: every answer, Yes included, is a secondary
+    // button (the fill, no border), Undo is a ghost button (no fill until hovered), and the band around
+    // them has no fill of its own.
+    const rule = (selector: string): string =>
+      [...css.matchAll(new RegExp(`(?:^|\\n)${selector.replace(/[.[\]]/g, '\\$&')}\\s*\\{([^}]*)\\}`, 'g'))]
+        .map((match) => match[1] ?? '')
+        .join('\n');
+    assert.match(rule('.ig-firstpass-answer'), /background:\s*var\(--ig-surface-2\)/);
+    assert.match(css, /\.ig-firstpass-answer,\s*\.ig-firstpass-undo\s*\{[^}]*border:\s*0;/);
+    assert.match(css, /\.ig-firstpass-answer,\s*\.ig-firstpass-undo\s*\{[^}]*background:\s*none;/);
+    assert.doesNotMatch(css, /\.ig-firstpass-answer\[data-ig-answer='apply'\]/, 'no answer is weighted apart from the others');
+    assert.doesNotMatch(rule('.ig-firstpass'), /background/, 'the band draws no fill');
   });
 
   it('reaches into no viewer class of its own', () => {

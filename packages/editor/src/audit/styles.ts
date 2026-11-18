@@ -327,11 +327,12 @@ export const auditStylesheet = `
   gap: var(--ig-space-tight);
 }
 
+/* A REMEDY IS THE BOARD'S SMALL SECONDARY BUTTON (issue 34420): the fill, no border. */
 .ig-audit-remedy {
   /* An anchor too, for the open link on a loop with no drawn issue (300), so no underline. */
   text-decoration: none;
-  background: none;
-  border: var(--ig-stroke) solid var(--ig-line);
+  background: var(--ig-surface-2);
+  border: 0;
   border-radius: var(--ig-radius-small);
   color: var(--ig-text);
   cursor: pointer;
@@ -341,7 +342,7 @@ export const auditStylesheet = `
 }
 
 .ig-audit-remedy:hover {
-  border-color: var(--ig-accent);
+  background: var(--ig-fill-strong);
 }
 
 .ig-audit-remedy:focus-visible {
@@ -399,8 +400,8 @@ export const auditStylesheet = `
 .ig-audit-refused-open,
 .ig-audit-refused-rewrite {
   align-items: center;
-  background: none;
-  border: var(--ig-stroke) solid var(--ig-line);
+  background: var(--ig-surface-2);
+  border: 0;
   border-radius: var(--ig-radius-small);
   color: var(--ig-text);
   cursor: pointer;
@@ -414,7 +415,7 @@ export const auditStylesheet = `
 
 .ig-audit-refused-open:hover,
 .ig-audit-refused-rewrite:hover {
-  border-color: var(--ig-accent);
+  background: var(--ig-fill-strong);
 }
 
 .ig-audit-refused-open:focus-visible,
