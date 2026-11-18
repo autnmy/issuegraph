@@ -238,8 +238,9 @@ describe('the findings panel', () => {
       new RegExp(`<li class="ig-audit-card" data-ig-audit-kind="${kind}"[^>]*>(<svg[^>]*>.*?</svg>)`).exec(markup)?.[1] ?? '';
     const ICONS: Readonly<Record<string, RegExp>> = {
       cycle: /<circle cx="12" cy="12" r="10" \/><line x1="12" x2="12" y1="8" y2="12" \/><line x1="12" x2="12.01" y1="16" y2="16" \/>/,
-      'dead-duplicate-ref': /<path d="m21\.73 18-8-14a2 2 0 0 0-3\.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1\.73-3" \/><path d="M12 9v4" \/><path d="M12 17h\.01" \/>/,
-      'encoding-refused': /<path d="m21\.73 18-8-14a2 2 0 0 0-3\.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1\.73-3" \/>/,
+      // Attention notes draw the alert circle, as they do across the product (issue 34420).
+      'dead-duplicate-ref': /<circle cx="12" cy="12" r="10" \/><line x1="12" x2="12" y1="8" y2="12" \/><line x1="12" x2="12.01" y1="16" y2="16" \/>/,
+      'encoding-refused': /<circle cx="12" cy="12" r="10" \/><line x1="12" x2="12" y1="8" y2="12" \/>/,
       'stale-blocker': /<circle cx="12" cy="12" r="9" \/><path d="M12 7v5l3 2" \/>/,
     };
     for (const [kind, shape] of Object.entries(ICONS)) {

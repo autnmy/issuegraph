@@ -42,9 +42,6 @@ export const firstPassStylesheet = `
   font-size: var(--ig-font-size);
   line-height: var(--ig-line-height);
   color: var(--ig-text-body);
-  background: var(--ig-surface);
-  border-radius: var(--ig-radius);
-  padding: var(--ig-space);
 }
 
 .ig-firstpass-question {
@@ -102,18 +99,34 @@ export const firstPassStylesheet = `
 .ig-firstpass-answers {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--ig-space-tight);
+  align-items: center;
+  gap: var(--ig-space-snug);
 }
 
+/* THE BOARD'S BUTTONS (issue 34420): each answer is a secondary button, the fill and
+   no border, and Undo is a ghost button, no fill until hovered (the design
+   owners' ruling on issue 34247). */
 .ig-firstpass-answer,
 .ig-firstpass-undo {
   font: inherit;
   color: var(--ig-text);
-  background: var(--ig-surface-2);
-  border: var(--ig-stroke) solid var(--ig-line);
+  background: none;
+  border: 0;
   border-radius: var(--ig-radius);
   padding: var(--ig-space-tight) var(--ig-space);
   cursor: pointer;
+}
+
+.ig-firstpass-answer {
+  background: var(--ig-surface-2);
+}
+
+.ig-firstpass-answer:hover {
+  background: var(--ig-fill-strong);
+}
+
+.ig-firstpass-undo:hover {
+  background: var(--ig-surface-2);
 }
 
 /* An answer lays its words and its key side by side, as the export's buttons
@@ -145,16 +158,8 @@ export const firstPassStylesheet = `
   line-height: var(--ig-line-height);
 }
 
-/* The one answer that writes. Weighted so the irreversible option is the one
-   the eye lands on — §17e's consent rule is about knowing what you agreed to,
-   and that starts before the keystroke. */
-.ig-firstpass-answer[data-ig-answer='apply'] {
-  border-color: var(--ig-accent);
-}
-
 .ig-firstpass-undo {
   align-self: flex-start;
-  color: var(--ig-text-muted);
 }
 
 .ig-firstpass-answer:focus-visible,

@@ -3769,3 +3769,27 @@ describe('every readable byte of the workspace comes from the host (#156)', () =
     });
   }
 });
+
+// #34419: the rail hands the host's words for an empty order to the viewer, and keeps the viewer's own
+// sentence when the host gives none.
+describe('the empty work order', () => {
+  const empty: ViewerDocument = { issues: [], edges: [], order: { slots: [], excluded: [] }, cycles: [] };
+
+  it('says the host’s words when the host gives them', () => {
+    const result = renderWorkspace(empty, {
+      words: {
+        ...WORKSPACE_WORDS,
+        emptyOrder: { title: 'No issues to work on right now', detail: ['Add ', { code: 'ready-for-work' }, ' to an issue.'] },
+      },
+    });
+    assert.match(result.markup, /<p class="ig-empty-order-title">No issues to work on right now<\/p>/);
+    assert.match(result.markup, /Add <code class="ig-code">ready-for-work<\/code> to an issue\./);
+    assert.doesNotMatch(result.markup, /Nothing is in the order right now/);
+  });
+
+  it('keeps the viewer’s own sentence when the host gives none', () => {
+    const result = renderWorkspace(empty, WORDS);
+    assert.match(result.markup, /Nothing is in the order right now\./);
+    assert.doesNotMatch(result.markup, /ig-empty-order/);
+  });
+});

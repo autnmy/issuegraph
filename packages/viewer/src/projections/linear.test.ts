@@ -391,6 +391,26 @@ describe('the linear projection', () => {
     assert.match(markup, /Nothing is in the order right now/);
   });
 
+  // #34419: the board's empty work order is a title over a muted line naming the label that puts an issue in
+  // the order, in the host's words; a host that gives none keeps the list's own sentence.
+  it('draws the empty order in the host\'s words: the title, then the line with its value as code', () => {
+    const empty = { issues: [], edges: [], order: { slots: [], excluded: [] }, cycles: [] };
+    const markup = render(empty, {
+      emptyOrder: {
+        title: 'No issues to work on right now',
+        detail: ['This list orders the open issues that carry ', { code: 'ready-<for>-work' }, '. Add the label to an issue and it shows here.'],
+      },
+    });
+    assert.match(markup, /<div class="ig-empty-order"><p class="ig-empty-order-title">No issues to work on right now<\/p><p class="ig-empty-order-detail">/);
+    // The value is code, and escaped like every other host string: the package never reads host text as markup.
+    assert.match(markup, /carry <code class="ig-code">ready-&lt;for&gt;-work<\/code>\. Add the label/);
+    assert.doesNotMatch(markup, /class="ig-empty"/);
+    assert.doesNotMatch(markup, /Nothing is in the order right now/);
+
+    const titleOnly = render(empty, { emptyOrder: { title: 'No issues to work on right now' } });
+    assert.match(titleOnly, /<div class="ig-empty-order"><p class="ig-empty-order-title">No issues to work on right now<\/p><\/div>/);
+  });
+
   it('counts isolated issues into one chip instead of rendering them', () => {
     // 110 is in no slot and on no edge: 248 such dots carry no information, so
     // the design collapses them to a count.

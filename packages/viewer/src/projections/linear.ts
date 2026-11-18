@@ -16,6 +16,7 @@
 import type { NormalizedDocument, ViewerHold, ViewerSlot } from '../document.ts';
 import { type ElementSpec, element } from '../element.ts';
 import {
+  type EmptyOrderWords,
   type LegendSwitch,
   adoptionNote,
   caveatBadges,
@@ -24,6 +25,7 @@ import {
   conditionNotice,
   edgeBadgeList,
   edgeBadges,
+  emptyOrderState,
   emptyState,
   evidenceBadge,
   holdLine,
@@ -80,6 +82,14 @@ const ASIDE_NAME: Readonly<Record<RowRelationships, string>> = Object.freeze({
 });
 
 export interface SceneOptions {
+  /**
+   * What the list says when the order has nothing in it, in the host's words
+   * (#34419): a title and an optional muted line, drawn as the board's empty
+   * work order. Absent, the list says its own sentence, "Nothing is in the
+   * order right now." Either way it is left out when the document states its
+   * own cause, and a host that emptied the list by filtering says so itself.
+   */
+  readonly emptyOrder?: EmptyOrderWords | undefined;
   /**
    * The selected issue, or a set of them in the order they were added. Every
    * selected issue is rendered as `aria-current`. A single key is a string, so
@@ -756,6 +766,11 @@ function isolatedChip(count: number): ElementSpec | null {
   ]);
 }
 
+/** The empty order: the host's words when it gave them, else the list's own sentence. */
+function emptyOrderOf(words: EmptyOrderWords | undefined): ElementSpec {
+  return words === undefined ? emptyState('Nothing is in the order right now.') : emptyOrderState(words);
+}
+
 export function linearScene(
   document: NormalizedDocument,
   rawOptions: SceneOptions = {},
@@ -802,7 +817,7 @@ export function linearScene(
         // The recorded fact wins and the derivation is not drawn.
         statesItsOwnCause(document)
         ? null
-        : emptyState('Nothing is in the order right now.')
+        : emptyOrderOf(options.emptyOrder)
       : element(
           'ol',
           // A PLAIN LIST, not a listbox. Every row carries a deep-link chip, and
