@@ -3779,11 +3779,11 @@ describe('the empty work order', () => {
     const result = renderWorkspace(empty, {
       words: {
         ...WORKSPACE_WORDS,
-        emptyOrder: { title: 'No issues to work on right now', detail: ['Add ', { code: 'for-descant' }, ' to an issue.'] },
+        emptyOrder: { title: 'No issues to work on right now', detail: ['Add ', { code: 'ready-for-work' }, ' to an issue.'] },
       },
     });
     assert.match(result.markup, /<p class="ig-empty-order-title">No issues to work on right now<\/p>/);
-    assert.match(result.markup, /Add <code class="ig-code">for-descant<\/code> to an issue\./);
+    assert.match(result.markup, /Add <code class="ig-code">ready-for-work<\/code> to an issue\./);
     assert.doesNotMatch(result.markup, /Nothing is in the order right now/);
   });
 

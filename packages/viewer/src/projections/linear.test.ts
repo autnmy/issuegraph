@@ -398,12 +398,12 @@ describe('the linear projection', () => {
     const markup = render(empty, {
       emptyOrder: {
         title: 'No issues to work on right now',
-        detail: ['Descant orders the open issues that carry ', { code: 'for-<descant>' }, '. Add the label to an issue and it shows here.'],
+        detail: ['This list orders the open issues that carry ', { code: 'ready-<for>-work' }, '. Add the label to an issue and it shows here.'],
       },
     });
     assert.match(markup, /<div class="ig-empty-order"><p class="ig-empty-order-title">No issues to work on right now<\/p><p class="ig-empty-order-detail">/);
     // The value is code, and escaped like every other host string: the package never reads host text as markup.
-    assert.match(markup, /carry <code class="ig-code">for-&lt;descant&gt;<\/code>\. Add the label/);
+    assert.match(markup, /carry <code class="ig-code">ready-&lt;for&gt;-work<\/code>\. Add the label/);
     assert.doesNotMatch(markup, /class="ig-empty"/);
     assert.doesNotMatch(markup, /Nothing is in the order right now/);
 
